@@ -16,8 +16,8 @@ from uuid import uuid4
 
 from ..detection import detect_phrases, detect_silence
 from ..editing import render
-from ..editing.render import _ffprobe_for
 from ..extraction import extract_audio
+from ..extraction.probe import ffprobe_for
 from ..extraction.probe import probe
 from ..models import (
     AudioSource,
@@ -197,7 +197,7 @@ def export_worker(
             bitrate=req.bitrate,
             embed_markers=req.embed_markers,
         )
-        meta = probe(out_path, ffprobe_bin=_ffprobe_for(settings.ffmpeg_bin))
+        meta = probe(out_path, ffprobe_bin=ffprobe_for(settings.ffmpeg_bin))
         artifact = ExportArtifact(
             id=artifact_id,
             format=req.format,

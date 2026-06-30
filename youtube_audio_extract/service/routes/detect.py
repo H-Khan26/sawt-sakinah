@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from ..deps import get_jobs, get_settings, get_store
+from ..jobs import JobKind
 from ..schemas import JobAccepted, PhraseRequest, SilenceParams
 from ..workers import phrases_worker, silence_worker
 from .common import validate_id
@@ -24,7 +25,7 @@ def detect_silence_endpoint(
     if not store.exists(project_id):
         raise HTTPException(status_code=404, detail="project not found")
     job = jobs.submit(
-        "detect_silence",
+        JobKind.detect_silence,
         silence_worker(store, settings, project_id, params),
         project_id=project_id,
     )
@@ -44,7 +45,7 @@ def detect_phrases_endpoint(
         raise HTTPException(status_code=404, detail="project not found")
     # Dedicated single-worker pool: concurrent Whisper on one device OOMs.
     job = jobs.submit(
-        "detect_phrases",
+        JobKind.detect_phrases,
         phrases_worker(store, settings, project_id, request),
         project_id=project_id,
         pool="phrase",

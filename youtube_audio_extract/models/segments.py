@@ -28,9 +28,3 @@ class SilenceSegment(BaseModel):
     def duration(self) -> float:
         return self.end - self.start
 
-    def to_dict(self) -> dict:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "SilenceSegment":
-        return cls.model_validate(data)

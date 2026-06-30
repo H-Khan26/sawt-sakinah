@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, computed_field
+from pydantic import BaseModel, ConfigDict
 
 
 class AudioSource(BaseModel):
@@ -33,14 +33,8 @@ class AudioSource(BaseModel):
     codec: str               # e.g. "mp3", via ffprobe
     content_hash: str        # sha256 of the audio bytes, for caching/dedup
     id: str                  # deterministic short id (url + format + quality)
-    extracted_at: datetime
+    created_at: datetime     # when the audio was extracted (UTC)
     working_copy: Optional[Path] = None  # 16 kHz mono WAV for detection (Phase 3)
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def created_at(self) -> datetime:
-        """Alias for ``extracted_at`` (doc 05 names the field ``created_at``)."""
-        return self.extracted_at
 
     def to_dict(self) -> dict:
         """JSON-safe dict (paths as strings, datetimes as ISO) for cache sidecars."""

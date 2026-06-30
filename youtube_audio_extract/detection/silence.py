@@ -115,7 +115,7 @@ def detect_silence(
             spans.pop()
 
     if merge_gap is not None:
-        spans = _merge_spans(spans, merge_gap)
+        spans = _merge_within_gap(spans, merge_gap)
 
     segments: list[SilenceSegment] = []
     for start, end in spans:
@@ -150,7 +150,7 @@ def _parse_silencedetect(stderr: str) -> list[tuple[float, float | None]]:
     return spans
 
 
-def _merge_spans(
+def _merge_within_gap(
     spans: list[tuple[float, float]], merge_gap: float
 ) -> list[tuple[float, float]]:
     """Merge adjacent spans separated by a gap no larger than ``merge_gap``."""
@@ -167,11 +167,6 @@ def _merge_spans(
 
 
 def _probe_duration(src: Path, ffmpeg_bin: str) -> float:
-    """Return the file duration in seconds via ffprobe (shares the extraction probe)."""
-    from ..extraction.probe import probe
+    from ..extraction.probe import ffprobe_for, probe
 
-    ffprobe_bin = "ffprobe"
-    if ffmpeg_bin not in ("ffmpeg", ""):  # honor a custom ffmpeg dir for ffprobe too
-        candidate = Path(ffmpeg_bin).with_name("ffprobe")
-        ffprobe_bin = str(candidate)
-    return probe(src, ffprobe_bin=ffprobe_bin)["duration_sec"]
+    return probe(src, ffprobe_bin=ffprobe_for(ffmpeg_bin))["duration_sec"]

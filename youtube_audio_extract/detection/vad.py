@@ -94,9 +94,9 @@ def detect_silence_vad(
     silences = _invert_to_silences(speech, total, min_silence_duration)
 
     if merge_gap is not None:
-        from .silence import _merge_spans
+        from .silence import _merge_within_gap
 
-        silences = _merge_spans(silences, merge_gap)
+        silences = _merge_within_gap(silences, merge_gap)
 
     segments: list[SilenceSegment] = []
     for start, end in silences:

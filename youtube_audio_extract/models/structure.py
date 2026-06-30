@@ -36,9 +36,3 @@ class PrayerPosition(BaseModel):
     end: Optional[float] = None
     derived_from: list[str] = Field(default_factory=list)
 
-    def to_dict(self) -> dict:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "PrayerPosition":
-        return cls.model_validate(data)

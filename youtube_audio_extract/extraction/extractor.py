@@ -66,7 +66,7 @@ def _map_download_error(err: Exception, url: str) -> ExtractionError:
         return PrivateVideoError(msg)
     if "age" in low and ("confirm" in low or "restrict" in low or "sign in" in low):
         return AgeRestrictedError(msg)
-    if "your country" in low or "region" in low or "geo" in low and "block" in low:
+    if "your country" in low or "region" in low or ("geo" in low and "block" in low):
         return RegionLockedError(msg)
     if "live event" in low or "is live" in low or "live stream" in low:
         return LiveStreamError(msg)
@@ -192,7 +192,7 @@ def extract_audio(
         codec=meta["codec"],
         content_hash=content_hash(result),
         id=source_id,
-        extracted_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
         working_copy=working_copy,
     )
 

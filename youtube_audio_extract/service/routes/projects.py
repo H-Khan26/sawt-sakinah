@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..deps import get_jobs, get_settings, get_store
+from ..jobs import JobKind
 from ..schemas import (
     CreateProjectRequest,
     CreateProjectResponse,
@@ -35,7 +36,7 @@ def create_project(
     project_id = uuid4().hex
     store.prepare(project_id)
     job = jobs.submit(
-        "extract",
+        JobKind.extract,
         extract_worker(store, settings, project_id, req),
         project_id=project_id,
     )

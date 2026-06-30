@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from ..deps import get_jobs, get_settings, get_store
+from ..jobs import JobKind
 from ..ranges import media_type_for, ranged_file_response
 from ..schemas import ExportRequest, JobAccepted
 from ..workers import export_worker
@@ -27,7 +28,7 @@ def export_endpoint(
     if not store.exists(project_id):
         raise HTTPException(status_code=404, detail="project not found")
     job = jobs.submit(
-        "export",
+        JobKind.export,
         export_worker(store, settings, project_id, req),
         project_id=project_id,
     )

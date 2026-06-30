@@ -1,4 +1,8 @@
-"""Read authoritative audio metadata from a file using ffprobe (ships with FFmpeg)."""
+"""Read authoritative audio metadata from a file using ffprobe (ships with FFmpeg).
+
+Also exposes :func:`ffprobe_for` so callers in other layers can derive the correct
+``ffprobe`` path from a custom ``ffmpeg`` binary without duplicating the logic.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,17 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+
+
+def ffprobe_for(ffmpeg_bin: str) -> str:
+    """Return the ``ffprobe`` path that corresponds to a given ``ffmpeg`` binary.
+
+    For a bare ``"ffmpeg"`` (or empty string), returns ``"ffprobe"``. For a full path
+    (e.g. ``"/usr/local/bin/ffmpeg"``), returns ``"/usr/local/bin/ffprobe"``.
+    """
+    if ffmpeg_bin in ("ffmpeg", ""):
+        return "ffprobe"
+    return str(Path(ffmpeg_bin).with_name("ffprobe"))
 
 
 def probe(input_path: str | Path, ffprobe_bin: str = "ffprobe") -> dict:

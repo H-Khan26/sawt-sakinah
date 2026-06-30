@@ -39,11 +39,18 @@ class JobState(str, Enum):
     failed = "failed"
 
 
+class JobKind(str, Enum):
+    extract = "extract"
+    detect_silence = "detect_silence"
+    detect_phrases = "detect_phrases"
+    export = "export"
+
+
 class JobRecord(BaseModel):
     """The observable state of a submitted job (returned by ``GET /jobs/{id}``)."""
 
     id: str
-    kind: str
+    kind: JobKind
     project_id: Optional[str] = None
     state: JobState = JobState.pending
     progress: Optional[dict] = None
@@ -73,7 +80,7 @@ class JobRegistry:
 
     def submit(
         self,
-        kind: str,
+        kind: JobKind,
         fn: TaskFn,
         *,
         project_id: Optional[str] = None,

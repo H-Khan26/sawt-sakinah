@@ -1,15 +1,8 @@
-"""On-disk cache for extracted audio, keyed by request id and content hash.
+"""On-disk cache for extracted audio, keyed by source id (sha256 of url+format+quality).
 
-Two lookups, both described in docs/audio/01-extraction.md:
-
-  * by **id** (``sha256(url + format + quality)``) -- lets a resubmitted URL skip the
-    download entirely and return the prior :class:`AudioSource`.
-  * by **content_hash** -- dedups identical audio reached via different URLs; primarily
-    useful for caching downstream detection results.
-
-Storage is a small JSON sidecar per source plus a content-hash index. No eviction
-policy yet (clear the directory manually). The cache root is always passed in -- there
-is no hidden global state.
+A resubmitted URL skips the download and returns the prior :class:`AudioSource`. Storage
+is a small JSON sidecar per source. No eviction policy (clear the directory manually).
+The cache root is always passed in -- there is no hidden global state.
 """
 
 from __future__ import annotations
@@ -17,8 +10,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Optional
-
 from ..models.sources import AudioSource
 
 
@@ -32,10 +23,6 @@ def default_cache_dir() -> Path:
 
 def _sources_dir(cache_dir: Path) -> Path:
     return Path(cache_dir) / "sources"
-
-
-def _index_dir(cache_dir: Path) -> Path:
-    return Path(cache_dir) / "by_hash"
 
 
 def _sidecar_path(cache_dir: Path, source_id: str) -> Path:
@@ -64,26 +51,9 @@ def load(cache_dir: str | os.PathLike, source_id: str) -> Optional[AudioSource]:
 
 
 def save(cache_dir: str | os.PathLike, source: AudioSource) -> Path:
-    """Persist ``source`` as a JSON sidecar and update the content-hash index."""
+    """Persist ``source`` as a JSON sidecar."""
     root = Path(cache_dir)
     _sources_dir(root).mkdir(parents=True, exist_ok=True)
-    _index_dir(root).mkdir(parents=True, exist_ok=True)
-
     sidecar = _sidecar_path(root, source.id)
     sidecar.write_text(json.dumps(source.to_dict(), indent=2), encoding="utf-8")
-
-    # content_hash -> id index, for cross-URL dedup / downstream detection caching.
-    (_index_dir(root) / f"{source.content_hash}.txt").write_text(
-        source.id, encoding="utf-8"
-    )
     return sidecar
-
-
-def find_by_content_hash(
-    cache_dir: str | os.PathLike, content_hash: str
-) -> Optional[AudioSource]:
-    """Return a cached source with the given ``content_hash``, or ``None``."""
-    index = _index_dir(Path(cache_dir)) / f"{content_hash}.txt"
-    if not index.exists():
-        return None
-    return load(cache_dir, index.read_text(encoding="utf-8").strip())

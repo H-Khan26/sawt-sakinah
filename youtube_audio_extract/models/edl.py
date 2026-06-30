@@ -53,9 +53,3 @@ class EditDecisionList(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
 
-    def to_dict(self) -> dict:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "EditDecisionList":
-        return cls.model_validate(data)

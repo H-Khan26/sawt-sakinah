@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from ..config import CONFIG
+from ..extraction.probe import ffprobe_for
 from ..models import AudioSource, EditDecisionList, EditOperation
 
 # Small fade (seconds) applied at every internal cut boundary to avoid clicks/pops when
@@ -131,7 +132,7 @@ def _render(
     if not duration or duration <= 0:
         from ..extraction.probe import probe
 
-        duration = probe(src, ffprobe_bin=_ffprobe_for(ffmpeg_bin))["duration_sec"]
+        duration = probe(src, ffprobe_bin=ffprobe_for(ffmpeg_bin))["duration_sec"]
 
     keeps = _resolve_keeps(operations, duration)
     if not keeps:
@@ -185,18 +186,12 @@ def _render(
     return out_path
 
 
-def _ffprobe_for(ffmpeg_bin: str) -> str:
-    if ffmpeg_bin in ("ffmpeg", ""):
-        return "ffprobe"
-    return str(Path(ffmpeg_bin).with_name("ffprobe"))
-
-
 def _span(op: EditOperation, duration: float) -> tuple[float, float]:
     end = op.end if op.end is not None else duration
     return (max(0.0, op.start), min(duration, end))
 
 
-def _merge_spans(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
+def _merge_overlaps(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
     """Merge overlapping/adjacent spans (input need not be sorted)."""
     merged: list[tuple[float, float]] = []
     for a, b in sorted(spans):
@@ -235,11 +230,11 @@ def _resolve_keeps(
     cut_ops = [op for op in operations if op.type == "cut"]
 
     if keep_ops:
-        base = _merge_spans([_span(op, duration) for op in keep_ops])
+        base = _merge_overlaps([_span(op, duration) for op in keep_ops])
     else:
         base = [(0.0, duration)]
 
-    cuts = _merge_spans([_span(op, duration) for op in cut_ops])
+    cuts = _merge_overlaps([_span(op, duration) for op in cut_ops])
     return _subtract(base, cuts)
 
 

@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Dot-env / secrets
+.env
+.env.*
+
+# Local runtime data (projects + cache dirs)
+# The actual paths are under %LOCALAPPDATA% or ~/.local/share by default,
+# but if someone points YAE_PROJECTS_DIR / YAE_CACHE_DIR at a local folder:
+projects/
+cache/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

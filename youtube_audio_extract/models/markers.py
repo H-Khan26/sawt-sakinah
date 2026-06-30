@@ -51,9 +51,3 @@ class Marker(BaseModel):
     def duration(self) -> Optional[float]:
         return None if self.end is None else self.end - self.time
 
-    def to_dict(self) -> dict:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "Marker":
-        return cls.model_validate(data)
