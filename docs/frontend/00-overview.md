@@ -19,25 +19,32 @@ The frontend is a **view + control surface** over the audio engine. All heavy li
 structured data and posts user decisions back. See [../audio/](../audio/) for the engine
 and [../audio/05-data-model-and-api.md](../audio/05-data-model-and-api.md) for the API.
 
-## Stack — match `the base theme`
+## Stack
 
-The frontend must visually and technically align with `C:\Users\user\the base theme`:
+Borrow `the base theme`'s **aesthetic** (palette, type, spacing, shape) but not its tech
+stack — that is purely CSS and is portable to any web frontend. The app is a **locally
+run interactive editor** over a Python audio engine, which drives these choices:
 
-- **Framework:** Solid JS (`solid-js`, `@solidjs/router`) + **TypeScript**.
-- **Build:** Vite. **Desktop shell:** Tauri 2.x (optional for v1; the app can run as a
-  plain web app first and adopt Tauri later — confirm with the user).
+- **Framework:** React 18 + **TypeScript**.
+- **Build:** Vite. The frontend builds to static assets.
+- **Shell:** the built SPA is **served by the Python backend (FastAPI)** and opened in a
+  **pywebview** native window. Develop against `localhost` in a browser first (fastest
+  loop, identical app); point pywebview at the same URL when a real app window is wanted.
+  No Tauri, no Electron, no Node runtime at runtime — one Python process serves everything.
+- **Routing:** React Router.
 - **Styling:** Tailwind CSS 3 + **CSS custom properties** for all design tokens
   (`src/index.css`). Utility-first classes plus component classes (`.btn-*`, `.card-*`).
-- **Data layer:** `@tanstack/solid-query` for async fetching, caching, and job polling.
+- **Data layer:** `@tanstack/react-query` for async fetching, caching, and job polling.
 - **Components:** a **custom UI library** in `src/components/ui/` (no shadcn/Radix/MUI).
-  Reuse the base theme's component patterns and, where practical, port its `Button`, `Card`,
-  `Input`, `Modal`, `Badge`, `Progress`, `Slider`, `Tooltip`, `LoadingSpinner`.
+  Rebuild the primitives — `Button`, `Card`, `Input`, `Modal`, `Badge`, `Progress`,
+  `Slider`, `Tooltip`, `LoadingSpinner` — in React, styled to the base theme's tokens.
 - **Lint/format:** Biome (as in the base theme).
 
 > Recommendation for the implementing agent: copy the base theme's `index.css`,
-> `tailwind.config.js`, the `/public/fonts/` assets, and the `src/components/ui/`
-> primitives as the starting shell, then build the waveform editor on top. This
-> guarantees theme parity instead of re-deriving it.
+> `tailwind.config.js`, and the `/public/fonts/` assets to lock in theme parity, then
+> rebuild the UI primitives in React and build the waveform editor on top. Component
+> code does not port from Solid, but the design tokens and Tailwind config do — copy
+> those verbatim rather than re-deriving them.
 
 ## Design tokens to inherit (from the base theme)
 

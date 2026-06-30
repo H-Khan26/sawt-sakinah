@@ -1,7 +1,7 @@
 # Waveform & Playback
 
 > Status: planning / library-selection needed. The waveform is the net-new, central
-> component. This doc frames requirements and candidate libraries for Solid JS.
+> component. This doc frames requirements and candidate libraries for React.
 
 ## Goal
 
@@ -22,11 +22,12 @@ markers are drawn onto. Press-and-play must feel immediate.
 - Performance on long recordings (a full prayer can be many minutes): prefer
   precomputed peak data over decoding the entire file in the browser.
 
-## Candidate libraries (framework-agnostic; usable from Solid)
+## Candidate libraries (framework-agnostic; usable from React)
 
 1. **wavesurfer.js v7** *(recommended starting point)*
-   - Vanilla-JS, framework-agnostic — wrap in a Solid component (`onMount` to init,
-     `onCleanup` to destroy; store the instance in a signal/ref).
+   - Vanilla-JS, framework-agnostic — wrap in a React component (init in a `useEffect`,
+     destroy in its cleanup; store the instance in a `useRef`, never in state). A
+     `@wavesurfer/react` hook also exists if you prefer it over a hand-rolled wrapper.
    - First-class **Regions** plugin (silence highlights, draggable/selectable) and
      **Markers/Timeline** support — maps directly onto our silence regions and takbir
      markers. Exposes play/pause/seek/zoom and time events.
@@ -41,17 +42,19 @@ markers are drawn onto. Press-and-play must feel immediate.
      interaction model. Most work; only if needed.
 
 > Evaluate wavesurfer.js v7 first — its Regions + Markers plugins cover both of our
-> overlay needs out of the box and it integrates cleanly with Solid's lifecycle.
+> overlay needs out of the box and it integrates cleanly with React's lifecycle.
 
-## Solid integration notes
+## React integration notes
 
-- Wrap the library instance in a component; keep the instance out of reactive state
-  (use a plain ref/variable) and expose imperative controls via a small store.
+- Wrap the library instance in a component; keep the instance in a `useRef` (never in
+  React state) and expose imperative controls via a small store/context.
 - Drive UI (play button state, current time) from the library's event callbacks into
-  Solid signals.
-- Feed regions/markers **declaratively from app state**: when the silence list or
-  marker list changes, reconcile the library's regions/markers. Treat app state as the
-  source of truth, the waveform as a projection of it.
+  React state. **Isolate the high-frequency current-time/playhead value** in its own
+  state or store slice so per-frame updates don't re-render the whole editor tree —
+  subscribe only the transport readout and the active-position indicator to it.
+- Reconcile regions/markers in a `useEffect` keyed on the silence/marker lists: when a
+  list changes, diff against the library's current regions/markers and add/remove/update.
+  Treat app state as the source of truth, the waveform as a projection of it.
 
 ## Audio source & peaks
 

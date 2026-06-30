@@ -1,21 +1,24 @@
 # State & API Integration
 
 > Status: planning. How the frontend holds state and talks to the audio engine's API.
-> Follows the base theme's data conventions (TanStack Solid Query, Solid stores).
+> Uses TanStack React Query for server state and React state/stores for local state.
 
 ## Goal
 
 A predictable data layer: server data fetched/cached via query, local editor state in
-Solid stores, long-running backend work handled as jobs with progress — all typed
+React state/stores, long-running backend work handled as jobs with progress — all typed
 against the engine's contracts.
 
 ## Data sources, split cleanly
 
 - **Server state** (owned by backend, fetched): `Project`, `AudioSource`,
   `SilenceSegment[]`, `Marker[]`, `PrayerPosition[]`, job status. Use
-  `@tanstack/solid-query` (as the base theme does) for fetching, caching, and refetch.
+  `@tanstack/react-query` for fetching, caching, and refetch.
 - **Local editor state** (owned by UI, ephemeral until saved): current selection,
-  playhead, zoom, in-progress EDL, panel/tab state. Use Solid stores/signals.
+  playhead, zoom, in-progress EDL, panel/tab state. Use React state, or a small store
+  (Context + reducer, or Zustand) for state shared across panels. Keep the
+  high-frequency playhead/current-time value in its own slice so it doesn't re-render
+  unrelated UI (see [02-waveform-and-playback.md](02-waveform-and-playback.md)).
 - **Source of truth rule:** the waveform's regions/markers are a **projection of app
   state**, not their own state. Edits update state → state reconciles the waveform.
 
@@ -41,7 +44,7 @@ All times are **seconds (float)** — no unit conversion across the boundary.
 
 Extraction, detection, and export are jobs, not instant responses:
 
-- Kick off → receive `job_id` → **poll `GET /jobs/{id}`** with Solid Query
+- Kick off → receive `job_id` → **poll `GET /jobs/{id}`** with React Query
   `refetchInterval` until `state` is done/failed (or use WebSocket/SSE if the backend
   offers it). Drive `Progress` UI from the job's `progress` field.
 - On completion, invalidate/refetch the affected project query so the waveform, silence
@@ -64,7 +67,7 @@ detection:  { silenceParams, phraseParams }
 ui:         { activePanel, modals }
 ```
 
-Server data (project, silences, markers, jobs) stays in Solid Query caches, not these
+Server data (project, silences, markers, jobs) stays in React Query caches, not these
 stores — avoid duplicating server state into local stores (a common source of drift).
 
 ## Error handling

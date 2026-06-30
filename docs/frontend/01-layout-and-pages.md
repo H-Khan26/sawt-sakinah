@@ -23,7 +23,7 @@ shadows. Background `--color-background` (#fcfbf8); panels on `--color-backgroun
 
 ## Routes / views
 
-Keep it to a few `@solidjs/router` routes:
+Keep it to a few React Router routes:
 
 ```
 /                       Landing: link input (and recent projects if persistence exists)
@@ -67,11 +67,13 @@ A three-region layout. Suggested arrangement:
   **analyzing** (waveform shown, detection running with a subtle loading state),
   **ready** (interactive), **exporting** (progress + result).
 
-## Components to port from the base theme
+## Components to build (styled to the base theme tokens)
 
 `Button`, `Card`, `Input`, `Modal`/`SimpleModal`, `Badge`, `Progress`, `Slider`,
-`Tooltip`, `LoadingSpinner`, `Tabs`, `Toast`, `EmptyState`. The waveform, transport,
-silence panel, and markers panel are **new** components (see the other docs).
+`Tooltip`, `LoadingSpinner`, `Tabs`, `Toast`, `EmptyState` — rebuilt in React against
+the base theme's design tokens (use the base theme's versions as a visual reference, not a port).
+The waveform, transport, silence panel, and markers panel are **new** components (see
+the other docs).
 
 ## Empty / error states
 
