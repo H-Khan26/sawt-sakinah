@@ -72,10 +72,10 @@ class JobRegistry:
         self._jobs: dict[str, JobRecord] = {}
         self._lock = threading.Lock()
         self._pool = ThreadPoolExecutor(
-            max_workers=max_workers, thread_name_prefix="yae-job"
+            max_workers=max_workers, thread_name_prefix="sawt-job"
         )
         self._phrase_pool = ThreadPoolExecutor(
-            max_workers=phrase_workers, thread_name_prefix="yae-phrase"
+            max_workers=phrase_workers, thread_name_prefix="sawt-phrase"
         )
 
     def submit(

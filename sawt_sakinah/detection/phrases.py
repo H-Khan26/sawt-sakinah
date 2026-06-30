@@ -13,7 +13,7 @@ coarse (~+-0.5 s) but adequate as a first pass; sharper, reciter-specific onsets
 later job for the query-by-example backend (``detector="embeddings"``, not yet built).
 
 The model dependencies (``faster-whisper`` + ``rapidfuzz``) are optional; install them
-with the project's ``phrases`` extra (see requirements-phrases.txt). They are imported
+with the project's ``phrases`` extra (``pip install -e ".[phrases]"``). They are imported
 lazily so the rest of the package never needs them.
 """
 
@@ -50,7 +50,7 @@ def _get_model(model_size: str, device: str, compute_type: str):
         except ImportError as err:  # pragma: no cover - exercised only without the extra
             raise RuntimeError(
                 "Phrase detection requires the optional 'phrases' extra "
-                "(pip install -r requirements-phrases.txt: faster-whisper + rapidfuzz)."
+                '(pip install -e ".[phrases]": faster-whisper + rapidfuzz).'
             ) from err
         model = WhisperModel(model_size, device=device, compute_type=compute_type)
         _MODEL_CACHE[key] = model

@@ -1,8 +1,0 @@
-# Optional dependencies for the phrase detector (detection/phrases.py, detector="whisper").
-# Install alongside requirements.txt:  pip install -r requirements-phrases.txt
-#
-# faster-whisper runs Whisper through CTranslate2 (ctranslate2 ships as its dependency),
-# so torch is not required for this backend. rapidfuzz powers the diacritic-insensitive
-# phrase matching against the transcript.
-faster-whisper>=1.0
-rapidfuzz>=3.0

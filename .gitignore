@@ -21,7 +21,7 @@ env/
 
 # Local runtime data (projects + cache dirs)
 # The actual paths are under %LOCALAPPDATA% or ~/.local/share by default,
-# but if someone points YAE_PROJECTS_DIR / YAE_CACHE_DIR at a local folder:
+# but if someone points SAWT_PROJECTS_DIR / SAWT_CACHE_DIR at a local folder:
 projects/
 cache/
 

@@ -9,9 +9,9 @@
 # with the code. Nullable knobs (e.g. ``merge_gap``) are written explicitly as
 # ``null`` so even "no value" is set in one visible place.
 #
-# Deployments may point YAE_CONFIG_FILE at an alternate copy of this file to swap
+# Deployments may point SAWT_CONFIG_FILE at an alternate copy of this file to swap
 # the whole set of defaults; service-only operational settings additionally accept
-# YAE_* environment overrides (see service/settings.py).
+# SAWT_* environment overrides (see service/settings.py).
 
 # ffmpeg/ffprobe executable used by every subprocess call.
 ffmpeg:
@@ -67,7 +67,7 @@ editing:
   embed_markers: true          # embed marker ops as chapters on export
   embed_metadata: true         # refresh title/source-url metadata on export
 
-# FastAPI service operational defaults. These additionally accept YAE_* env overrides.
+# FastAPI service operational defaults. These additionally accept SAWT_* env overrides.
 service:
   max_workers: 4               # general job pool threads (extraction/silence/export)
   phrase_workers: 1            # dedicated Whisper pool threads (keep 1 unless device allows)

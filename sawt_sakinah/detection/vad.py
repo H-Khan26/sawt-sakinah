@@ -8,7 +8,7 @@ Boundary: like all of ``detection/`` this is read-only. Audio is decoded into me
 via ffmpeg (16 kHz mono PCM) -- no file is written and the input is never mutated.
 
 The model dependencies (``onnxruntime`` + ``silero-vad``) are optional; install them
-with the project's ``vad`` extra (see requirements-vad.txt). They are imported lazily
+with the project's ``vad`` extra (``pip install -e ".[vad]"``). They are imported lazily
 so the baseline ffmpeg path never needs them.
 """
 
@@ -69,7 +69,7 @@ def detect_silence_vad(
     except ImportError as err:  # pragma: no cover - exercised only without the extra
         raise ImportError(
             "VAD detection requires the optional 'vad' extra "
-            "(pip install -r requirements-vad.txt: onnxruntime + silero-vad)."
+            '(pip install -e ".[vad]": onnxruntime + silero-vad).'
         ) from err
 
     src = Path(input_path)

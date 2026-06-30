@@ -1,5 +1,0 @@
-yt-dlp>=2026.6.9
-pydantic>=2
-PyYAML>=6
-
-# Optional: VAD silence detector (detector="vad") -- see requirements-vad.txt

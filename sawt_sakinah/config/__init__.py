@@ -16,8 +16,8 @@ The schema below is strict on purpose:
 
 Together these guarantee the YAML and the code can never drift apart.
 
-Override the whole file for a deployment by pointing ``YAE_CONFIG_FILE`` at an
-alternate copy. Service-only operational settings additionally accept ``YAE_*``
+Override the whole file for a deployment by pointing ``SAWT_CONFIG_FILE`` at an
+alternate copy. Service-only operational settings additionally accept ``SAWT_*``
 environment overrides layered on top of :data:`CONFIG` (see service/settings.py).
 """
 
@@ -32,7 +32,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict
 
 _DEFAULTS_PATH = Path(__file__).with_name("defaults.yaml")
-_ENV_PATH_VAR = "YAE_CONFIG_FILE"
+_ENV_PATH_VAR = "SAWT_CONFIG_FILE"
 
 
 class _Section(BaseModel):
@@ -112,7 +112,7 @@ class Config(_Section):
 
 
 def config_path() -> Path:
-    """Path the config is loaded from (``YAE_CONFIG_FILE`` override, else the bundled file)."""
+    """Path the config is loaded from (``SAWT_CONFIG_FILE`` override, else the bundled file)."""
     override = os.environ.get(_ENV_PATH_VAR)
     return Path(override) if override else _DEFAULTS_PATH
 

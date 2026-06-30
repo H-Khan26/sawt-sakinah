@@ -12,6 +12,31 @@ At a high level, the app is designed to:
 
 The architectural rule across the repo is: **detection returns data, editing produces files**. That separation is what supports the planned interactive frontend.
 
+## Quickstart
+
+`make` is the primary way to install and run the app. It requires [FFmpeg](https://ffmpeg.org/) on your `PATH` (a standalone binary, not a pip package) and GNU make (on Windows: `choco install make`, or run the targets from Git Bash / WSL).
+
+```sh
+make requirements   # install the package + service deps (editable)
+make serve          # run the FastAPI service at http://127.0.0.1:8000
+```
+
+Optional analysis backends are separate extras (large downloads):
+
+```sh
+make requirements-phrases   # Whisper takbir/phrase detection
+make requirements-vad       # Silero VAD silence detection (pulls torch)
+make requirements-all        # everything
+```
+
+`make help` lists every target. For a quick one-shot with no server:
+
+```sh
+python -m sawt_sakinah extract "https://www.youtube.com/watch?v=..."
+```
+
+Operational settings (storage dirs, worker counts, ffmpeg path) accept `SAWT_*` environment variables or a `.env` file; all tuning knobs live in `sawt_sakinah/config/defaults.yaml`.
+
 ## Current Repo Shape
 
 Today this repository is primarily a Python backend/audio-engine project, with frontend architecture docs alongside it.
@@ -45,31 +70,27 @@ The prayer-specific focus matters here: this is not a generic audio trimmer. The
 - **Pydantic 2**: typed models and contracts
 - **PyYAML**: config loading
 
-Base install lives in `requirements.txt`.
+These are the base install (`pip install -e .`, or `make requirements` which also adds the service stack).
 
-### Optional service stack
+### Optional service stack — `.[service]`
 
 - **FastAPI**
 - **Uvicorn**
 - **pydantic-settings**
 - **NumPy** for waveform peak generation
 
-These live in `requirements-service.txt`.
-
-### Optional phrase-detection stack
+### Optional phrase-detection stack — `.[phrases]`
 
 - **faster-whisper** for Arabic ASR with word timestamps
 - **RapidFuzz** for normalized phrase matching against the transcript
 
-These live in `requirements-phrases.txt`.
-
-### Optional VAD stack
+### Optional VAD stack — `.[vad]`
 
 - **Silero VAD**
 - **ONNX Runtime**
 - **torch / torchaudio** as pinned transitive support for the Silero package
 
-These live in `requirements-vad.txt`.
+All dependencies and these optional extras are declared in `pyproject.toml`; install them via the matching `make requirements-*` target.
 
 ## Models Underpinning It
 

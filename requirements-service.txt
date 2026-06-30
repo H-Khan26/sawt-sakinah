@@ -1,9 +1,0 @@
-# Optional dependencies for the FastAPI service (sawt_sakinah.service).
-# Install alongside requirements.txt:  pip install -r requirements-service.txt
-#
-# The service package is imported only when running the server, so the core library
-# (import sawt_sakinah) never needs these. numpy backs the waveform peaks.
-fastapi>=0.110
-uvicorn[standard]>=0.27
-pydantic-settings>=2
-numpy>=1.24

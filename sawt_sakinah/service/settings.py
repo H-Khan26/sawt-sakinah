@@ -1,4 +1,4 @@
-"""Service configuration via environment variables (``YAE_*``) or a ``.env`` file."""
+"""Service configuration via environment variables (``SAWT_*``) or a ``.env`` file."""
 
 from __future__ import annotations
 
@@ -25,11 +25,11 @@ class ServiceSettings(BaseSettings):
         ffmpeg_bin: Name/path of the ffmpeg executable.
     """
 
-    model_config = SettingsConfigDict(env_prefix="YAE_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="SAWT_", env_file=".env", extra="ignore")
 
     projects_dir: Path = Field(default_factory=default_projects_dir)
     cache_dir: Path = Field(default_factory=default_cache_dir)
-    # Base defaults come from the single config file; YAE_* env vars override them.
+    # Base defaults come from the single config file; SAWT_* env vars override them.
     max_workers: int = CONFIG.service.max_workers
     phrase_workers: int = CONFIG.service.phrase_workers
     ffmpeg_bin: str = CONFIG.ffmpeg.bin
