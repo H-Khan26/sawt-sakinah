@@ -19,6 +19,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from ..config import CONFIG
 from ..models import (
     EditDecisionList,
     EditOperation,
@@ -34,8 +35,8 @@ from ..models import (
 
 class CreateProjectRequest(BaseModel):
     url: str
-    audio_format: str = "mp3"
-    audio_quality: str = "0"
+    audio_format: str = CONFIG.extraction.audio_format
+    audio_quality: str = CONFIG.extraction.audio_quality
 
 
 class CreateProjectResponse(BaseModel):
@@ -50,26 +51,26 @@ class JobAccepted(BaseModel):
 class SilenceParams(BaseModel):
     """Inputs for ``POST /detect/silence`` (mapped to ``detect_silence`` kwargs)."""
 
-    threshold_db: float = -40.0
-    min_silence_duration: float = 1.0
-    merge_gap: Optional[float] = None
-    measure_loudness: bool = True
-    detector: str = "ffmpeg"
-    speech_threshold: float = 0.5
+    threshold_db: float = CONFIG.silence.threshold_db
+    min_silence_duration: float = CONFIG.silence.min_silence_duration
+    merge_gap: Optional[float] = CONFIG.silence.merge_gap
+    measure_loudness: bool = CONFIG.silence.measure_loudness
+    detector: str = CONFIG.silence.detector
+    speech_threshold: float = CONFIG.silence.speech_threshold
 
 
 class PhraseParams(BaseModel):
     """Inputs for ``POST /detect/phrases`` (mapped to ``detect_phrases`` kwargs)."""
 
     phrases: Optional[list[str]] = None
-    model_size: str = "large-v3"
-    device: str = "cpu"
-    compute_type: str = "int8"
-    language: str = "ar"
-    min_confidence: float = 0.4
-    min_gap_between_markers: float = 1.0
-    max_word_gap: float = 1.0
-    vad_filter: bool = True
+    model_size: str = CONFIG.phrases.model_size
+    device: str = CONFIG.phrases.device
+    compute_type: str = CONFIG.phrases.compute_type
+    language: str = CONFIG.phrases.language
+    min_confidence: float = CONFIG.phrases.min_confidence
+    min_gap_between_markers: float = CONFIG.phrases.min_gap_between_markers
+    max_word_gap: float = CONFIG.phrases.max_word_gap
+    vad_filter: bool = CONFIG.phrases.vad_filter
 
 
 class PhraseRequest(BaseModel):
@@ -82,9 +83,9 @@ class EdlUpdate(BaseModel):
 
 
 class ExportRequest(BaseModel):
-    format: str = "mp3"
+    format: str = CONFIG.editing.out_format
     bitrate: Optional[str] = None
-    embed_markers: bool = True
+    embed_markers: bool = CONFIG.editing.embed_markers
 
 
 # --- wire-facing views (paths stripped) --------------------------------------

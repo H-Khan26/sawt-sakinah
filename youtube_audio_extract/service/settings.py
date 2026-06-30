@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ..config import CONFIG
 from ..extraction.cache import default_cache_dir
 from .projects import default_projects_dir
 
@@ -28,6 +29,7 @@ class ServiceSettings(BaseSettings):
 
     projects_dir: Path = Field(default_factory=default_projects_dir)
     cache_dir: Path = Field(default_factory=default_cache_dir)
-    max_workers: int = 4
-    phrase_workers: int = 1
-    ffmpeg_bin: str = "ffmpeg"
+    # Base defaults come from the single config file; YAE_* env vars override them.
+    max_workers: int = CONFIG.service.max_workers
+    phrase_workers: int = CONFIG.service.phrase_workers
+    ffmpeg_bin: str = CONFIG.ffmpeg.bin

@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+from ..config import CONFIG
 from ..detection._pcm import SAMPLE_RATE, decode_pcm
 
 WAVEFORM_VERSION = 1
@@ -17,8 +18,8 @@ WAVEFORM_VERSION = 1
 
 def compute_peaks(
     path: str | Path,
-    buckets: int = 2000,
-    ffmpeg_bin: str = "ffmpeg",
+    buckets: int = CONFIG.service.waveform_buckets,
+    ffmpeg_bin: str = CONFIG.ffmpeg.bin,
 ) -> dict:
     """Return ``{version, sample_rate, buckets, duration_sec, min[], max[]}`` for ``path``.
 

@@ -22,6 +22,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from ..config import CONFIG
+
 # A task body receives a progress callback and returns an optional JSON-able result dict.
 TaskFn = Callable[[Callable[[dict], None]], Optional[dict]]
 
@@ -55,7 +57,11 @@ class JobRecord(BaseModel):
 class JobRegistry:
     """Submit task bodies to thread pools and track their state/progress."""
 
-    def __init__(self, max_workers: int = 4, phrase_workers: int = 1) -> None:
+    def __init__(
+        self,
+        max_workers: int = CONFIG.service.max_workers,
+        phrase_workers: int = CONFIG.service.phrase_workers,
+    ) -> None:
         self._jobs: dict[str, JobRecord] = {}
         self._lock = threading.Lock()
         self._pool = ThreadPoolExecutor(

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..config import CONFIG
 from ..models import Marker
 from ._arabic import PHRASE_REGISTRY, PhraseSpec, normalize_arabic
 
@@ -28,11 +29,11 @@ from ._arabic import PHRASE_REGISTRY, PhraseSpec, normalize_arabic
 # Loading large-v3 is expensive; detect_phrases stays read-only otherwise.
 _MODEL_CACHE: dict[tuple[str, str, str], object] = {}
 
-# Confidence blend and gating thresholds (0..100 for RapidFuzz scores). Tuned on real
-# clips during prototyping; exposed indirectly through min_confidence.
-_KEYWORD_GATE = 78.0          # each required keyword must partial-match at least this
-_FUZZY_FLOOR = 60.0           # whole-phrase token_sort_ratio floor before scoring
-_FUZZY_WEIGHT = 0.6           # confidence = _FUZZY_WEIGHT*fuzzy + (1-_FUZZY_WEIGHT)*prob
+# Confidence blend and gating thresholds (0..100 for RapidFuzz scores), sourced from the
+# single config file; exposed indirectly through min_confidence.
+_KEYWORD_GATE = CONFIG.phrases.keyword_gate  # each required keyword must partial-match this
+_FUZZY_FLOOR = CONFIG.phrases.fuzzy_floor    # whole-phrase token_sort_ratio floor
+_FUZZY_WEIGHT = CONFIG.phrases.fuzzy_weight  # confidence = _FUZZY_WEIGHT*fuzzy + (1-w)*prob
 
 
 def _default_initial_prompt() -> str:
@@ -168,16 +169,16 @@ def detect_phrases(
     *,
     phrases: list[str] | None = None,
     references: dict | None = None,
-    detector: str = "whisper",
-    model_size: str = "large-v3",
-    device: str = "cpu",
-    compute_type: str = "int8",
-    language: str = "ar",
+    detector: str = CONFIG.phrases.detector,
+    model_size: str = CONFIG.phrases.model_size,
+    device: str = CONFIG.phrases.device,
+    compute_type: str = CONFIG.phrases.compute_type,
+    language: str = CONFIG.phrases.language,
     initial_prompt: str | None = None,
-    min_confidence: float = 0.4,
-    min_gap_between_markers: float = 1.0,
-    max_word_gap: float = 1.0,
-    vad_filter: bool = True,
+    min_confidence: float = CONFIG.phrases.min_confidence,
+    min_gap_between_markers: float = CONFIG.phrases.min_gap_between_markers,
+    max_word_gap: float = CONFIG.phrases.max_word_gap,
+    vad_filter: bool = CONFIG.phrases.vad_filter,
 ) -> list[Marker]:
     """Detect known spoken phrases in ``input_path`` and return timestamped markers.
 

@@ -11,15 +11,17 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ..config import CONFIG
+
 # Sample rate that both energy thresholds and Silero/WebRTC VAD expect.
-WORKING_SAMPLE_RATE = 16000
+WORKING_SAMPLE_RATE = CONFIG.audio.working_sample_rate
 
 
 def make_working_copy(
     input_path: str | Path,
     output_path: str | Path | None = None,
-    normalize_loudness: bool = False,
-    ffmpeg_bin: str = "ffmpeg",
+    normalize_loudness: bool = CONFIG.extraction.normalize_loudness,
+    ffmpeg_bin: str = CONFIG.ffmpeg.bin,
     overwrite: bool = True,
 ) -> Path:
     """Write a 16 kHz mono PCM WAV copy of ``input_path`` and return its path.

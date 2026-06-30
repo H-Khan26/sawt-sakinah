@@ -13,6 +13,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ..config import CONFIG
 from ..models import SilenceSegment
 from .loudness import measure_mean_db
 
@@ -22,14 +23,15 @@ _END_RE = re.compile(r"silence_end:\s*(-?\d+(?:\.\d+)?)")
 
 def detect_silence(
     input_path: str | Path,
-    threshold_db: float = -40.0,
-    min_silence_duration: float = 1.0,
-    ffmpeg_bin: str = "ffmpeg",
+    threshold_db: float = CONFIG.silence.threshold_db,
+    min_silence_duration: float = CONFIG.silence.min_silence_duration,
+    ffmpeg_bin: str = CONFIG.ffmpeg.bin,
     *,
-    merge_gap: float | None = None,
-    measure_loudness: bool = True,
+    merge_gap: float | None = CONFIG.silence.merge_gap,
+    measure_loudness: bool = CONFIG.silence.measure_loudness,
     total_duration: float | None = None,
-    detector: str = "ffmpeg",
+    detector: str = CONFIG.silence.detector,
+    speech_threshold: float = CONFIG.silence.speech_threshold,
 ) -> list[SilenceSegment]:
     """Return the silent regions in ``input_path`` as structured segments.
 
@@ -48,8 +50,11 @@ def detect_silence(
             ``volumedetect`` pass over the region. Disable to skip the extra passes.
         total_duration: File duration in seconds, used to close a silence that runs to
             EOF. Probed via ffprobe when needed and not supplied.
-        detector: Detection backend. Only ``"ffmpeg"`` (silencedetect) is implemented;
-            ``"vad"`` is reserved for the VAD upgrade.
+        detector: Detection backend. ``"ffmpeg"`` (silencedetect energy gate, default)
+            or ``"vad"`` (Silero voice-activity detection; requires the optional 'vad'
+            extra). The VAD path better separates quiet dhikr / noise from recitation.
+        speech_threshold: Speech-probability threshold for the ``"vad"`` detector;
+            ignored by the ffmpeg path.
 
     Returns:
         List of ``SilenceSegment`` ordered by start time.
@@ -58,10 +63,22 @@ def detect_silence(
         FileNotFoundError: If ffmpeg or the input file is missing.
         RuntimeError: If FFmpeg exits with an error.
         ValueError: If an unsupported ``detector`` is requested.
+        ImportError: If ``detector="vad"`` and the optional VAD deps are missing.
     """
+    if detector == "vad":
+        from .vad import detect_silence_vad
+
+        return detect_silence_vad(
+            input_path,
+            speech_threshold=speech_threshold,
+            min_silence_duration=min_silence_duration,
+            merge_gap=merge_gap,
+            measure_loudness=measure_loudness,
+            ffmpeg_bin=ffmpeg_bin,
+        )
     if detector != "ffmpeg":
         raise ValueError(
-            f"Unsupported detector {detector!r}; only 'ffmpeg' is available."
+            f"Unsupported detector {detector!r}; use 'ffmpeg' or 'vad'."
         )
 
     src = Path(input_path)

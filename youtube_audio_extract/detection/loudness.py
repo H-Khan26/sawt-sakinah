@@ -11,6 +11,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from ..config import CONFIG
+
 _MEAN_VOL_RE = re.compile(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB")
 
 
@@ -18,7 +20,7 @@ def measure_mean_db(
     input_path: str | Path,
     start: float,
     end: float,
-    ffmpeg_bin: str = "ffmpeg",
+    ffmpeg_bin: str = CONFIG.ffmpeg.bin,
 ) -> float | None:
     """Return the mean loudness (dB) of ``input_path`` over ``[start, end)``.
 

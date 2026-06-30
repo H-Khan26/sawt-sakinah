@@ -15,7 +15,9 @@ from typing import Iterator, Optional
 from fastapi import Response
 from fastapi.responses import FileResponse, StreamingResponse
 
-CHUNK_SIZE = 64 * 1024
+from ..config import CONFIG
+
+CHUNK_SIZE = CONFIG.service.stream_chunk_size
 
 _AUDIO_TYPES = {
     ".mp3": "audio/mpeg",

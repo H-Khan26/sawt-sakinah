@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from .config import CONFIG
 from .extraction import extract_audio
 from .editing import remove_silence
 
@@ -13,13 +14,13 @@ def youtube_to_clean_audio(
     url: str,
     output_dir: str | os.PathLike = ".",
     filename: str | None = None,
-    audio_format: str = "mp3",
-    audio_quality: str = "0",
-    threshold_db: float = -40.0,
-    min_silence_duration: float = 1.0,
-    keep_silence: float = 0.0,
+    audio_format: str = CONFIG.extraction.audio_format,
+    audio_quality: str = CONFIG.extraction.audio_quality,
+    threshold_db: float = CONFIG.silence.threshold_db,
+    min_silence_duration: float = CONFIG.silence.min_silence_duration,
+    keep_silence: float = CONFIG.silence.keep_silence,
     keep_intermediate: bool = False,
-    quiet: bool = True,
+    quiet: bool = CONFIG.extraction.quiet,
 ) -> Path:
     """Extract audio from ``url`` and remove silent segments in one call.
 
