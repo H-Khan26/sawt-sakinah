@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Fonts. Self-hosted under /public/fonts (the static-served / pywebview build
+ * has a CSP that forbids CDN fetches). Drop the files named in
+ * public/fonts/README.md in place; until then the fallbacks in the
+ * tailwind.config fontFamily stacks render.
+ * ------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Ibarra Real Nova";
+  src: url("/fonts/IbarraRealNova-Regular.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Futura";
+  src: url("/fonts/Futura-Regular.woff2") format("woff2");
+  font-weight: 400 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Amiri";
+  src: url("/fonts/Amiri-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Amiri";
+  src: url("/fonts/Amiri-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/fonts/IBMPlexSansArabic-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/fonts/IBMPlexSansArabic-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------------------------------------------------------------------------
+ * Design tokens. Inherited from the base theme (light mode, warm cream surfaces,
+ * slate text) EXCEPT the accent, which is remapped from burgundy to purple:
+ * primary #450377, hover #38025f, accent #9667ba.
+ * ------------------------------------------------------------------------- */
+:root {
+  /* Surfaces */
+  --color-background: #fcfbf8;
+  --color-background-secondary: #f4f3ef;
+  --color-background-tertiary: #ecebe6;
+
+  /* Text */
+  --color-text: #334155;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #64748b;
+
+  /* Accent (purple remap) */
+  --color-accent: #450377;
+  --color-accent-hover: #38025f;
+  --color-accent-secondary: #9667ba;
+  --color-accent-soft: rgba(69, 3, 119, 0.1);
+
+  /* Borders */
+  --color-border: #e0e0e0;
+  --color-border-focus: #450377;
+
+  /* Semantic */
+  --color-error: #ef4444;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+
+  /* Glass */
+  --color-glass: rgba(255, 255, 255, 0.85);
+  --blur-glass: 20px;
+
+  /* Waveform palette (derived from the tokens above) */
+  --waveform-played: var(--color-accent);
+  --waveform-unplayed: #cbd5e1;
+  --waveform-cursor: var(--color-accent);
+  --silence-fill: rgba(150, 103, 186, 0.18);
+  --silence-fill-selected: rgba(150, 103, 186, 0.38);
+  --silence-bar-selected: var(--color-accent);
+  --marker-line: var(--color-accent);
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 6px rgba(15, 23, 42, 0.07), 0 2px 4px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 10px 15px rgba(15, 23, 42, 0.08), 0 4px 6px rgba(15, 23, 42, 0.04);
+  --shadow-xl: 0 20px 25px rgba(15, 23, 42, 0.08), 0 8px 10px rgba(15, 23, 42, 0.03);
+  --shadow-2xl: 0 25px 50px rgba(15, 23, 42, 0.12);
+
+  /* Motion */
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-family: "Futura", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  .font-heading {
+    font-family: "Ibarra Real Nova", Georgia, serif;
+  }
+
+  /* Arabic text spans should set dir="rtl"; this just selects the right face. */
+  :lang(ar) {
+    font-family: "IBM Plex Sans Arabic", "Noto Naskh Arabic", sans-serif;
+  }
+}

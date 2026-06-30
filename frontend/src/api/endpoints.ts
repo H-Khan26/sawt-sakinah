@@ -1,0 +1,54 @@
+/** Typed wrappers over the backend HTTP surface. One function per endpoint. */
+import type {
+  CreateProjectRequest,
+  CreateProjectResponse,
+  EditDecisionList,
+  EditOperation,
+  ExportRequest,
+  JobAccepted,
+  JobRecord,
+  PhraseRequest,
+  ProjectView,
+  SilenceParams,
+  WaveformPeaks,
+} from "@/types/api";
+import { request } from "./client";
+
+export const createProject = (body: CreateProjectRequest) =>
+  request<CreateProjectResponse>("/projects", { method: "POST", body });
+
+export const getProject = (projectId: string, signal?: AbortSignal) =>
+  request<ProjectView>(`/projects/${projectId}`, { signal });
+
+export const getJob = (jobId: string, signal?: AbortSignal) =>
+  request<JobRecord>(`/jobs/${jobId}`, { signal });
+
+export const detectSilence = (projectId: string, params: SilenceParams) =>
+  request<JobAccepted>(`/projects/${projectId}/detect/silence`, { method: "POST", body: params });
+
+export const detectPhrases = (projectId: string, body: PhraseRequest) =>
+  request<JobAccepted>(`/projects/${projectId}/detect/phrases`, { method: "POST", body });
+
+export const putEdl = (projectId: string, operations: EditOperation[]) =>
+  request<EditDecisionList>(`/projects/${projectId}/edl`, {
+    method: "PUT",
+    body: { operations },
+  });
+
+export const exportAudio = (projectId: string, body: ExportRequest) =>
+  request<JobAccepted>(`/projects/${projectId}/export`, { method: "POST", body });
+
+export const getWaveform = (projectId: string, signal?: AbortSignal) =>
+  request<WaveformPeaks>(`/projects/${projectId}/waveform`, { signal });
+
+/** Relative URLs for media the browser loads directly (not via `request`). */
+export const audioUrl = (projectId: string) => `/projects/${projectId}/audio`;
+export const exportDownloadUrl = (projectId: string, artifactId: string) =>
+  `/projects/${projectId}/exports/${artifactId}`;
+
+/** React Query cache keys. */
+export const queryKeys = {
+  project: (projectId: string) => ["project", projectId] as const,
+  job: (jobId: string) => ["job", jobId] as const,
+  waveform: (projectId: string) => ["waveform", projectId] as const,
+};
