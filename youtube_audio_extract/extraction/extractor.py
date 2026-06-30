@@ -24,6 +24,7 @@ from ..models.errors import (
     VideoUnavailableError,
 )
 from .hashing import content_hash
+from .normalize import make_working_copy
 from .probe import probe
 from .validate import normalize_url
 
@@ -62,6 +63,8 @@ def extract_audio(
     audio_quality: str = "0",
     quiet: bool = True,
     progress_callback: Optional[Callable[[dict], None]] = None,
+    create_working_copy: bool = True,
+    normalize_loudness: bool = False,
 ) -> AudioSource:
     """Download the best audio stream for ``url`` and return an :class:`AudioSource`.
 
@@ -79,6 +82,10 @@ def extract_audio(
         progress_callback: Optional callable invoked with yt-dlp's raw progress dict
             during download. Kept framework-agnostic; the normalized payload shape is
             defined in a later phase.
+        create_working_copy: When true, also produce a 16 kHz mono WAV working copy
+            and record it on ``AudioSource.working_copy`` for the detection layer.
+        normalize_loudness: Apply EBU R128 ``loudnorm`` to the working copy (see
+            :func:`make_working_copy`). Ignored when ``create_working_copy`` is false.
 
     Returns:
         An :class:`AudioSource` describing the extracted file.
@@ -129,6 +136,11 @@ def extract_audio(
         )
 
     meta = probe(result)
+    working_copy = (
+        make_working_copy(result, normalize_loudness=normalize_loudness)
+        if create_working_copy
+        else None
+    )
     return AudioSource(
         source_url=source_url,
         local_path=result,
@@ -140,4 +152,5 @@ def extract_audio(
         content_hash=content_hash(result),
         id=_source_id(source_url, audio_format, audio_quality),
         extracted_at=datetime.now(timezone.utc),
+        working_copy=working_copy,
     )
