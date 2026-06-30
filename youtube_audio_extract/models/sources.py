@@ -6,14 +6,14 @@ seconds (float). See docs/audio/01-extraction.md and 05-data-model-and-api.md.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+from pydantic import BaseModel, ConfigDict, computed_field
 
 
-@dataclass(frozen=True)
-class AudioSource:
+class AudioSource(BaseModel):
     """A downloaded audio file and everything downstream layers need to know about it.
 
     ``local_path`` is the user-facing artifact (e.g. the mp3). ``working_copy`` is an
@@ -21,6 +21,8 @@ class AudioSource:
     thresholds; it is populated by the normalization step (Phase 3) and is ``None``
     until then.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     source_url: str          # normalized canonical URL
     local_path: Path         # user-facing artifact (the mp3)
@@ -34,22 +36,17 @@ class AudioSource:
     extracted_at: datetime
     working_copy: Optional[Path] = None  # 16 kHz mono WAV for detection (Phase 3)
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def created_at(self) -> datetime:
         """Alias for ``extracted_at`` (doc 05 names the field ``created_at``)."""
         return self.extracted_at
 
     def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "source_url": self.source_url,
-            "local_path": str(self.local_path),
-            "title": self.title,
-            "duration_sec": self.duration_sec,
-            "sample_rate": self.sample_rate,
-            "channels": self.channels,
-            "codec": self.codec,
-            "content_hash": self.content_hash,
-            "extracted_at": self.extracted_at.isoformat(),
-            "working_copy": str(self.working_copy) if self.working_copy is not None else None,
-        }
+        """JSON-safe dict (paths as strings, datetimes as ISO) for cache sidecars."""
+        return self.model_dump(mode="json")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AudioSource":
+        """Reconstruct an AudioSource from :meth:`to_dict` output (e.g. a cache sidecar)."""
+        return cls.model_validate(data)

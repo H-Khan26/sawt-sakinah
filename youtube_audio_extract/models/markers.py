@@ -11,12 +11,12 @@ docs/audio/05-data-model-and-api.md.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict, field
 from typing import Optional
 
+from pydantic import BaseModel, ConfigDict, computed_field, model_validator
 
-@dataclass(frozen=True)
-class Marker:
+
+class Marker(BaseModel):
     """A detected spoken phrase, anchored to a timestamp.
 
     Attributes:
@@ -29,35 +29,31 @@ class Marker:
         id: Stable identifier; derived from type + time when left blank.
     """
 
+    model_config = ConfigDict(frozen=True)
+
     time: float
     label: str
     type: str
     confidence: float
     end: Optional[float] = None
     source: str = "auto"
-    id: str = field(default="")
+    id: str = ""
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _derive_id(self) -> "Marker":
         if not self.id:
+            # Model is frozen; assign through __dict__ as pydantic does internally.
             object.__setattr__(self, "id", f"{self.type}-{self.time:.3f}")
+        return self
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def duration(self) -> Optional[float]:
         return None if self.end is None else self.end - self.time
 
     def to_dict(self) -> dict:
-        d = asdict(self)
-        d["duration"] = self.duration
-        return d
+        return self.model_dump(mode="json")
 
     @classmethod
     def from_dict(cls, data: dict) -> "Marker":
-        return cls(
-            time=data["time"],
-            label=data["label"],
-            type=data["type"],
-            confidence=data["confidence"],
-            end=data.get("end"),
-            source=data.get("source", "auto"),
-            id=data.get("id", ""),
-        )
+        return cls.model_validate(data)
