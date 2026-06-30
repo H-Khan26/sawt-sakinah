@@ -5,6 +5,7 @@ always in seconds (float). See docs/audio/05-data-model-and-api.md.
 """
 
 from .segments import SilenceSegment
+from .markers import Marker
 from .sources import AudioSource
 from .errors import (
     ExtractionError,
@@ -18,6 +19,7 @@ from .errors import (
 
 __all__ = [
     "SilenceSegment",
+    "Marker",
     "AudioSource",
     "ExtractionError",
     "InvalidInputError",

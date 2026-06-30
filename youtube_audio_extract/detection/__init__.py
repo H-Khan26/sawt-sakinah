@@ -6,5 +6,6 @@ that is the editing layer's job. See docs/audio/00-overview.md.
 """
 
 from .silence import detect_silence
+from .phrases import detect_phrases
 
-__all__ = ["detect_silence"]
+__all__ = ["detect_silence", "detect_phrases"]
