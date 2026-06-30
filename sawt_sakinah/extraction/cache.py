@@ -17,8 +17,8 @@ def default_cache_dir() -> Path:
     """Return the default cache root (``%LOCALAPPDATA%`` on Windows, else ``~/.cache``)."""
     base = os.environ.get("LOCALAPPDATA")
     if base:
-        return Path(base) / "youtube_audio_extract" / "cache"
-    return Path.home() / ".cache" / "youtube_audio_extract"
+        return Path(base) / "sawt_sakinah" / "cache"
+    return Path.home() / ".cache" / "sawt_sakinah"
 
 
 def _sources_dir(cache_dir: Path) -> Path:

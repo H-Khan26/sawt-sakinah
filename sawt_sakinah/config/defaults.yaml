@@ -1,7 +1,7 @@
-# Single source of truth for every tuning knob in youtube_audio_extract.
+# Single source of truth for every tuning knob in sawt_sakinah.
 #
 # This file is the ONLY place default thresholds / durations / model choices /
-# quality settings live. Code reads these values via ``youtube_audio_extract.config``
+# quality settings live. Code reads these values via ``sawt_sakinah.config``
 # (the ``CONFIG`` object); no module carries its own hidden literal defaults.
 #
 # Every key below is REQUIRED -- the loader validates against a strict schema and

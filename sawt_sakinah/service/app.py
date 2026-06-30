@@ -2,7 +2,7 @@
 
 Run with::
 
-    uvicorn youtube_audio_extract.service.app:app
+    uvicorn sawt_sakinah.service.app:app
 
 The store and job registry are created in the lifespan and attached to ``app.state``
 (read via ``deps.py``). The extraction error hierarchy is mapped to HTTP status codes for
@@ -65,7 +65,7 @@ def _make_handler(status: int):
 
 
 def create_app(settings: Optional[ServiceSettings] = None) -> FastAPI:
-    app = FastAPI(title="youtube_audio_extract service", lifespan=lifespan)
+    app = FastAPI(title="sawt-sakinah service", lifespan=lifespan)
     app.state.settings = settings or ServiceSettings()
 
     for router in (

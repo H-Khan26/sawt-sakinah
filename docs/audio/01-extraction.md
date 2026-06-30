@@ -1,6 +1,6 @@
 # Audio Extraction (YouTube → MP3)
 
-> Status: partially implemented (`youtube_audio_extract/extract.py`). This doc states
+> Status: partially implemented (`sawt_sakinah/extract.py`). This doc states
 > the goal and the structure to grow it into; an implementing agent should refine.
 
 ## Goal

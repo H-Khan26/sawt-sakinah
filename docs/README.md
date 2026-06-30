@@ -1,4 +1,4 @@
-# youtube_audio_extract — Architecture
+# sawt-sakinah — Architecture
 
 Planning docs for an app that extracts Quran recitation audio from YouTube and lets the
 user edit it: detect and remove silent gaps, and mark prayer positions via takbir
@@ -58,12 +58,12 @@ and rendering happens last.
 ## Current code vs. target
 
 Implemented today (seeds, not the full architecture):
-- `youtube_audio_extract/extract.py` — extraction (→ becomes `extraction/`).
-- `youtube_audio_extract/detection/silence.py` — `detect_silence()` returns
+- `sawt_sakinah/extract.py` — extraction (→ becomes `extraction/`).
+- `sawt_sakinah/detection/silence.py` — `detect_silence()` returns
   `SilenceSegment[]` (the detection/editing separation, in place).
-- `youtube_audio_extract/silence.py` — `remove_silence()` (→ moves to `editing/`).
-- `youtube_audio_extract/models.py` — `SilenceSegment` (the first shared contract).
-- `youtube_audio_extract/pipeline.py` — convenience chain.
+- `sawt_sakinah/silence.py` — `remove_silence()` (→ moves to `editing/`).
+- `sawt_sakinah/models.py` — `SilenceSegment` (the first shared contract).
+- `sawt_sakinah/pipeline.py` — convenience chain.
 
 Not yet built: `prayer/`, phrase detection, `editing/` package, `service/` API, and the
 entire frontend. The docs above scope each.

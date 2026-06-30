@@ -29,8 +29,8 @@ def default_projects_dir() -> Path:
     """Return the default projects root (``%LOCALAPPDATA%`` on Windows, else XDG-ish)."""
     base = os.environ.get("LOCALAPPDATA")
     if base:
-        return Path(base) / "youtube_audio_extract" / "projects"
-    return Path.home() / ".local" / "share" / "youtube_audio_extract" / "projects"
+        return Path(base) / "sawt_sakinah" / "projects"
+    return Path.home() / ".local" / "share" / "sawt_sakinah" / "projects"
 
 
 class ProjectStore:

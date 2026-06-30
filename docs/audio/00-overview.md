@@ -51,7 +51,7 @@ Consequences for the engine:
 ## Module boundaries (the key separation)
 
 ```
-youtube_audio_extract/
+sawt_sakinah/
   extraction/      # YouTube URL -> mp3 + metadata. Side-effecting (network, files).
   detection/       # Pure analysis. Audio in -> structured segments/markers out.
     silence.py     #   detect_silence(audio) -> [SilenceSegment]
