@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .extract import extract_audio
-from .silence import remove_silence
+from .extraction import extract_audio
+from .editing import remove_silence
 
 
 def youtube_to_clean_audio(
@@ -38,7 +38,7 @@ def youtube_to_clean_audio(
     Returns:
         Path to the cleaned (silence-removed) audio file.
     """
-    raw = extract_audio(
+    source = extract_audio(
         url,
         output_dir=output_dir,
         filename=filename,
@@ -46,6 +46,7 @@ def youtube_to_clean_audio(
         audio_quality=audio_quality,
         quiet=quiet,
     )
+    raw = source.local_path
 
     cleaned = raw.with_name(f"{raw.stem}.nosilence{raw.suffix}")
     remove_silence(

@@ -1,7 +1,6 @@
-"""Shared data contracts passed between detection, editing, and the API layer.
+"""Detected-region contracts (analysis output).
 
-These are intentionally small and dependency-free (stdlib dataclasses). Times are
-always in seconds (float). See docs/audio/05-data-model-and-api.md.
+Times are always in seconds (float). See docs/audio/05-data-model-and-api.md.
 """
 
 from __future__ import annotations
