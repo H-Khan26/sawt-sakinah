@@ -1,0 +1,9 @@
+# Optional dependencies for the FastAPI service (youtube_audio_extract.service).
+# Install alongside requirements.txt:  pip install -r requirements-service.txt
+#
+# The service package is imported only when running the server, so the core library
+# (import youtube_audio_extract) never needs these. numpy backs the waveform peaks.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic-settings>=2
+numpy>=1.24
