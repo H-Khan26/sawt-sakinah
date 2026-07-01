@@ -2,7 +2,11 @@ import { ApiError } from "@/api/client";
 import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { Alert, EmptyState, LoadingSpinner } from "@/components/ui";
-import type { JobRecord } from "@/types/api";
+import { TransportBar } from "@/features/transport/TransportBar";
+import { useTransportHotkeys } from "@/features/transport/useTransportHotkeys";
+import { WaveformProvider } from "@/features/waveform/WaveformContext";
+import { WaveformView } from "@/features/waveform/WaveformView";
+import type { JobRecord, ProjectView } from "@/types/api";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 /** Router state carried from the landing page (and across retries). */
@@ -125,13 +129,30 @@ export function EditorPage() {
     );
   }
 
-  // --- ready (placeholder until Phase 4) -------------------------------------
+  // --- ready -----------------------------------------------------------------
+  return <EditorWorkspace project={project.data} />;
+}
+
+/**
+ * The editor proper, mounted once the project is loaded. `WaveformProvider` owns the
+ * wavesurfer instance and exposes it (via context) to the transport and, in later phases,
+ * the silence-region and marker layers — which slot in around `WaveformView` here.
+ */
+function EditorWorkspace({ project }: { project: ProjectView }) {
   return (
-    <div className="flex min-h-full flex-col items-center justify-center gap-2 p-8">
-      <h1 className="font-serif text-2xl text-accent">{project.data.audio_source.title}</h1>
-      <p className="text-text-tertiary">
-        Waveform and editing panels load here (Phases 4-6). Project {projectId}.
-      </p>
+    <WaveformProvider projectId={project.id}>
+      <EditorBody project={project} />
+    </WaveformProvider>
+  );
+}
+
+function EditorBody({ project }: { project: ProjectView }) {
+  useTransportHotkeys();
+  return (
+    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-4 p-6">
+      <h1 className="font-serif text-2xl text-accent">{project.audio_source.title}</h1>
+      <WaveformView />
+      <TransportBar />
     </div>
   );
 }
