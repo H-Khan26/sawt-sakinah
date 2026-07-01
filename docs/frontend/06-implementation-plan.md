@@ -1,8 +1,8 @@
 # Implementation Plan
 
 > Status: active. The build plan for the Sawt Sakinah frontend, written so any agent can
-> pick up a phase and execute it without re-deriving context. Phases 0-1 are **done**
-> (code in `frontend/`); Phases 2-7 are specified below. Where the planning docs (00-05)
+> pick up a phase and execute it without re-deriving context. Phases 0-3 are **done**
+> (code in `frontend/`); Phases 4-7 are specified below. Where the planning docs (00-05)
 > and the live backend disagree, **the backend wins** — deltas are tabulated.
 
 ## Orientation
@@ -183,57 +183,135 @@ Render Arabic with `lang="ar" dir="rtl"` so the right face + direction apply.
 Each phase is independently shippable. Build order matters: 2 (primitives) unblocks 3-7;
 4 (waveform) unblocks 5-6.
 
-## Phase 2 — UI primitives  *(next)*
+## Phase 2 — UI primitives  *(done)*
 
 **Goal:** a small custom component library styled to the tokens. No Radix/shadcn/MUI.
 
-**Build** in `src/components/ui/` (one file each, plus an `index.ts` barrel):
-`Button` (variants primary/secondary/ghost/danger, sizes sm/md, loading state), `Card`,
-`Input`, `Modal` + `SimpleModal` (focus trap, Esc-to-close, scrim), `Badge` (neutral +
-per-marker-type color variants), `Progress` (determinate + indeterminate), `Slider`
-(single + range, for detection thresholds), `Tooltip`, `LoadingSpinner`, `Tabs`
-(keyboard-navigable), `Toast` (a provider mounted in `main.tsx` + a `useToast` hook),
-`EmptyState`, `Alert` (semantic variants + optional retry action).
+**Built** in `src/components/ui/` (one file each, barrel at `index.ts`):
 
-**Design:** Tailwind utilities bound to tokens; add a `.btn-*`/`.card-*` component class
-only when a pattern repeats. Radius 10px (buttons/inputs), 14px (cards). Focus ring uses
-`--color-border-focus`. Respect `prefers-reduced-motion`. Accessibility is part of "done":
-roles/aria, Modal focus management, Tabs arrow keys. Add a tiny `cn()` class-merge helper
-in `src/lib/cn.ts` (no new dependency).
+| Component | File | Notes |
+|---|---|---|
+| `Button` | `Button.tsx` | variants primary/secondary/ghost/danger, sizes sm/md, `loading` spinner |
+| `Card` | `Card.tsx` | `rounded-card`, optional `header`/`footer` slots, `flush` prop |
+| `Input` | `Input.tsx` | forwardRef, `invalid` + hint, `useId` for label pairing |
+| `Modal` + `SimpleModal` | `Modal.tsx` | native `<dialog open>`, focus trap, Esc + scrim close |
+| `Badge` | `Badge.tsx` | neutral + marker-type variants; exports `badgeVariantForMarker` + `markerTypeVariant` for Phase 6 |
+| `Progress` | `Progress.tsx` | determinate (value 0–1) + indeterminate sweep; `role="progressbar"` |
+| `Slider` + `RangeSlider` | `Slider.tsx` | native range inputs; range uses two overlaid inputs + accent filled track |
+| `Tooltip` | `Tooltip.tsx` | hover + focus (bubbles from focusable child); CSS-positioned |
+| `LoadingSpinner` | `LoadingSpinner.tsx` | SVG spinner; `<output>` element; `motion-reduce:animate-none` |
+| `Tabs` | `Tabs.tsx` | roving tabIndex; Arrow/Home/End; controlled + uncontrolled |
+| `ToastProvider` + `useToast` | `Toast.tsx` | context provider; auto-dismiss; `<output>` items |
+| `EmptyState` | `EmptyState.tsx` | icon slot, title, description, optional action |
+| `Alert` | `Alert.tsx` | error/success/warning/info; optional retry action button |
 
-**References:** component list in [01-layout-and-pages.md](01-layout-and-pages.md);
-tokens in [00-overview.md](00-overview.md). **Done when:** a primitives gallery (temporary
-route or Storybook-free demo page) renders each in light theme and the build/lint pass.
+`cn()` class-merge helper in `src/lib/cn.ts` (no new dependency).
 
-## Phase 3 — App shell & landing
+**Indeterminate progress keyframe** added to `src/index.css` (`@keyframes progress-indeterminate`).
+
+**Implementation notes:**
+- `Modal` uses `<dialog open>` (not `showModal()`) — focus trap and Esc are handled in
+  React. The native top-layer API is not used, but browser back-button and screen reader
+  dialog role work correctly.
+- `Tooltip` shows on keyboard focus only when wrapping a focusable child (e.g. `Button`).
+  Wrapping plain text/icons gives hover-only.
+- Gallery page (`src/pages/GalleryPage.tsx`, route `/dev/ui`) was built for visual
+  verification and **must be deleted** (along with its route in `App.tsx`) before the
+  Phase 2 PR merges.
+
+**How to test manually:**
+1. `cd frontend && npm run dev` (no backend needed for Phase 2).
+2. Visit [http://localhost:5173/dev/ui](http://localhost:5173/dev/ui).
+3. Check each primitive renders in all variants. Key keyboard checks:
+   - **Modal**: click "Open modal" → Tab cycles within dialog; Shift+Tab wraps; Esc closes;
+     click outside the card closes; focus returns to trigger.
+   - **Tabs**: Arrow Right/Left moves between tabs without leaving the tab list.
+   - **Tooltip**: Tab to "Hover or focus" button → tooltip appears; Tab away → hides.
+   - **Toast**: click "Show toast" → banner appears bottom-right, auto-dismisses after ~4s;
+     click × to dismiss early.
+   - **Slider/RangeSlider**: drag or arrow-key the thumbs; readout updates.
+4. `npm run typecheck && npm run build && npx biome check --write src` — all must pass.
+
+## Phase 3 — App shell & landing  *(done)*
 
 **Goal:** the minimal header shell, the landing link-input flow, and the editor's
 extraction-progress entry state.
 
-**Build:** `src/components/layout/AppShell.tsx` + `AppHeader.tsx` (logo "Sawt Sakinah" in
-`font-serif`, optional صوت سكينة in `font-arabic-display`, a "New" action); flesh out
-[LandingPage.tsx](../../frontend/src/pages/LandingPage.tsx) (centered `Card` + `Input` +
-primary `Button`, loose client-side YouTube-URL validation) and
-[EditorPage.tsx](../../frontend/src/pages/EditorPage.tsx); add a `JobProgress` component
-that renders both progress-dict shapes.
+**Built:**
 
-**Design — the key integration detail:** `GET /projects/{id}` **404s until extraction
-succeeds**, so the editor must track the extraction `job_id`. On landing submit, call
-`useCreateProject`, then `navigate(\`/p/${project_id}\`, { state: { jobId } })`. The
-editor reads `jobId` from router state, runs `useJob(jobId, { invalidateProject: true })`,
-and gates `useProject` (`enabled`) on that job having succeeded. Drive the view state from
-`jobToViewState(job)` + project presence: `extracting` -> `analyzing` (when a detection
-job runs) -> `ready` (project loaded, no active job) -> `exporting`. Map a failed
-extraction job's `error_type` to an `Alert` with a retry that re-POSTs. Use `EmptyState`
-for the no-link state.
+| File | Purpose |
+|---|---|
+| `src/components/layout/AppShell.tsx` | Full-height flex column: header + full-bleed `<main>` |
+| `src/components/layout/AppHeader.tsx` | Wordmark (font-serif) + Arabic (font-arabic-display) + "New" button |
+| `src/components/JobProgress.tsx` | Renders both yt-dlp and `{ stage, status }` progress shapes |
+| `src/lib/youtube.ts` | `isLikelyYouTubeUrl()` — loose regex accepting watch/shorts/live/youtu.be |
+| `src/pages/LandingPage.tsx` | Rewritten: `Card` + `Input` + `Button`; validate, mutate, navigate |
+| `src/pages/EditorPage.tsx` | Extraction entry state machine (see below) |
+
+**Editor entry state machine** (component-local state, no Zustand yet):
+
+```
+router state present?
+  yes → poll job
+         job pending/running  → <JobProgress title="Extracting audio…" />
+         job failed           → <Alert variant="error"> + Retry (re-POSTs /projects, replaces route)
+         job succeeded        → enable useProject
+  no  → enable useProject immediately
+
+useProject loading   → <LoadingSpinner />
+useProject 404       → <EmptyState> + "Back to start" link
+useProject error     → <Alert variant="error">
+useProject success   → ready placeholder (Phase 4 fills this)
+```
+
+**Retry model:** the submitted URL is carried in router state (`{ jobId, url }`). On
+failure, "Try again" re-POSTs `POST /projects` with the same URL and navigates to the
+new `project_id` with `replace: true`. If no URL is available (deep-link entry), the
+button says "Back to start" and navigates to `/`.
+
+**Refresh / deep-link:** no sessionStorage; a bare `/p/:id` load attempts `useProject`
+directly. 404 → `EmptyState`; 200 → ready.
+
+**How to test manually:**
+
+**Setup** (two terminals):
+```sh
+# terminal 1
+uvicorn sawt_sakinah.service.app:app --reload
+# terminal 2
+cd frontend && npm run dev
+```
+
+**Happy path:**
+1. Open [http://localhost:5173](http://localhost:5173).
+2. Paste a real YouTube link (short video recommended — test with a ~2 min recitation).
+3. Click **Start** → button shows spinner while `POST /projects` resolves.
+4. Page transitions to `/p/<id>` — you see the extraction progress bar updating.
+5. Once done, page shows the ready placeholder with the video title.
+
+**Validation:**
+- Submit an empty field → button is disabled (never submits).
+- Type a non-URL string, then click outside → inline hint "That doesn't look like a YouTube link." appears; form won't submit.
+- Type `youtube.com/watch?v=abc123` (no protocol) → accepted by the loose check (backend validates for real).
+
+**Failure / retry:**
+- Submit a private or deleted video URL → extraction job fails → error `Alert` appears with
+  the appropriate message and a **Try again** button. Click it → re-POSTs, navigates to a
+  fresh project.
+
+**Refresh states:**
+- Mid-extraction refresh (clear router state by navigating to the URL directly) → `EmptyState`
+  ("Nothing here yet") with a "Back to start" link.
+- Refresh a succeeded project URL → loads the ready placeholder directly (no progress bar).
+
+**Header:**
+- "New" button appears on both Landing and Editor; click it → navigates to `/` (no confirm needed).
 
 **References:** [01-layout-and-pages.md](01-layout-and-pages.md),
 [05-state-and-api-integration.md](05-state-and-api-integration.md); error status table in
-[app.py](../../sawt_sakinah/service/app.py). **Done when:** a real YouTube link extracts
-end-to-end and lands in the (placeholder) editor with live progress, and failures show a
-retryable alert.
+[app.py](../../sawt_sakinah/service/app.py).
 
-## Phase 4 — Waveform & transport  *(the core net-new component)*
+## Phase 4 — Waveform & transport  *(next — the core net-new component)*
 
 **Goal:** render the track as an interactive waveform and provide transport; this is the
 substrate Phases 5-6 draw onto.
