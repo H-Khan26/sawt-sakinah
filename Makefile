@@ -11,7 +11,7 @@ HOST ?= 127.0.0.1
 PORT ?= 8000
 
 .DEFAULT_GOAL := help
-.PHONY: help requirements requirements-phrases requirements-vad requirements-all serve dev clean
+.PHONY: help requirements requirements-phrases requirements-vad requirements-all serve dev dev-api clean
 
 help:  ## List available commands
 	@$(PYTHON) -c "print('Commands:\n'\
@@ -20,7 +20,8 @@ help:  ## List available commands
 	'  make requirements-vad      + Silero VAD silence detection (torch)\n'\
 	'  make requirements-all      everything\n'\
 	'  make serve                 run the service at http://$(HOST):$(PORT)\n'\
-	'  make dev                   run the service with autoreload\n'\
+	'  make dev                   run backend (autoreload) + frontend together\n'\
+	'  make dev-api               run only the service with autoreload\n'\
 	'  make clean                 remove caches and build artifacts')"
 
 requirements:  ## Install core + service deps (enough to run the app)
@@ -38,7 +39,10 @@ requirements-all:  ## Install everything (service + phrases + vad)
 serve:  ## Run the FastAPI service (the app)
 	$(PYTHON) -m sawt_sakinah serve --host $(HOST) --port $(PORT)
 
-dev:  ## Run the service with autoreload
+dev:  ## Run backend (autoreload) + frontend dev server together
+	$(PYTHON) scripts/dev.py --host $(HOST) --port $(PORT)
+
+dev-api:  ## Run only the service with autoreload
 	$(PYTHON) -m sawt_sakinah serve --host $(HOST) --port $(PORT) --reload
 
 clean:  ## Remove __pycache__, build artifacts, and egg-info
