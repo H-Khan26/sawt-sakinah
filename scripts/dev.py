@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import signal
 import subprocess
@@ -21,14 +22,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
+IS_WINDOWS = os.name == "nt"
 
 
-def _resolve(cmd: str) -> str:
-    """Resolve an executable on PATH (picks up ``npm.cmd`` on Windows)."""
-    found = shutil.which(cmd)
-    if not found:
-        sys.exit(f"error: '{cmd}' not found on PATH. Install Node.js/npm to run the frontend.")
-    return found
+def _npm(sub_args: list[str], *, background: bool) -> subprocess.Popen | subprocess.CompletedProcess:
+    """Run ``npm <sub_args>`` in the frontend dir.
+
+    On Windows npm is a ``.cmd`` shim that ``CreateProcess`` cannot launch directly
+    (WinError 193), so route through the shell; elsewhere resolve the binary on PATH.
+    """
+    if IS_WINDOWS:
+        cmd: str | list[str] = "npm " + " ".join(sub_args)
+        kwargs = {"cwd": FRONTEND, "shell": True}
+    else:
+        npm_bin = shutil.which("npm")
+        if not npm_bin:
+            sys.exit("error: 'npm' not found on PATH. Install Node.js/npm to run the frontend.")
+        cmd = [npm_bin, *sub_args]
+        kwargs = {"cwd": FRONTEND}
+    if background:
+        return subprocess.Popen(cmd, **kwargs)
+    return subprocess.run(cmd, check=True, **kwargs)
 
 
 def main() -> int:
@@ -38,11 +52,9 @@ def main() -> int:
     args = parser.parse_args()
 
     if not (FRONTEND / "node_modules").is_dir():
-        npm = _resolve("npm")
         print("frontend dependencies missing; running 'npm install'...", flush=True)
-        subprocess.run([npm, "install"], cwd=FRONTEND, check=True)
+        _npm(["install"], background=False)
 
-    npm = _resolve("npm")
     backend_cmd = [
         sys.executable,
         "-m",
@@ -54,7 +66,6 @@ def main() -> int:
         str(args.port),
         "--reload",
     ]
-    frontend_cmd = [npm, "run", "dev"]
 
     print(f"backend:  http://{args.host}:{args.port}", flush=True)
     print("frontend: http://localhost:5173  (proxies /projects,/jobs to the backend)", flush=True)
@@ -63,7 +74,7 @@ def main() -> int:
     procs: list[subprocess.Popen] = []
     try:
         procs.append(subprocess.Popen(backend_cmd, cwd=ROOT))
-        procs.append(subprocess.Popen(frontend_cmd, cwd=FRONTEND))
+        procs.append(_npm(["run", "dev"], background=True))
 
         # Wait until either process exits, then fall through to teardown.
         while all(p.poll() is None for p in procs):
