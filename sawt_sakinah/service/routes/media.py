@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -48,7 +50,37 @@ def get_waveform(project_id: str, store=Depends(get_store), settings=Depends(get
     peaks = compute_peaks(
         project.audio_source.local_path, ffmpeg_bin=settings.ffmpeg_bin
     )
-    tmp = cache.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(peaks), encoding="utf-8")
-    os.replace(tmp, cache)
+    _cache_peaks(cache, peaks)
     return peaks
+
+
+def _cache_peaks(cache: Path, peaks: dict) -> None:
+    """Write the peaks cache atomically; best-effort — never raise on failure.
+
+    Uses a unique temp file so concurrent first-time requests don't collide on one name,
+    and retries the rename to ride out transient Windows locks (WinError 32) from a virus
+    scanner touching the freshly-written file. If caching ultimately fails the caller still
+    returns the computed peaks — the cache is only an optimization.
+    """
+    tmp_name: str | None = None
+    try:
+        fd, tmp_name = tempfile.mkstemp(dir=str(cache.parent), suffix=".json.tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(peaks, fh)
+        for attempt in range(5):
+            try:
+                os.replace(tmp_name, cache)
+                tmp_name = None  # renamed away; nothing to clean up
+                return
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.1)
+    except OSError:
+        pass  # leave the cache absent; peaks are recomputed next time
+    finally:
+        if tmp_name and os.path.exists(tmp_name):
+            try:
+                os.remove(tmp_name)
+            except OSError:
+                pass
