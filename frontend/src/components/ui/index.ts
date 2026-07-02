@@ -27,3 +27,5 @@ export { ToastProvider, useToast } from "./Toast";
 export type { ToastVariant } from "./Toast";
 export { Tooltip } from "./Tooltip";
 export type { TooltipProps, TooltipSide } from "./Tooltip";
+export { WaveformLoader } from "./WaveformLoader";
+export type { WaveformLoaderProps } from "./WaveformLoader";

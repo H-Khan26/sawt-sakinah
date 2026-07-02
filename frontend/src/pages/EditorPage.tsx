@@ -1,7 +1,7 @@
 import { ApiError } from "@/api/client";
 import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
-import { Alert, EmptyState, LoadingSpinner, WorkbenchPanel } from "@/components/ui";
+import { Alert, EmptyState, WaveformLoader, WorkbenchPanel } from "@/components/ui";
 import { CutPanel } from "@/features/cuts/CutPanel";
 import { useCutSkip } from "@/features/cuts/useCutSkip";
 import { useEditHotkeys } from "@/features/cuts/useEditHotkeys";
@@ -112,7 +112,7 @@ export function EditorPage() {
   if (project.isLoading || project.isPending) {
     return (
       <div className="flex min-h-full items-center justify-center p-8">
-        <LoadingSpinner size={28} label="Loading project" />
+        <WaveformLoader size={32} label="Loading project" className="text-accent" />
       </div>
     );
   }

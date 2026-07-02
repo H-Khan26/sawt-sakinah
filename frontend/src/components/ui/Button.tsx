@@ -1,7 +1,7 @@
 import { cn } from "@/lib/cn";
 import type { ButtonHTMLAttributes } from "react";
 import { forwardRef } from "react";
-import { LoadingSpinner } from "./LoadingSpinner";
+import { WaveformLoader } from "./WaveformLoader";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md";
@@ -44,7 +44,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={cn(BASE, VARIANTS[variant], SIZES[size], className)}
       {...rest}
     >
-      {loading && <LoadingSpinner size={size === "sm" ? 14 : 16} />}
+      {loading && <WaveformLoader size={size === "sm" ? 12 : 14} bars={4} />}
       {children}
     </button>
   );

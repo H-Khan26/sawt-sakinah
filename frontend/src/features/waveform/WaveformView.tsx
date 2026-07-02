@@ -5,7 +5,7 @@
  * with the audio; it is click-through by default (children opt back in with `pointer-events`).
  * Kept presentational — all state comes from `WaveformContext`.
  */
-import { Alert, LoadingSpinner } from "@/components/ui";
+import { Alert, WaveformLoader } from "@/components/ui";
 import type { ReactNode } from "react";
 import { useWaveformContext } from "./WaveformContext";
 
@@ -32,7 +32,7 @@ export function WaveformView({ overlay }: { overlay?: ReactNode }) {
 
       {!error && (isLoadingPeaks || !isReady) ? (
         <div className="absolute inset-0 flex items-center justify-center rounded-card bg-background-secondary/60">
-          <LoadingSpinner size={24} label="Loading waveform" />
+          <WaveformLoader size={28} label="Loading waveform" className="text-accent" />
         </div>
       ) : null}
     </div>

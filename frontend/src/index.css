@@ -162,3 +162,65 @@
 .animate-progress-indeterminate {
   animation: progress-indeterminate 1.2s var(--ease-out) infinite;
 }
+
+/* ---------------------------------------------------------------------------
+ * Waveform loader (<WaveformLoader>). Replaces the spinner / indeterminate
+ * progress sweep. The bars draw in left-to-right, fluctuate as if someone is
+ * speaking, then draw out — the container clip drives the draw in/out reveal
+ * while each bar runs its own oscillation. Stilled to a static waveform under
+ * prefers-reduced-motion.
+ * ------------------------------------------------------------------------- */
+@keyframes waveform-loader-reveal {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+  15% {
+    clip-path: inset(0 0 0 0);
+  }
+  75% {
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    clip-path: inset(0 0 0 100%);
+  }
+}
+@keyframes waveform-loader-speak {
+  0%,
+  100% {
+    transform: scaleY(calc(var(--wf-h) * 0.5));
+  }
+  20% {
+    transform: scaleY(calc(var(--wf-h) * 1));
+  }
+  40% {
+    transform: scaleY(calc(var(--wf-h) * 0.35));
+  }
+  60% {
+    transform: scaleY(calc(var(--wf-h) * 0.9));
+  }
+  80% {
+    transform: scaleY(calc(var(--wf-h) * 0.55));
+  }
+}
+.waveform-loader {
+  display: inline-flex;
+  align-items: center;
+  animation: waveform-loader-reveal 3s var(--ease-out) infinite;
+}
+.waveform-loader__bar {
+  height: 100%;
+  border-radius: 999px;
+  background: currentColor;
+  transform: scaleY(var(--wf-h));
+  transform-origin: center;
+  animation: waveform-loader-speak 0.9s ease-in-out infinite;
+  animation-delay: var(--wf-delay);
+}
+/* Reduced motion: hold the static waveform (bars at their resting height, fully
+ * revealed — the un-animated base state). */
+@media (prefers-reduced-motion: reduce) {
+  .waveform-loader,
+  .waveform-loader__bar {
+    animation: none;
+  }
+}
