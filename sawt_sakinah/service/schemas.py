@@ -82,6 +82,16 @@ class EdlUpdate(BaseModel):
     operations: list[EditOperation] = Field(default_factory=list)
 
 
+class MarkersUpdate(BaseModel):
+    """Inputs for ``PUT /projects/{id}/markers`` -- replaces the whole marker list.
+
+    Structure is re-derived server-side from these markers, so the client never sends
+    ``PrayerPosition``s directly. User-placed markers should carry ``source="user"``.
+    """
+
+    markers: list[Marker] = Field(default_factory=list)
+
+
 class ExportRequest(BaseModel):
     format: str = CONFIG.editing.out_format
     bitrate: Optional[str] = None

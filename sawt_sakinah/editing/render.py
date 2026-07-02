@@ -48,6 +48,7 @@ def render(
     bitrate: str | None = None,
     vbr_quality: str | None = None,
     embed_markers: bool = CONFIG.editing.embed_markers,
+    chapter_markers: Optional[Sequence[tuple[float, str]]] = None,
     embed_metadata: bool = CONFIG.editing.embed_metadata,
 ) -> Path:
     """Render ``edl`` against ``audio_source`` and write a new audio file.
@@ -66,7 +67,12 @@ def render(
         bitrate: Constant bitrate (e.g. ``"192k"``). Takes precedence over ``vbr_quality``.
         vbr_quality: VBR quality for mp3 (``"0"`` is best). Defaults to ``"0"`` for mp3
             when neither ``bitrate`` nor ``vbr_quality`` is given.
-        embed_markers: Embed any ``marker`` operations as chapters in the output.
+        embed_markers: Embed chapters in the output. Uses ``chapter_markers`` when given,
+            else falls back to the EDL's ``marker`` operations.
+        chapter_markers: Source-timeline ``(time, label)`` pairs (e.g. the project's
+            detected/user markers) to embed as labeled chapters. Times are remapped to the
+            output timeline and dropped if they fall inside a cut. ``None`` uses the EDL
+            ``marker`` ops instead.
         embed_metadata: Refresh ``title`` and source-URL metadata on the output.
 
     Returns:
@@ -104,6 +110,7 @@ def render(
         bitrate=bitrate,
         vbr_quality=vbr_quality,
         embed_markers=embed_markers,
+        chapter_markers=chapter_markers,
         metadata=metadata,
     )
 
@@ -120,6 +127,7 @@ def _render(
     bitrate: str | None = None,
     vbr_quality: str | None = None,
     embed_markers: bool = False,
+    chapter_markers: Optional[Sequence[tuple[float, str]]] = None,
     metadata: Optional[dict] = None,
 ) -> Path:
     """Path-based render engine shared by :func:`render` and ``remove_silence``."""
@@ -145,7 +153,7 @@ def _render(
 
     meta_file: Optional[Path] = None
     if embed_markers:
-        chapters = _chapter_lines(operations, keeps, out_total)
+        chapters = _chapter_lines(operations, keeps, out_total, chapter_markers)
         if chapters:
             meta_file = _write_ffmetadata(chapters)
             base += ["-i", str(meta_file)]
@@ -294,8 +302,29 @@ def _chapter_lines(
     operations: Sequence[EditOperation],
     keeps: list[tuple[float, float]],
     out_total: float,
+    chapter_markers: Optional[Sequence[tuple[float, str]]] = None,
 ) -> list[tuple[float, float, str]]:
-    """Build ``(start, end, title)`` chapters (output timeline) from ``marker`` ops."""
+    """Build ``(start, end, title)`` chapters on the output timeline.
+
+    When ``chapter_markers`` (source-timeline ``(time, label)`` pairs, e.g. detected /
+    user markers) is given, chapters carry those real labels. Otherwise they fall back to
+    the EDL's ``marker`` ops with generic titles. Times are remapped to the output
+    timeline; any that fall inside a cut region are dropped. Each chapter runs until the
+    next one (the last until ``out_total``).
+    """
+    if chapter_markers is not None:
+        labeled: list[tuple[float, str]] = []
+        for time, label in chapter_markers:
+            t = _remap_time(time, keeps)
+            if t is not None:
+                labeled.append((t, label))
+        labeled.sort(key=lambda e: e[0])
+        chapters: list[tuple[float, float, str]] = []
+        for i, (t, label) in enumerate(labeled):
+            end = labeled[i + 1][0] if i + 1 < len(labeled) else out_total
+            chapters.append((t, end, label))
+        return chapters
+
     times: list[float] = []
     for op in operations:
         if op.type != "marker":
@@ -304,7 +333,7 @@ def _chapter_lines(
         if t is not None:
             times.append(t)
     times.sort()
-    chapters: list[tuple[float, float, str]] = []
+    chapters = []
     for i, t in enumerate(times):
         end = times[i + 1] if i + 1 < len(times) else out_total
         chapters.append((t, end, f"Marker {i + 1}"))

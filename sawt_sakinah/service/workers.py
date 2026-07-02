@@ -188,6 +188,13 @@ def export_worker(
             raise KeyError(project_id)
         artifact_id = uuid4().hex
         out_path = store.exports_dir(project_id) / f"{artifact_id}.{req.format}"
+        # Embed the project's markers (detected + user edits) as labeled chapters. Falls
+        # back to the EDL's marker ops when there are none (chapter_markers=None).
+        chapter_markers = (
+            [(m.time, m.label) for m in project.markers]
+            if req.embed_markers and project.markers
+            else None
+        )
         render(
             project.audio_source,
             project.edl,
@@ -196,6 +203,7 @@ def export_worker(
             ffmpeg_bin=settings.ffmpeg_bin,
             bitrate=req.bitrate,
             embed_markers=req.embed_markers,
+            chapter_markers=chapter_markers,
         )
         meta = probe(out_path, ffprobe_bin=ffprobe_for(settings.ffmpeg_bin))
         artifact = ExportArtifact(

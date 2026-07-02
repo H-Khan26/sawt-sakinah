@@ -1,4 +1,4 @@
-"""Project lifecycle: create (async extraction), fetch, and EDL update."""
+"""Project lifecycle: create (async extraction), fetch, EDL update, and marker update."""
 
 from __future__ import annotations
 
@@ -13,11 +13,13 @@ from ..schemas import (
     CreateProjectRequest,
     CreateProjectResponse,
     EdlUpdate,
+    MarkersUpdate,
     ProjectView,
     to_project_view,
 )
 from ..workers import extract_worker
 from ...models import EditDecisionList
+from ...prayer import derive_structure
 from .common import validate_id
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -75,3 +77,36 @@ def put_edl(
     except KeyError:
         raise HTTPException(status_code=404, detail="project not found")
     return updated.edl
+
+
+@router.put("/{project_id}/markers", response_model=ProjectView)
+def put_markers(
+    project_id: str,
+    update: MarkersUpdate,
+    store=Depends(get_store),
+) -> ProjectView:
+    """Replace the marker list and re-derive prayer structure (no render).
+
+    Structure is a pure function of the markers, so it is recomputed here rather than
+    accepted from the client. Returns the full project so the client can patch its cache
+    with both the new markers and structure in one shot.
+    """
+    validate_id(project_id, "project_id")
+
+    def mutate(p):
+        structure = derive_structure(
+            update.markers, total_duration=p.audio_source.duration_sec
+        )
+        return p.model_copy(
+            update={
+                "markers": list(update.markers),
+                "structure": structure,
+                "status": p.status.model_copy(update={"analyzed": True}),
+            }
+        )
+
+    try:
+        updated = store.update(project_id, mutate)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="project not found")
+    return to_project_view(updated)
