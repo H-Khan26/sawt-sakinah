@@ -14,19 +14,19 @@ The architectural rule across the repo is: **detection returns data, editing pro
 
 ## Quickstart
 
-`make` is the primary way to install and run the app. It requires [FFmpeg](https://ffmpeg.org/) on your `PATH` (a standalone binary, not a pip package) and GNU make (on Windows: `choco install make`, or run the targets from Git Bash / WSL).
+`make` is the primary way to install and run the app. It requires [FFmpeg](https://ffmpeg.org/) on your `PATH` (a standalone binary, not a pip package), GNU make (on Windows: `choco install make`, or run the targets from Git Bash / WSL), and [Node.js](https://nodejs.org/) for the frontend.
 
 ```sh
-make requirements   # install the package + service deps (editable)
-make serve          # run the FastAPI service at http://127.0.0.1:8000
+make requirements   # install the app: service + phrase detection + desktop shell (editable)
+make dev            # develop: backend + frontend with hot reload (http://localhost:5173)
+make desktop        # run the app: build the SPA and open it in a native window
 ```
 
-Optional analysis backends are separate extras (large downloads):
+The Silero VAD silence detector is a heavy, optional extra (pulls torch); everything else is in `make requirements`:
 
 ```sh
-make requirements-phrases   # Whisper takbir/phrase detection
-make requirements-vad       # Silero VAD silence detection (pulls torch)
-make requirements-all        # everything
+make requirements-vad   # add the Silero VAD silence detector (pulls torch)
+make requirements-all   # absolutely everything, including VAD/torch
 ```
 
 `make help` lists every target. For a quick one-shot with no server:
