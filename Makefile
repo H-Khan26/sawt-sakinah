@@ -8,7 +8,7 @@
 PYTHON ?= python
 PIP := $(PYTHON) -m pip
 HOST ?= 127.0.0.1
-PORT ?= 8000
+PORT ?= 38427
 
 .DEFAULT_GOAL := help
 .PHONY: help requirements requirements-phrases requirements-vad requirements-all requirements-desktop dev desktop clean

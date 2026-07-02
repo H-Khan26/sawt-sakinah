@@ -67,13 +67,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     serve = sub.add_parser("serve", help="run the FastAPI service (the interactive app)")
     serve.add_argument("--host", default="127.0.0.1", help="bind host (default: local-only)")
-    serve.add_argument("--port", type=int, default=8000, help="bind port (default: 8000)")
+    serve.add_argument("--port", type=int, default=38427, help="bind port (default: 38427)")
     serve.add_argument("--reload", action="store_true", help="autoreload on code change")
     serve.set_defaults(func=_serve)
 
     desktop = sub.add_parser("desktop", help="run the app in a native window (needs [desktop])")
     desktop.add_argument("--host", default="127.0.0.1", help="bind host (default: local-only)")
-    desktop.add_argument("--port", type=int, default=8000, help="bind port (default: 8000)")
+    desktop.add_argument("--port", type=int, default=38427, help="bind port (default: 38427)")
     desktop.set_defaults(func=_desktop)
 
     extract = sub.add_parser("extract", help="one-shot URL -> silence-trimmed file (no server)")

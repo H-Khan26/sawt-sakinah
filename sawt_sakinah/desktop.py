@@ -12,7 +12,7 @@ at ``/`` — the window loads that same origin. Requires the optional ``desktop`
     python -m sawt_sakinah.desktop      # or: make desktop
 
 Usage:
-    python -m sawt_sakinah.desktop [--host 127.0.0.1] [--port 8000]
+    python -m sawt_sakinah.desktop [--host 127.0.0.1] [--port 38427]
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def _wait_until_up(url: str, timeout: float = 20.0) -> bool:
     return False
 
 
-def run(host: str = "127.0.0.1", port: int = 8000) -> int:
+def run(host: str = "127.0.0.1", port: int = 38427) -> int:
     """Launch the service and the desktop window; block until the window closes."""
     try:
         import uvicorn
@@ -91,7 +91,7 @@ def run(host: str = "127.0.0.1", port: int = 8000) -> int:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Run Sawt Sakinah as a desktop window.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=int, default=38427)
     args = parser.parse_args(argv)
     return run(host=args.host, port=args.port)
 

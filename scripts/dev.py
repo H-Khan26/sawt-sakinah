@@ -6,7 +6,7 @@ Cross-platform (Windows/cmd, Git Bash, WSL, macOS, Linux) — hence Python rathe
 backgrounding, which is not portable.
 
 Usage:
-    python scripts/dev.py [--host 127.0.0.1] [--port 8000]
+    python scripts/dev.py [--host 127.0.0.1] [--port 38427]
 """
 
 from __future__ import annotations
@@ -23,9 +23,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
 IS_WINDOWS = os.name == "nt"
+DEFAULT_BACKEND_PORT = "38427"
+DEFAULT_FRONTEND_PORT = "38428"
 
 
-def _npm(sub_args: list[str], *, background: bool) -> subprocess.Popen | subprocess.CompletedProcess:
+def _npm(
+    sub_args: list[str],
+    *,
+    background: bool,
+    env: dict[str, str] | None = None,
+) -> subprocess.Popen | subprocess.CompletedProcess:
     """Run ``npm <sub_args>`` in the frontend dir.
 
     On Windows npm is a ``.cmd`` shim that ``CreateProcess`` cannot launch directly
@@ -33,13 +40,13 @@ def _npm(sub_args: list[str], *, background: bool) -> subprocess.Popen | subproc
     """
     if IS_WINDOWS:
         cmd: str | list[str] = "npm " + " ".join(sub_args)
-        kwargs = {"cwd": FRONTEND, "shell": True}
+        kwargs = {"cwd": FRONTEND, "env": env, "shell": True}
     else:
         npm_bin = shutil.which("npm")
         if not npm_bin:
             sys.exit("error: 'npm' not found on PATH. Install Node.js/npm to run the frontend.")
         cmd = [npm_bin, *sub_args]
-        kwargs = {"cwd": FRONTEND}
+        kwargs = {"cwd": FRONTEND, "env": env}
     if background:
         return subprocess.Popen(cmd, **kwargs)
     return subprocess.run(cmd, check=True, **kwargs)
@@ -48,7 +55,7 @@ def _npm(sub_args: list[str], *, background: bool) -> subprocess.Popen | subproc
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run backend + frontend for development.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", default="8000")
+    parser.add_argument("--port", default=DEFAULT_BACKEND_PORT)
     args = parser.parse_args()
 
     if not (FRONTEND / "node_modules").is_dir():
@@ -66,15 +73,22 @@ def main() -> int:
         str(args.port),
         "--reload",
     ]
+    frontend_env = os.environ.copy()
+    frontend_env.setdefault("SAWT_API_URL", f"http://{args.host}:{args.port}")
+    frontend_env.setdefault("SAWT_VITE_PORT", DEFAULT_FRONTEND_PORT)
 
     print(f"backend:  http://{args.host}:{args.port}", flush=True)
-    print("frontend: http://localhost:5173  (proxies /projects,/jobs to the backend)", flush=True)
+    print(
+        f"frontend: http://localhost:{frontend_env['SAWT_VITE_PORT']}  "
+        "(proxies /projects,/jobs to the backend)",
+        flush=True,
+    )
     print("press Ctrl-C to stop both.\n", flush=True)
 
     procs: list[subprocess.Popen] = []
     try:
         procs.append(subprocess.Popen(backend_cmd, cwd=ROOT))
-        procs.append(_npm(["run", "dev"], background=True))
+        procs.append(_npm(["run", "dev"], background=True, env=frontend_env))
 
         # Wait until either process exits, then fall through to teardown.
         while all(p.poll() is None for p in procs):
