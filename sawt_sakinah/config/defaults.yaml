@@ -36,7 +36,7 @@ extraction:
 # uses speech_threshold/min_speech_duration. keep_silence applies on the editing side.
 silence:
   threshold_db: -40.0          # dB below which audio counts as silence
-  min_silence_duration: 1.0    # min seconds of a quiet run to report/cut
+  min_silence_duration: 3.0    # min seconds of a quiet run to report/cut (1s gaps are common mid-recitation)
   keep_silence: 0.0            # seconds of silence left in place at each cut (editing)
   merge_gap: null              # merge adjacent silences within this gap; null disables
   measure_loudness: true       # populate SilenceSegment.mean_db via a volumedetect pass

@@ -1,6 +1,6 @@
 /**
  * Silence-detection controls: threshold + minimum-gap sliders and a detect button.
- * Defaults mirror `CONFIG.silence` on the backend (threshold -40 dB, min gap 1.0 s). Once
+ * Defaults mirror `CONFIG.silence` on the backend (threshold -40 dB, min gap 3.0 s). Once
  * an initial detection exists, changing a slider debounces (~400 ms) a re-detect; the job
  * poll invalidates the project so the new silences refetch and the regions re-reconcile.
  */
@@ -9,7 +9,7 @@ import { Button, Slider } from "@/components/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const THRESHOLD = { min: -60, max: -20, step: 1, default: -40 };
-const MIN_GAP = { min: 0.2, max: 5, step: 0.1, default: 1.0 };
+const MIN_GAP = { min: 0.2, max: 10, step: 0.1, default: 3.0 };
 const DEBOUNCE_MS = 400;
 
 export function SilenceControls({
