@@ -7,6 +7,7 @@ import type {
   ExportRequest,
   JobAccepted,
   JobRecord,
+  Marker,
   PhraseRequest,
   ProjectView,
   SilenceParams,
@@ -33,6 +34,13 @@ export const putEdl = (projectId: string, operations: EditOperation[]) =>
   request<EditDecisionList>(`/projects/${projectId}/edl`, {
     method: "PUT",
     body: { operations },
+  });
+
+/** Replace the marker list; returns the updated project (markers + re-derived structure). */
+export const updateMarkers = (projectId: string, markers: Marker[]) =>
+  request<ProjectView>(`/projects/${projectId}/markers`, {
+    method: "PUT",
+    body: { markers },
   });
 
 export const exportAudio = (projectId: string, body: ExportRequest) =>

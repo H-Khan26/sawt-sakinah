@@ -2,7 +2,7 @@
 #
 # Requires GNU make. On Windows install it with `choco install make` (or run from
 # Git Bash / WSL). Override the interpreter or bind address as needed, e.g.:
-#   make serve PORT=9000
+#   make dev PORT=9000
 #   make requirements PYTHON=py
 
 PYTHON ?= python
@@ -11,39 +11,40 @@ HOST ?= 127.0.0.1
 PORT ?= 8000
 
 .DEFAULT_GOAL := help
-.PHONY: help requirements requirements-phrases requirements-vad requirements-all serve dev dev-api clean
+.PHONY: help requirements requirements-phrases requirements-vad requirements-all requirements-desktop dev desktop clean
 
 help:  ## List available commands
 	@$(PYTHON) -c "print('Commands:\n'\
-	'  make requirements          install core + service deps (run the app)\n'\
-	'  make requirements-phrases  + Whisper phrase detection (faster-whisper)\n'\
-	'  make requirements-vad      + Silero VAD silence detection (torch)\n'\
-	'  make requirements-all      everything\n'\
-	'  make serve                 run the service at http://$(HOST):$(PORT)\n'\
-	'  make dev                   run backend (autoreload) + frontend together\n'\
-	'  make dev-api               run only the service with autoreload\n'\
+	'  make requirements          install everything to run the app (service + phrases + desktop; no VAD)\n'\
+	'  make requirements-phrases  just the Whisper phrase detection deps (faster-whisper)\n'\
+	'  make requirements-vad      add the Silero VAD silence detector (heavy: torch)\n'\
+	'  make requirements-desktop  just the pywebview desktop shell\n'\
+	'  make requirements-all      absolutely everything, including VAD/torch\n'\
+	'  make dev                   develop: backend (autoreload) + frontend, hot reload\n'\
+	'  make desktop               run the app: build the SPA + open the native window\n'\
 	'  make clean                 remove caches and build artifacts')"
 
-requirements:  ## Install core + service deps (enough to run the app)
-	$(PIP) install -e ".[service]"
+requirements:  ## Install everything to run the app (service + phrases + desktop; no VAD)
+	$(PIP) install -e ".[service,phrases,desktop]"
 
-requirements-phrases:  ## Install optional Whisper phrase-detection deps
+requirements-phrases:  ## Install just the Whisper phrase-detection deps
 	$(PIP) install -e ".[phrases]"
 
-requirements-vad:  ## Install optional Silero VAD deps
+requirements-vad:  ## Install the Silero VAD silence detector (heavy: torch)
 	$(PIP) install -e ".[vad]"
 
-requirements-all:  ## Install everything (service + phrases + vad)
-	$(PIP) install -e ".[all]"
+requirements-desktop:  ## Install just the pywebview desktop shell (needs service too)
+	$(PIP) install -e ".[service,desktop]"
 
-serve:  ## Run the FastAPI service (the app)
-	$(PYTHON) -m sawt_sakinah serve --host $(HOST) --port $(PORT)
+requirements-all:  ## Install absolutely everything, including VAD/torch
+	$(PIP) install -e ".[all,desktop]"
 
-dev:  ## Run backend (autoreload) + frontend dev server together
+dev:  ## Develop: backend (autoreload) + frontend dev server together, hot reload
 	$(PYTHON) scripts/dev.py --host $(HOST) --port $(PORT)
 
-dev-api:  ## Run only the service with autoreload
-	$(PYTHON) -m sawt_sakinah serve --host $(HOST) --port $(PORT) --reload
+desktop:  ## Run the app: build the SPA, then open it in a native window (needs [desktop])
+	cd frontend && npm run build
+	$(PYTHON) -m sawt_sakinah desktop --host $(HOST) --port $(PORT)
 
 clean:  ## Remove __pycache__, build artifacts, and egg-info
 	$(PYTHON) -c "import shutil, glob; [shutil.rmtree(p, ignore_errors=True) for p in glob.glob('**/__pycache__', recursive=True) + glob.glob('*.egg-info') + ['build', 'dist']]"

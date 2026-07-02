@@ -44,6 +44,12 @@ vad = [
     "torch>=1.12.0",
     "torchaudio>=0.12.0",
 ]
+# Desktop shell (sawt_sakinah.desktop): a native window over the local service via
+# pywebview. Requires the built SPA (frontend/dist) and the `service` extra. Kept out of
+# `all` so headless/server installs never pull a GUI toolkit.
+desktop = [
+    "pywebview>=5",
+]
 # Everything (self-referencing extra; requires a recent pip).
 all = [
     "sawt-sakinah[service,phrases,vad]",

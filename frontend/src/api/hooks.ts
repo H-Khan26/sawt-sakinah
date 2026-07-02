@@ -2,6 +2,7 @@ import type {
   CreateProjectRequest,
   EditOperation,
   ExportRequest,
+  Marker,
   PhraseRequest,
   ProjectView,
   SilenceParams,
@@ -19,6 +20,7 @@ import {
   getWaveform,
   putEdl,
   queryKeys,
+  updateMarkers,
 } from "./endpoints";
 
 const DEFAULT_POLL_MS = 1000;
@@ -107,6 +109,25 @@ export function usePutEdl(projectId: string) {
     onSuccess: (edl) => {
       queryClient.setQueryData<ProjectView>(queryKeys.project(projectId), (prev) =>
         prev ? { ...prev, edl } : prev,
+      );
+    },
+  });
+}
+
+/**
+ * Persist the marker list and patch the cached project. The server re-derives prayer
+ * structure from the markers and returns the full view, so we patch markers, structure,
+ * and status together — keeping `PrayerStructurePanel` in sync in one shot.
+ */
+export function useUpdateMarkers(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (markers: Marker[]) => updateMarkers(projectId, markers),
+    onSuccess: (view) => {
+      queryClient.setQueryData<ProjectView>(queryKeys.project(projectId), (prev) =>
+        prev
+          ? { ...prev, markers: view.markers, structure: view.structure, status: view.status }
+          : view,
       );
     },
   });

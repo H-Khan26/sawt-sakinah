@@ -38,6 +38,13 @@ def _serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _desktop(args: argparse.Namespace) -> int:
+    """Run the service in-process and open it in a native window (needs the ``desktop`` extra)."""
+    from .desktop import run
+
+    return run(host=args.host, port=args.port)
+
+
 def _extract(args: argparse.Namespace) -> int:
     """One-shot extract + silence-trim; prints the path of the cleaned file."""
     from .pipeline import youtube_to_clean_audio
@@ -63,6 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8000, help="bind port (default: 8000)")
     serve.add_argument("--reload", action="store_true", help="autoreload on code change")
     serve.set_defaults(func=_serve)
+
+    desktop = sub.add_parser("desktop", help="run the app in a native window (needs [desktop])")
+    desktop.add_argument("--host", default="127.0.0.1", help="bind host (default: local-only)")
+    desktop.add_argument("--port", type=int, default=8000, help="bind port (default: 8000)")
+    desktop.set_defaults(func=_desktop)
 
     extract = sub.add_parser("extract", help="one-shot URL -> silence-trimmed file (no server)")
     extract.add_argument("url", help="YouTube video URL or bare 11-char id")

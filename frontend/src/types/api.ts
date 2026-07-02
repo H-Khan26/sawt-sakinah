@@ -180,6 +180,12 @@ export interface EdlUpdate {
   operations: EditOperation[];
 }
 
+/** Body of `PUT /projects/{id}/markers`; replaces the whole marker list (structure is
+ * re-derived server-side). User-placed markers carry `source: "user"`. */
+export interface MarkersUpdate {
+  markers: Marker[];
+}
+
 export interface ExportRequest {
   format?: string;
   bitrate?: string | null;

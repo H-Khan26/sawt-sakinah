@@ -1,9 +1,10 @@
 # Implementation Plan
 
 > Status: active. The build plan for the Sawt Sakinah frontend, written so any agent can
-> pick up a phase and execute it without re-deriving context. Phases 0-3 are **done**
-> (code in `frontend/`); Phases 4-7 are specified below. Where the planning docs (00-05)
-> and the live backend disagree, **the backend wins** — deltas are tabulated.
+> pick up a phase and execute it without re-deriving context. Phases 0-7 are **done**
+> (code in `frontend/`), plus a small backend **marker layer** (Phase B) that Phases 6-7
+> depend on. Where the planning docs (00-05) and the live backend disagree, **the backend
+> wins** — deltas are tabulated.
 
 ## Orientation
 
@@ -21,11 +22,19 @@ through Phase 1.
 ### Running it (dev)
 
 ```
-# terminal 1 — API on :8000
-uvicorn sawt_sakinah.service.app:app --reload
+# both servers in one terminal (recommended)
+make dev
+
+# or separately:
+# terminal 1 — API on :8000 (autoreload)
+python -m sawt_sakinah serve --reload
 # terminal 2 — Vite on :5173 (proxies /projects + /jobs to :8000)
-cd frontend && npm install && npm run dev
+cd frontend && npm run dev
 ```
+
+`make dev` runs [scripts/dev.py](../../scripts/dev.py), which launches both servers and
+tears them down together on Ctrl-C. Cross-platform (Windows cmd/Git Bash, macOS, Linux).
+Override host/port with `make dev HOST=0.0.0.0 PORT=9000`.
 
 No CORS is configured on the backend; the Vite proxy in
 [frontend/vite.config.ts](../../frontend/vite.config.ts) makes API calls same-origin.
@@ -69,12 +78,13 @@ properties, Biome. Hard conventions, enforced by tooling — follow them in ever
 | `progress` is a number | arbitrary **dict** per job kind | [jobs.py](../../sawt_sakinah/service/jobs.py) / [workers.py](../../sawt_sakinah/service/workers.py) |
 | waveform returns "peaks" | `{version, sample_rate, buckets, duration_sec, min[], max[]}` | [waveform.py](../../sawt_sakinah/service/waveform.py) |
 | generic routes | mounted at **root** (`/projects`, `/jobs`), no `/api`; writes return `202` | [app.py](../../sawt_sakinah/service/app.py) |
-| FastAPI serves the SPA | **not wired**; no CORS | [app.py](../../sawt_sakinah/service/app.py) (Phase 7) |
+| FastAPI serves the SPA | **wired** (Phase 7): SPA served at `/` with a deep-link catch-all when `frontend/dist` exists; API routes take precedence; still no CORS | [app.py](../../sawt_sakinah/service/app.py) |
 | `SilenceSegment.mean_db` | optional; `duration` is a computed field (present in JSON) | [segments.py](../../sawt_sakinah/models/segments.py) |
-| reference clips drive detection | `references` is **ignored by the Whisper backend** (reserved for a planned embeddings detector) | [phrases.py](../../sawt_sakinah/detection/phrases.py) |
-| marker / structure editing API | **none exists** — only create/get project, put EDL, detect, export, jobs, media | [routes/](../../sawt_sakinah/service/routes/) |
+| reference clips drive detection | `references` is **ignored by the Whisper backend** (reserved for a planned embeddings detector); the reference-clip UI is **dropped from v1** | [phrases.py](../../sawt_sakinah/detection/phrases.py) |
+| marker / structure editing API | **`PUT /projects/{id}/markers`** (Phase B) replaces the marker list and re-derives structure server-side | [routes/projects.py](../../sawt_sakinah/service/routes/projects.py) |
 
-The two "none/ignored" rows are real gaps that shape Phases 5-6 — flagged again there.
+The reference-clip row remains inert (dropped from v1); the SPA-serving and marker-API rows
+are now resolved by Phases 7 and B.
 
 ## API contract
 
@@ -90,6 +100,7 @@ GET  /projects/{id}                      -> ProjectView    (404 until extraction
 POST /projects/{id}/detect/silence       SilenceParams        -> 202 { job_id }
 POST /projects/{id}/detect/phrases       PhraseRequest        -> 202 { job_id }
 PUT  /projects/{id}/edl                  { operations[] }     -> EditDecisionList
+PUT  /projects/{id}/markers              { markers[] }        -> ProjectView   # re-derives structure
 POST /projects/{id}/export               ExportRequest        -> 202 { job_id }
 GET  /projects/{id}/audio                -> audio stream (HTTP range)
 GET  /projects/{id}/waveform             -> WaveformPeaks
@@ -120,7 +131,7 @@ success) and the [`jobToViewState`](../../frontend/src/api/viewState.ts) mapper
 - **silence / phrases / export** — `{ stage, status }` (see the `*_worker` functions in
   [workers.py](../../sawt_sakinah/service/workers.py)).
 
-## Current frontend file map (what Phases 0-1 produced)
+## Current frontend file map (what Phases 0-4 produced)
 
 ```
 frontend/
@@ -134,8 +145,8 @@ frontend/
     App.tsx                 routes: / and /p/:projectId
     index.css               @font-face + design tokens (purple remap)
     pages/
-      LandingPage.tsx       PLACEHOLDER (Phase 3 fleshes it out)
-      EditorPage.tsx        PLACEHOLDER (Phases 4-6 fill it)
+      LandingPage.tsx       link-input, validate, POST /projects, navigate
+      EditorPage.tsx        entry state machine + EditorWorkspace (waveform + transport)
     types/api.ts            all wire types
     api/
       client.ts             fetch wrapper + ApiError
@@ -143,7 +154,32 @@ frontend/
       hooks.ts              useProject/useJob/useWaveform/useCreateProject/
                             useDetect*/usePutEdl/useExport
       viewState.ts          job -> editor view-state mapper
-    lib/queryClient.ts      QueryClient (retry policy keyed on ApiError.status)
+    lib/
+      queryClient.ts        QueryClient (retry policy keyed on ApiError.status)
+      cn.ts                 class-merge helper
+      themeColors.ts        hex mirrors of --waveform-*/--silence-*/--marker-* CSS vars
+                            (canvas can't read custom properties; keep in sync with index.css)
+      time.ts               formatClock(seconds) -> "m:ss"
+    components/
+      ui/                   Button, Card, Input, Modal, Badge, Progress, Slider,
+                            Tooltip, LoadingSpinner, Tabs, Toast, EmptyState, Alert
+      layout/               AppShell, AppHeader
+      JobProgress.tsx       yt-dlp + {stage,status} progress shapes
+    features/
+      waveform/
+        peaks.ts            toWavesurferPeaks: WaveformPeaks -> [max[], min[]] for wavesurfer
+        useWavesurfer.ts    lifecycle hook: create/destroy in effect, events -> playbackStore,
+                            Timeline + Hover plugins; rate/zoom applied via separate effects
+        WaveformContext.tsx WaveformProvider + useWaveformContext (React context, not store ref)
+        WaveformView.tsx    container div + load/error overlays
+      transport/
+        transportControls.ts  togglePlay / zoomIn / zoomOut (shared by bar + hotkeys)
+        useTransportHotkeys.ts  Space=play/pause, [/]=zoom; ignored in form fields
+        TransportBar.tsx    split subcomponents (TimeReadout subscribes currentTime alone,
+                            PlayButton subscribes isPlaying alone) to isolate per-frame renders
+    stores/
+      playbackStore.ts      currentTime/duration/isPlaying/rate/zoom; fed from wavesurfer events;
+                            selector-subscribe to avoid full-tree re-renders per frame
 ```
 
 Suggested places for new code (keep features cohesive): UI primitives in
@@ -311,44 +347,66 @@ cd frontend && npm run dev
 [05-state-and-api-integration.md](05-state-and-api-integration.md); error status table in
 [app.py](../../sawt_sakinah/service/app.py).
 
-## Phase 4 — Waveform & transport  *(next — the core net-new component)*
+## Phase 4 — Waveform & transport  *(done)*
 
 **Goal:** render the track as an interactive waveform and provide transport; this is the
 substrate Phases 5-6 draw onto.
 
-**Build:** `src/features/waveform/` — `WaveformView.tsx` (the component),
-`useWavesurfer.ts` (lifecycle hook), `peaks.ts` (the min/max adapter); a Zustand store
-`src/stores/playbackStore.ts`; `src/features/transport/TransportBar.tsx`; a
-`src/lib/themeColors.ts` exposing the waveform hex values (mirrors the CSS vars — note the
-duplication and keep them in sync).
+**Built:**
 
-**Design:**
-- Wrap wavesurfer v7: init in a `useEffect`, keep the instance in a `useRef` (never in
-  React state), destroy in cleanup. StrictMode double-invokes effects in dev — make
-  init/destroy idempotent.
-- **Peaks adapter:** the backend returns separate `min[]`/`max[]` (~2000 buckets, see
-  `service.waveform_buckets` in [defaults.yaml](../../sawt_sakinah/config/defaults.yaml));
-  wavesurfer's `peaks` option wants per-channel arrays normalized to `[-1, 1]`. Convert to
-  the min/max envelope wavesurfer expects; if the exact shape fights the lib version, fall
-  back to passing `max[]` alone (loses the negative lobe but renders), or a custom canvas.
-  Pass `url = audioUrl(id)` + `peaks` + `duration = peaks.duration_sec` so wavesurfer
-  **streams** audio for playback (range requests via
-  [media.py](../../sawt_sakinah/service/routes/media.py)) without decoding the whole file.
-- **Theme:** `waveColor = --waveform-unplayed`, `progressColor`/`cursorColor =
-  --waveform-played` (#450377).
-- **Transport:** play/pause (spacebar, ignored while typing in inputs), click/drag seek,
-  zoom (`[` / `]`), playback-rate selector (useful for fast recitation).
-- **Isolate the playhead:** put `currentTime`/`isPlaying`/`duration`/`rate`/`zoom` in
-  `playbackStore`, fed from wavesurfer's time events. Subscribe **only** the transport
-  readout and the active-position indicator to `currentTime` so per-frame updates don't
-  re-render the editor tree. Do not route `currentTime` through React Query or a tree-wide
-  context.
+| File | Purpose |
+|---|---|
+| `src/lib/themeColors.ts` | Hex mirrors of `--waveform-*`/`--silence-*`/`--marker-*` CSS vars; canvas can't read custom properties — keep in sync with `index.css` |
+| `src/lib/time.ts` | `formatClock(seconds)` -> `"m:ss"` shared by transport readout and wavesurfer plugin labels |
+| `src/features/waveform/peaks.ts` | `toWavesurferPeaks(WaveformPeaks)` -> `[max[], min[]]`; wavesurfer v7's bar renderer reads `channelData[0]` as top envelope and `channelData[1]` (via `Math.abs`) as bottom, so this gives the true min/max shape with no normalization (PCM is already `[-1,1]`); falls back to `[max[]]` on length mismatch |
+| `src/features/waveform/useWavesurfer.ts` | Lifecycle hook: instance in `useRef` (never state), create/destroy in one effect (StrictMode-safe; swallows `AbortError` on mid-load destroy); Timeline + Hover plugins; events → `playbackStore`; rate and zoom applied via two separate effects so they don't re-trigger init |
+| `src/features/waveform/WaveformContext.tsx` | `WaveformProvider` + `useWaveformContext`: React context exposing the instance, container ref, and load state to transport and future phases — chosen over a store ref (more idiomatic) and prop-drilling (would get noisy) |
+| `src/features/waveform/WaveformView.tsx` | Container `<div>` with load/error overlays; `relative` so Phase 5/6 overlays can anchor absolutely |
+| `src/features/transport/transportControls.ts` | `togglePlay`, `zoomIn`, `zoomOut` — shared by bar buttons and keyboard handler |
+| `src/features/transport/useTransportHotkeys.ts` | Space = play/pause, `[`/`]` = zoom; skipped when target is input/textarea/select/contenteditable |
+| `src/features/transport/TransportBar.tsx` | Split into `TimeReadout` (subscribes `currentTime`+`duration` only), `PlayButton` (subscribes `isPlaying` only), `ZoomControls`, `RateSelect` — so per-frame time updates re-render only the readout node, not the bar or editor tree |
+| `src/stores/playbackStore.ts` | `currentTime`/`duration`/`isPlaying`/`rate`/`zoom` (minPxPerSec); fed from wavesurfer events; selector-subscribe to isolate per-frame renders; `reset()` on teardown |
+| `src/pages/EditorPage.tsx` | "Ready" placeholder replaced with `EditorWorkspace` → `WaveformProvider` → `EditorBody` (title + `WaveformView` + `TransportBar`); entry-state machine above is unchanged |
+
+**Design decisions recorded:**
+- **Peaks shape:** `[max, min]` (not max-only fallback) — v7 renderer confirmed via source inspection to use `Math.abs` on both channels.
+- **Instance access:** React context (`WaveformProvider`) — not a store ref, not prop-drilling.
+- **Plugins included:** Timeline axis (helps navigate multi-minute prayers) + Hover cursor tooltip. Both ship inside `wavesurfer.js/dist/plugins`; no new dependency.
+- **Playback rate:** `preservePitch: true` so faster review doesn't shift the reciter's pitch.
+- **Zoom baseline:** on `ready`, the fitted `clientWidth/duration` is stored in `playbackStore.zoom` as the initial `minPxPerSec`, giving the zoom ±controls a numeric starting point.
+
+**Backend fix (same PR):** [media.py](../../sawt_sakinah/service/routes/media.py)
+`get_waveform` now writes the peaks cache via `_cache_peaks()` — uses `tempfile.mkstemp`
+(unique name, no concurrent collision) and retries `os.replace` up to 5× with 0.1 s
+backoff to tolerate Windows antivirus locks (WinError 32). Cache failure is best-effort;
+the computed peaks are always returned.
 
 **References:** [02-waveform-and-playback.md](02-waveform-and-playback.md);
-[waveform.py](../../sawt_sakinah/service/waveform.py). **Done when:** press-and-play is
-immediate, seek/zoom/rate work, and the editor tree doesn't re-render on every frame.
+[waveform.py](../../sawt_sakinah/service/waveform.py).
 
-## Phase 5 — Silence editing
+## Phase B — Backend marker layer  *(done)*
+
+**Goal:** the two backend changes Phases 6-7 depend on — persist/edit markers and embed
+them on export. Small additions following the `put_edl` / `render` patterns.
+
+- **`PUT /projects/{id}/markers`** in
+  [routes/projects.py](../../sawt_sakinah/service/routes/projects.py): accepts a
+  `MarkersUpdate` (`{ markers[] }`), replaces `p.markers`, re-derives structure via
+  `derive_structure(markers, total_duration=...)`, sets `status.analyzed = True`, and
+  returns the full `ProjectView` so the client patches markers + structure in one shot.
+  `MarkersUpdate` added to [schemas.py](../../sawt_sakinah/service/schemas.py).
+- **Export embeds real marker labels:** `_chapter_lines` /`render` /`_render` in
+  [editing/render.py](../../sawt_sakinah/editing/render.py) take an optional
+  `chapter_markers: (time, label)[]`; `export_worker`
+  ([workers.py](../../sawt_sakinah/service/workers.py)) passes the project's markers when
+  `embed_markers` is set. Times are remapped through the kept timeline (markers inside cuts
+  drop out); the EDL stays a pure cut/keep/fade record. Falls back to the old EDL-`marker`-op
+  chapters when no markers are supplied.
+- **Out of scope (confirmed):** no `references`/embeddings work; no standalone
+  structure-edit endpoint (structure is always *derived* — the user corrects it by editing
+  the boundary markers); no EDL validation hardening or edit-preview render.
+
+## Phase 5 — Silence editing  *(done)*
 
 **Goal:** make silent gaps obvious and let the user remove them with an undoable,
 non-destructive EDL, then export.
@@ -386,42 +444,44 @@ non-destructive EDL, then export.
 [edl.py](../../sawt_sakinah/models/edl.py) (`EditOperation` is `cut|keep|fade|marker`,
 `end` optional); `SilenceParams` in [schemas.py](../../sawt_sakinah/service/schemas.py).
 
-## Phase 6 — Markers & prayer structure
+## Phase 6 — Markers & prayer structure  *(done)*
 
 **Goal:** surface detected takbirs/phrases as timeline markers, render the rak'ah/position
-outline, and let the user navigate and correct it.
+outline, and let the user navigate **and correct** it with persisted edits.
 
-**Build:** `src/features/markers/` — `MarkerLayer.tsx`, `MarkerChip.tsx`,
-`PrayerStructurePanel.tsx`, `structure.ts` (active-position selector),
-`referenceClip.ts`; a Zustand `src/stores/markerStore.ts` for user overrides.
+**Built:** `src/features/markers/` — `MarkerLayer.tsx`, `MarkerChip.tsx`,
+`MarkerControls.tsx` (detect-phrases trigger + progress), `MarkerEditor.tsx`,
+`PrayerStructurePanel.tsx`, `MarkersPanel.tsx` (composes the three), `edits.ts` (pure
+marker mutations), `structure.ts` (active-position selector), `useMarkerLayout.ts`
+(`time -> x` under zoom/scroll); a Zustand `src/stores/markerStore.ts` (selection only).
+API glue: `MarkersUpdate` in `types/api.ts`, `updateMarkers` in `endpoints.ts`,
+`useUpdateMarkers` in `hooks.ts` (patches the cached `ProjectView` with the returned
+markers + structure). `WaveformView` gained an `overlay` slot anchored to the waveform box.
 
-**Design:**
+**Design (as built):**
 - **Markers:** a vertical line + `Badge`-styled chip per `Marker`, positioned by
-  `time -> x`. Color by `type` (takbir = `--color-accent`; tasmi/tahmid/tasleem =
-  accent-secondary / semantic variants). Low `confidence` -> lower opacity / dashed so the
-  user knows what to verify. Arabic labels use `font-arabic` + `lang="ar" dir="rtl"`. Click
-  -> seek; "Add marker at playhead" for manual annotation.
+  `time -> x`. `useMarkerLayout` reads the rendered `pxPerSec` (wrapper `scrollWidth /
+  duration`, the ground truth even when fitted) and scroll offset, recomputing on
+  zoom/scroll/resize. Color by `type` via `badgeVariantForMarker`; low-confidence **auto**
+  markers dim + dash. Arabic labels use `font-arabic` + `lang="ar" dir="rtl"`. Click a chip
+  -> select + seek.
+- **Editing (persisted, not a client overlay):** every edit computes the next `Marker[]`
+  (`edits.ts`) and calls `useUpdateMarkers`; the server replaces the list, **re-derives
+  structure**, and returns both. Add-at-playhead, relabel, retype, move-to-playhead, and
+  delete are in `MarkerEditor`. User markers carry `source: "user"`; new markers leave `id`
+  blank so the backend derives the canonical `type-time` id. **Structure is never edited
+  directly** — the user corrects it by editing the boundary markers, which re-derives it.
 - **Prayer panel:** group `PrayerPosition[]` by `rakah`; click a position -> seek; the
-  active position highlights as `currentTime` advances (subscribe to the playhead slice,
-  pick the position whose `[start,end)` contains it). Surface count mismatches as a gentle
-  `Alert`, not an error — recitations vary (qunut, sajdah tilawah). The backend derives
-  structure from markers in [prayer/structure.py](../../sawt_sakinah/prayer/structure.py)
-  (`derive_structure`); positions are a function of markers (+ user overrides).
-- **Gap to design around (no backend endpoint):** there is **no marker/structure edit
-  API** — markers/structure only arrive from `detect/phrases` inside the `Project`. So v1
-  marker edits (move/relabel/delete, manual markers, rak'ah corrections) must live as a
-  **client-side overlay** in `markerStore` (`source: "user"`) layered over the auto
-  markers, with structure re-derived client-side. Flag in the PR if a persistence endpoint
-  is wanted instead.
-- **Reference-clip workflow:** wire "select a clean takbir region -> Use as reference" to
-  `detect/phrases` with the `references` payload — but note it is currently **inert**: the
-  Whisper backend ignores `references` (reserved for a planned embeddings detector, see
-  [phrases.py](../../sawt_sakinah/detection/phrases.py)). Build the UI affordance; expect
-  no accuracy change until that backend lands.
-- **Timeline remap after cuts:** removing silence shifts the timeline. Document/confirm
-  whether the backend recomputes/offsets marker times relative to the EDL on render, or the
-  UI must map — this is an open cross-layer decision noted in
-  [04-markers-and-prayer-structure.md](04-markers-and-prayer-structure.md).
+  active position highlights as `currentTime` advances (a zustand selector maps the playhead
+  to the active index, so the panel re-renders only when the index changes). A gentle
+  `warning` `Alert` flags an incomplete-looking outline (no advancing markers / no tasleem);
+  never a hard error — recitations vary.
+- **Timeline invariant (resolves the old open question):** the frontend works entirely on
+  the **original source timeline**; there is no edit preview. Cuts are applied and marker
+  times remapped **only at export, server-side** (`_remap_time`). The waveform, silences,
+  markers, and structure all stay on the original timeline — the frontend never remaps time.
+- **Dropped from v1:** the reference-clip "Use as reference" affordance (the `references`
+  payload is inert on the Whisper backend).
 
 **References:** [04-markers-and-prayer-structure.md](04-markers-and-prayer-structure.md);
 [audio/03-phrase-detection.md](../audio/03-phrase-detection.md);
@@ -431,24 +491,35 @@ outline, and let the user navigate and correct it.
 [schemas.py](../../sawt_sakinah/service/schemas.py). Note Whisper detection is **slow**
 and runs on a single-worker pool (`phrase_workers: 1`) — expect a long poll.
 
-## Phase 7 — Export + backend static mount
+## Phase 7 — Export + backend static mount + desktop  *(done)*
 
-**Goal:** the export flow, plus serving the SPA from FastAPI and a pywebview window.
+**Goal:** the export flow, plus serving the SPA from FastAPI and a native desktop window.
 
-**Build (frontend):** `src/features/export/` — `ExportButton.tsx`, `ExportModal.tsx`
-(`format`, `bitrate`, `embed_markers` -> `ExportRequest`; `useExport` -> poll job ->
-on success read the new `ExportArtifactView.download_url` and offer a download). Guard
-export as the destructive/rendered step.
+**Built (frontend):** `src/features/export/` — `ExportButton.tsx` (opens the modal; mounts
+it only while open so no job polls after close) and `ExportModal.tsx` (`format` / `bitrate`
+/ `embed_markers` -> `ExportRequest`; `useExport` -> poll job -> on success read the
+artifact id from the job result and offer `exportDownloadUrl` as a native download link).
+Wired into the editor header beside the title. Because Phase B sources export chapters from
+`project.markers`, whatever the user has after Phase 6 edits is exactly what `embed_markers`
+embeds — no extra bridging.
 
-**Build (backend — the one frontend-driven backend change):** in
-[app.py](../../sawt_sakinah/service/app.py), after `include_router` for the API, mount
-`StaticFiles(directory=<frontend/dist>, html=True)` at `/` with an SPA catch-all that
-returns `index.html` for unknown non-API paths (so React Router deep links work). Mount
-only when `dist` exists so dev (Vite proxy) is unaffected; API routes must take precedence
-over the catch-all. CORS stays unnecessary (same origin). Add a pywebview launcher (e.g.
-`sawt_sakinah/desktop.py`) that starts uvicorn and opens a window at the local URL;
-pywebview is a new dependency — add it as an optional extra in
-[pyproject.toml](../../pyproject.toml).
+**Built (backend static mount):** `_mount_spa` in
+[app.py](../../sawt_sakinah/service/app.py) runs after `include_router`, so API routes win.
+Hashed assets are served by `StaticFiles` at `/assets`; a `GET /{full_path:path}` catch-all
+serves a real file when one exists (favicon, etc.) or `index.html` otherwise, so React
+Router deep links like `/p/<id>` resolve. Mounted only when the built dir exists
+(`ServiceSettings.static_dir`, default `frontend/dist`, override `SAWT_STATIC_DIR`), so dev
+(Vite proxy) is untouched. Path traversal outside the dir falls back to the shell. Same
+origin, so no CORS.
+
+**Built (desktop shell):** [sawt_sakinah/desktop.py](../../sawt_sakinah/desktop.py) runs the
+same app on a background uvicorn thread, waits for it to accept connections, then opens a
+pywebview window at the local URL; closing the window stops the server. It requires the
+built SPA (errors clearly if missing). pywebview is an optional extra
+(`[project.optional-dependencies] desktop`) in
+[pyproject.toml](../../pyproject.toml), kept out of `all` so headless installs stay GUI-free.
+Reachable as `python -m sawt_sakinah desktop`, `python -m sawt_sakinah.desktop`, or
+`make desktop` (which builds the SPA first). `make requirements-desktop` installs the extra.
 
 **References:** shell section of [00-overview.md](00-overview.md);
 [audio/04-editing-and-export.md](../audio/04-editing-and-export.md);

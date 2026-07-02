@@ -2,6 +2,9 @@ import { ApiError } from "@/api/client";
 import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { Alert, EmptyState, LoadingSpinner } from "@/components/ui";
+import { ExportButton } from "@/features/export/ExportButton";
+import { MarkerLayer } from "@/features/markers/MarkerLayer";
+import { MarkersPanel } from "@/features/markers/MarkersPanel";
 import { SilencePanel } from "@/features/silence/SilencePanel";
 import { TransportBar } from "@/features/transport/TransportBar";
 import { useTransportHotkeys } from "@/features/transport/useTransportHotkeys";
@@ -137,7 +140,7 @@ export function EditorPage() {
 /**
  * The editor proper, mounted once the project is loaded. `WaveformProvider` owns the
  * wavesurfer instance and exposes it (via context) to the transport, the silence-region
- * layer, and — in a later phase — the marker layer, which slot in around `WaveformView`.
+ * layer, and the marker layer, which slot in around `WaveformView`.
  */
 function EditorWorkspace({ project }: { project: ProjectView }) {
   return (
@@ -151,10 +154,14 @@ function EditorBody({ project }: { project: ProjectView }) {
   useTransportHotkeys();
   return (
     <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-4 p-6">
-      <h1 className="font-serif text-2xl text-accent">{project.audio_source.title}</h1>
-      <WaveformView />
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="font-serif text-2xl text-accent">{project.audio_source.title}</h1>
+        <ExportButton project={project} />
+      </div>
+      <WaveformView overlay={<MarkerLayer markers={project.markers} />} />
       <TransportBar />
       <SilencePanel project={project} />
+      <MarkersPanel project={project} />
     </div>
   );
 }

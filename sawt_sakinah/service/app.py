@@ -12,10 +12,12 @@ the rare synchronous failure; async failures surface in ``JobRecord.error``/``er
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from ..models import (
     AgeRestrictedError,
@@ -64,6 +66,29 @@ def _make_handler(status: int):
     return handler
 
 
+def _mount_spa(app: FastAPI, dist: Path) -> None:
+    """Serve the built SPA at ``/`` with a deep-link catch-all.
+
+    Registered *after* the API routers so those always win; the catch-all only handles GETs
+    no API route claimed. Hashed assets are served by ``StaticFiles`` (proper caching); any
+    other path serves the real file if it exists (favicon, etc.), else ``index.html`` so
+    React Router deep links like ``/p/<id>`` resolve. Path traversal outside ``dist`` falls
+    back to the shell rather than escaping the directory.
+    """
+    dist = dist.resolve()
+    index = dist / "index.html"
+    assets = dist / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_catch_all(full_path: str) -> FileResponse:
+        candidate = (dist / full_path).resolve()
+        if full_path and candidate.is_file() and candidate.is_relative_to(dist):
+            return FileResponse(candidate)
+        return FileResponse(index)
+
+
 def create_app(settings: Optional[ServiceSettings] = None) -> FastAPI:
     app = FastAPI(title="sawt-sakinah service", lifespan=lifespan)
     app.state.settings = settings or ServiceSettings()
@@ -79,6 +104,12 @@ def create_app(settings: Optional[ServiceSettings] = None) -> FastAPI:
 
     for exc_type, status in _ERROR_STATUS:
         app.add_exception_handler(exc_type, _make_handler(status))
+
+    # Serve the built SPA last so API routes take precedence. Skipped when unbuilt (dev uses
+    # the Vite server), leaving the API-only app untouched.
+    static_dir = app.state.settings.static_dir
+    if static_dir is not None and Path(static_dir).is_dir():
+        _mount_spa(app, Path(static_dir))
 
     return app
 

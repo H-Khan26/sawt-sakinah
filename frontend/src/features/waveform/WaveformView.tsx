@@ -1,13 +1,15 @@
 /**
- * The waveform surface: the element wavesurfer draws into, plus load/error overlays. Kept
- * presentational — all state comes from `WaveformContext`. Silence regions (Phase 5) and
- * markers (Phase 6) will layer over this same container by reading the instance from
- * context, so the container is `relative` to anchor their absolutely-positioned overlays.
+ * The waveform surface: the element wavesurfer draws into, plus load/error overlays and an
+ * optional `overlay` slot layered over the waveform (the Phase 6 marker layer). The overlay
+ * is anchored to the same box the waveform draws into so time-positioned children line up
+ * with the audio; it is click-through by default (children opt back in with `pointer-events`).
+ * Kept presentational — all state comes from `WaveformContext`.
  */
 import { Alert, LoadingSpinner } from "@/components/ui";
+import type { ReactNode } from "react";
 import { useWaveformContext } from "./WaveformContext";
 
-export function WaveformView() {
+export function WaveformView({ overlay }: { overlay?: ReactNode }) {
   const { containerRef, isReady, isLoadingPeaks, error } = useWaveformContext();
 
   return (
@@ -20,8 +22,13 @@ export function WaveformView() {
         </div>
       ) : null}
 
-      {/* wavesurfer renders its canvases + timeline into this element. */}
-      <div ref={containerRef} className="w-full" aria-label="Audio waveform" />
+      <div className="relative">
+        {/* wavesurfer renders its canvases + timeline into this element. */}
+        <div ref={containerRef} className="w-full" aria-label="Audio waveform" />
+        {isReady && overlay ? (
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">{overlay}</div>
+        ) : null}
+      </div>
 
       {!error && (isLoadingPeaks || !isReady) ? (
         <div className="absolute inset-0 flex items-center justify-center rounded-card bg-background-secondary/60">
