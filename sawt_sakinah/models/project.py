@@ -61,6 +61,7 @@ class ExportArtifact(BaseModel):
     bitrate: Optional[str] = None
     edl_ref: Optional[str] = None
     created_at: datetime = Field(default_factory=_now)
+    name: Optional[str] = None  # user-supplied label; drives the download filename only
 
 
 class Project(BaseModel):
@@ -70,12 +71,15 @@ class Project(BaseModel):
 
     id: str
     audio_source: AudioSource
+    name: str = ""  # user-facing library label; seeded from audio_source.title on create
     silences: list[SilenceSegment] = Field(default_factory=list)
     markers: list[Marker] = Field(default_factory=list)
     structure: list[PrayerPosition] = Field(default_factory=list)
     edl: EditDecisionList
     status: ProjectStatus = Field(default_factory=ProjectStatus)
     exports: list[ExportArtifact] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)  # sort key for the library
 
     def to_dict(self) -> dict:
         return self.model_dump(mode="json")
@@ -83,3 +87,23 @@ class Project(BaseModel):
     @classmethod
     def from_dict(cls, data: dict) -> "Project":
         return cls.model_validate(data)
+
+
+class ProjectSummary(BaseModel):
+    """Lightweight projection of a ``Project`` for the library list.
+
+    Built by reading ``project.json`` once and projecting out only these fields -- it never
+    runs the full ``load`` + ``_heal`` (which stats every audio/export file) so listing a
+    whole library stays cheap. Path-free, so it doubles as its own wire view.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    name: str
+    source_url: str
+    duration_sec: float
+    created_at: datetime
+    updated_at: datetime
+    status: ProjectStatus = Field(default_factory=ProjectStatus)
+    export_count: int = 0

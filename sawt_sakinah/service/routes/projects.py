@@ -1,11 +1,12 @@
-"""Project lifecycle: create (async extraction), fetch, EDL update, and marker update."""
+"""Project lifecycle: create (async extraction), list, fetch, rename, delete, and the
+EDL / marker updates."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from ..deps import get_jobs, get_settings, get_store
 from ..jobs import JobKind
@@ -14,6 +15,8 @@ from ..schemas import (
     CreateProjectResponse,
     EdlUpdate,
     MarkersUpdate,
+    PatchProjectRequest,
+    ProjectListResponse,
     ProjectView,
     to_project_view,
 )
@@ -45,6 +48,12 @@ def create_project(
     return CreateProjectResponse(project_id=project_id, job_id=job.id)
 
 
+@router.get("", response_model=ProjectListResponse)
+def list_projects(store=Depends(get_store)) -> ProjectListResponse:
+    """The library list: lightweight summaries, most-recently-edited first."""
+    return ProjectListResponse(projects=store.list_summaries())
+
+
 @router.get("/{project_id}", response_model=ProjectView)
 def get_project(project_id: str, store=Depends(get_store)) -> ProjectView:
     validate_id(project_id, "project_id")
@@ -52,6 +61,30 @@ def get_project(project_id: str, store=Depends(get_store)) -> ProjectView:
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
     return to_project_view(project)
+
+
+@router.patch("/{project_id}", response_model=ProjectView)
+def patch_project(
+    project_id: str,
+    req: PatchProjectRequest,
+    store=Depends(get_store),
+) -> ProjectView:
+    """Rename the project. Returns the full ``ProjectView`` so the client patches its
+    cache in one shot (same convention as ``PUT /markers``)."""
+    validate_id(project_id, "project_id")
+    try:
+        updated = store.rename(project_id, req.name)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="project not found")
+    return to_project_view(updated)
+
+
+@router.delete("/{project_id}", status_code=204)
+def delete_project(project_id: str, store=Depends(get_store)) -> Response:
+    validate_id(project_id, "project_id")
+    if not store.delete(project_id):
+        raise HTTPException(status_code=404, detail="project not found")
+    return Response(status_code=204)
 
 
 @router.put("/{project_id}/edl", response_model=EditDecisionList)

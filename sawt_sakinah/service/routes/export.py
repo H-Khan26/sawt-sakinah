@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
@@ -14,6 +15,16 @@ from ..workers import export_worker
 from .common import validate_id
 
 router = APIRouter(prefix="/projects", tags=["export"])
+
+# Strip path separators, quotes, and control chars; collapse whitespace to a single dash.
+# Keeps unicode (Arabic) intact -- RFC 5987 encoding in the response handles the wire.
+_UNSAFE = re.compile(r'[\\/:*?"<>|\x00-\x1f\x7f]+')
+
+
+def _safe_base(text: str) -> str:
+    text = _UNSAFE.sub(" ", text or "")
+    text = re.sub(r"\s+", "-", text.strip())
+    return text or "export"
 
 
 @router.post("/{project_id}/export", response_model=JobAccepted, status_code=202)
@@ -57,6 +68,8 @@ def download_export(
     if not path.is_relative_to(exports_root) or not path.exists():
         raise HTTPException(status_code=404, detail="export not found")
 
+    base = _safe_base(project.name or artifact.name or "export")
+    filename = f"{base}-{artifact.created_at:%Y%m%d}.{artifact.format}"
     return ranged_file_response(
-        path, request.headers.get("range"), media_type_for(path), filename=path.name
+        path, request.headers.get("range"), media_type_for(path), filename=filename
     )

@@ -88,6 +88,8 @@ export interface ExportArtifactView {
   bitrate: string | null;
   edl_ref: string | null;
   created_at: string;
+  /** User-supplied export label; drives the download filename. */
+  name: string | null;
   /** Relative URL to download the rendered file. */
   download_url: string;
 }
@@ -101,12 +103,33 @@ export interface ProjectStatus {
 export interface ProjectView {
   id: string;
   audio_source: AudioSourceView;
+  /** User-facing library label; seeded from the source title, editable via PATCH. */
+  name: string;
   silences: SilenceSegment[];
   markers: Marker[];
   structure: PrayerPosition[];
   edl: EditDecisionList;
   status: ProjectStatus;
   exports: ExportArtifactView[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** `GET /projects` item — lightweight projection for the library list. */
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  source_url: string;
+  duration_sec: number;
+  created_at: string;
+  updated_at: string;
+  status: ProjectStatus;
+  export_count: number;
+}
+
+/** Body of `GET /projects`, most-recently-edited first. */
+export interface ProjectListResponse {
+  projects: ProjectSummary[];
 }
 
 // --- jobs (service/jobs.py) -------------------------------------------------
@@ -190,6 +213,13 @@ export interface ExportRequest {
   format?: string;
   bitrate?: string | null;
   embed_markers?: boolean;
+  /** Download-filename label; defaults to the project name. */
+  name?: string | null;
+}
+
+/** Body of `PATCH /projects/{id}` — rename. Server rejects empty/whitespace-only names. */
+export interface PatchProjectRequest {
+  name: string;
 }
 
 // --- waveform peaks (service/waveform.py) -----------------------------------

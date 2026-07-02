@@ -9,7 +9,7 @@ from .markers import Marker
 from .sources import AudioSource
 from .edl import EditOperation, EditDecisionList
 from .structure import PrayerPosition
-from .project import Project, ProjectStatus, ExportArtifact
+from .project import Project, ProjectStatus, ProjectSummary, ExportArtifact
 from .errors import (
     ExtractionError,
     InvalidInputError,
@@ -29,6 +29,7 @@ __all__ = [
     "PrayerPosition",
     "Project",
     "ProjectStatus",
+    "ProjectSummary",
     "ExportArtifact",
     "ExtractionError",
     "InvalidInputError",

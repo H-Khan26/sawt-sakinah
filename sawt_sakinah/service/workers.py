@@ -84,6 +84,7 @@ def extract_worker(
         project = Project(
             id=project_id,
             audio_source=source,
+            name=source.title,
             edl=EditDecisionList(source_id=source.id),
             status=ProjectStatus(extracted=True),
         )
@@ -213,6 +214,7 @@ def export_worker(
             duration_sec=meta["duration_sec"],
             bitrate=req.bitrate,
             edl_ref=project.edl.source_id,
+            name=req.name or project.name or None,
         )
         store.update(
             project_id,

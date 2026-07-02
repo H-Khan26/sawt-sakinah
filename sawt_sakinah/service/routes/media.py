@@ -20,12 +20,15 @@ router = APIRouter(prefix="/projects", tags=["media"])
 
 @router.get("/{project_id}/audio")
 def get_audio(project_id: str, request: Request, store=Depends(get_store)):
-    """Stream the user-facing artifact (the mp3), honoring Range requests for seeking."""
+    """Stream the user-facing artifact (the mp3), honoring Range requests for seeking.
+
+    Resolves the path via ``store.audio_path`` -- a cheap single-field read -- rather than
+    a full ``load`` + ``_heal``, since scrubbing issues many range requests per second.
+    """
     validate_id(project_id, "project_id")
-    project = store.load(project_id)
-    if project is None:
+    local = store.audio_path(project_id)
+    if local is None:
         raise HTTPException(status_code=404, detail="project not found")
-    local = Path(project.audio_source.local_path)
     if not local.exists():
         raise HTTPException(status_code=404, detail="audio not found")
     return ranged_file_response(
@@ -36,10 +39,8 @@ def get_audio(project_id: str, request: Request, store=Depends(get_store)):
 @router.get("/{project_id}/waveform")
 def get_waveform(project_id: str, store=Depends(get_store), settings=Depends(get_settings)):
     validate_id(project_id, "project_id")
-    project = store.load(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="project not found")
 
+    # Waveform is immutable per source: serve the cache before touching the project.
     cache = store.waveform_path(project_id)
     if cache.exists():
         try:
@@ -47,9 +48,11 @@ def get_waveform(project_id: str, store=Depends(get_store), settings=Depends(get
         except (ValueError, OSError):
             pass  # corrupt cache -> recompute
 
-    peaks = compute_peaks(
-        project.audio_source.local_path, ffmpeg_bin=settings.ffmpeg_bin
-    )
+    local = store.audio_path(project_id)
+    if local is None:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    peaks = compute_peaks(local, ffmpeg_bin=settings.ffmpeg_bin)
     _cache_peaks(cache, peaks)
     return peaks
 

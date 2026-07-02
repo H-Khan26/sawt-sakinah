@@ -11,6 +11,7 @@ from __future__ import annotations
 import mimetypes
 from pathlib import Path
 from typing import Iterator, Optional
+from urllib.parse import quote
 
 from fastapi import Response
 from fastapi.responses import FileResponse, StreamingResponse
@@ -18,6 +19,22 @@ from fastapi.responses import FileResponse, StreamingResponse
 from ..config import CONFIG
 
 CHUNK_SIZE = CONFIG.service.stream_chunk_size
+
+
+def _content_disposition(filename: str) -> str:
+    """Build an ``attachment`` Content-Disposition carrying both a plain-ASCII
+    ``filename`` (for old clients) and an RFC 5987 ``filename*`` so unicode (e.g. Arabic)
+    titles survive the download. Falls back to ``download.<ext>`` when the name has no
+    ASCII characters at all.
+    """
+    ascii_name = filename.encode("ascii", "ignore").decode("ascii").replace('"', "")
+    if not ascii_name.strip(" .-"):
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+        ascii_name = f"download.{ext}" if ext else "download"
+    return (
+        f'attachment; filename="{ascii_name}"; '
+        f"filename*=UTF-8''{quote(filename, safe='')}"
+    )
 
 _AUDIO_TYPES = {
     ".mp3": "audio/mpeg",
@@ -79,8 +96,10 @@ def ranged_file_response(
     media_type = media_type or media_type_for(path)
     size = path.stat().st_size
 
+    disposition = {"Content-Disposition": _content_disposition(filename)} if filename else {}
+
     if not range_header:
-        return FileResponse(path, media_type=media_type, filename=filename)
+        return FileResponse(path, media_type=media_type, headers=disposition)
 
     parsed = _parse_range(range_header, size)
     if parsed is None:
@@ -107,6 +126,7 @@ def ranged_file_response(
         "Content-Range": f"bytes {start}-{end}/{size}",
         "Accept-Ranges": "bytes",
         "Content-Length": str(length),
+        **disposition,
     }
     return StreamingResponse(
         body(), status_code=206, media_type=media_type, headers=headers

@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..config import CONFIG
 from ..models import (
@@ -27,6 +27,7 @@ from ..models import (
     PrayerPosition,
     Project,
     ProjectStatus,
+    ProjectSummary,
     SilenceSegment,
 )
 
@@ -96,6 +97,21 @@ class ExportRequest(BaseModel):
     format: str = CONFIG.editing.out_format
     bitrate: Optional[str] = None
     embed_markers: bool = CONFIG.editing.embed_markers
+    name: Optional[str] = None  # download-filename label; defaults to the project name
+
+
+class PatchProjectRequest(BaseModel):
+    """Body of ``PATCH /projects/{id}`` -- rename / metadata edits."""
+
+    name: str = Field(max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def _non_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name must not be empty")
+        return v
 
 
 # --- wire-facing views (paths stripped) --------------------------------------
@@ -121,18 +137,29 @@ class ExportArtifactView(BaseModel):
     bitrate: Optional[str] = None
     edl_ref: Optional[str] = None
     created_at: datetime
+    name: Optional[str] = None
     download_url: str
 
 
 class ProjectView(BaseModel):
     id: str
     audio_source: AudioSourceView
+    name: str
     silences: list[SilenceSegment]
     markers: list[Marker]
     structure: list[PrayerPosition]
     edl: EditDecisionList
     status: ProjectStatus
     exports: list[ExportArtifactView]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProjectListResponse(BaseModel):
+    """Body of ``GET /projects``. ``ProjectSummary`` is already path-free, so it doubles
+    as the wire view -- no path-stripping projection needed."""
+
+    projects: list[ProjectSummary]
 
 
 def to_project_view(project: Project) -> ProjectView:
@@ -158,6 +185,7 @@ def to_project_view(project: Project) -> ProjectView:
             bitrate=a.bitrate,
             edl_ref=a.edl_ref,
             created_at=a.created_at,
+            name=a.name,
             download_url=f"/projects/{project.id}/exports/{a.id}",
         )
         for a in project.exports
@@ -165,10 +193,13 @@ def to_project_view(project: Project) -> ProjectView:
     return ProjectView(
         id=project.id,
         audio_source=audio,
+        name=project.name,
         silences=project.silences,
         markers=project.markers,
         structure=project.structure,
         edl=project.edl,
         status=project.status,
         exports=exports,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
     )
