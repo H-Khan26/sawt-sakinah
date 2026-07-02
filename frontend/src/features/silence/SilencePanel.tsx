@@ -9,7 +9,7 @@
  * removal, marked "removed", so a cut can be restored. Region drawing is owned by
  * `useEditRegions` (mounted once in the editor), not here.
  */
-import { Button, Card, SimpleModal } from "@/components/ui";
+import { Button, PanelSection, SimpleModal } from "@/components/ui";
 import { useEdlEditor } from "@/features/cuts/useEdlEditor";
 import { useEditStore } from "@/stores/editStore";
 import type { ProjectView } from "@/types/api";
@@ -72,7 +72,7 @@ export function SilencePanel({ project }: { project: ProjectView }) {
   const busy = editor.isPending;
 
   return (
-    <Card header="Silence">
+    <PanelSection id="silence" title="Silence">
       <div className="flex flex-col gap-4">
         <SilenceControls projectId={projectId} hasDetected={silences.length > 0} />
 
@@ -121,6 +121,6 @@ export function SilencePanel({ project }: { project: ProjectView }) {
         This marks all {detected.count} detected silences for removal. You can undo this or restore
         individual gaps afterward. Nothing is changed until you export.
       </SimpleModal>
-    </Card>
+    </PanelSection>
   );
 }

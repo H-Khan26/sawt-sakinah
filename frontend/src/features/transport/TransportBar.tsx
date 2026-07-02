@@ -6,12 +6,13 @@
  * per-frame time updates re-render just that small node — not the transport bar or the
  * editor tree.
  */
-import { Button } from "@/components/ui";
+import { Button, Tooltip } from "@/components/ui";
 import { UndoRedoControls } from "@/features/cuts/UndoRedoControls";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { formatClock, formatClockPrecise } from "@/lib/time";
 import { PLAYBACK_RATES, ZOOM_MAX, usePlaybackStore } from "@/stores/playbackStore";
 import type { ProjectView } from "@/types/api";
+import { Check, Copy, Pause, Play } from "lucide-react";
 import { useState } from "react";
 import { togglePlay, zoomIn, zoomOut } from "./transportControls";
 
@@ -40,15 +41,17 @@ function CopyTimeButton() {
     }
   };
   return (
-    <Button
-      size="sm"
-      variant="ghost"
-      onClick={onCopy}
-      aria-label="Copy current timestamp"
-      title="Copy current timestamp"
-    >
-      {copied ? "Copied" : "Copy time"}
-    </Button>
+    <Tooltip content={copied ? "Copied!" : "Copy timestamp"}>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={onCopy}
+        aria-label={copied ? "Timestamp copied" : "Copy current timestamp"}
+        className="w-8 px-0"
+      >
+        {copied ? <Check size={18} /> : <Copy size={18} />}
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -56,16 +59,23 @@ function PlayButton() {
   const { wavesurfer, isReady } = useWaveformContext();
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   return (
-    <Button
-      size="sm"
-      variant="primary"
-      disabled={!isReady}
-      onClick={() => togglePlay(wavesurfer)}
-      aria-label={isPlaying ? "Pause" : "Play"}
-      aria-pressed={isPlaying}
-    >
-      {isPlaying ? "Pause" : "Play"}
-    </Button>
+    <Tooltip content={isPlaying ? "Pause" : "Play"}>
+      <Button
+        size="sm"
+        variant="primary"
+        disabled={!isReady}
+        onClick={() => togglePlay(wavesurfer)}
+        aria-label={isPlaying ? "Pause" : "Play"}
+        aria-pressed={isPlaying}
+        className="w-8 px-0"
+      >
+        {isPlaying ? (
+          <Pause size={18} fill="currentColor" />
+        ) : (
+          <Play size={18} fill="currentColor" />
+        )}
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -102,12 +112,12 @@ function RateSelect() {
   const rate = usePlaybackStore((s) => s.rate);
   const setRate = usePlaybackStore((s) => s.setRate);
   return (
-    <label className="flex items-center gap-1.5 font-sans text-sm text-text-secondary">
-      Speed
+    <Tooltip content="Playback speed">
       <select
         value={rate}
         disabled={!isReady}
         onChange={(e) => setRate(Number(e.target.value))}
+        aria-label="Playback speed"
         className="h-8 rounded border border-border bg-background px-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50"
       >
         {PLAYBACK_RATES.map((r) => (
@@ -116,13 +126,13 @@ function RateSelect() {
           </option>
         ))}
       </select>
-    </label>
+    </Tooltip>
   );
 }
 
 export function TransportBar({ project }: { project: ProjectView }) {
   return (
-    <div className="flex flex-wrap items-center gap-4 rounded-card border border-border bg-background px-4 py-2.5">
+    <div className="flex flex-wrap items-center gap-4 px-5 py-3">
       <PlayButton />
       <TimeReadout />
       <CopyTimeButton />

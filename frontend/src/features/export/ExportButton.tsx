@@ -3,8 +3,9 @@
  * mounted only while open so each export starts clean and no job polls in the background
  * after it is dismissed.
  */
-import { Button } from "@/components/ui";
+import { Button, Tooltip } from "@/components/ui";
 import type { ProjectView } from "@/types/api";
+import { Download } from "lucide-react";
 import { useState } from "react";
 import { ExportModal } from "./ExportModal";
 
@@ -12,7 +13,11 @@ export function ExportButton({ project }: { project: ProjectView }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button onClick={() => setOpen(true)}>Export</Button>
+      <Tooltip content="Export" side="bottom">
+        <Button onClick={() => setOpen(true)} aria-label="Export" className="w-10 px-0">
+          <Download size={20} />
+        </Button>
+      </Tooltip>
       {open && <ExportModal project={project} onClose={() => setOpen(false)} />}
     </>
   );

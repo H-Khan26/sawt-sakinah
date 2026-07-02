@@ -3,7 +3,7 @@
  * derived prayer outline. Mirrors `SilencePanel`. Markers and structure are read straight
  * from the project cache (server state); this panel owns only the selection reset on exit.
  */
-import { Card } from "@/components/ui";
+import { PanelSection } from "@/components/ui";
 import { useMarkerStore } from "@/stores/markerStore";
 import type { ProjectView } from "@/types/api";
 import { useEffect } from "react";
@@ -18,12 +18,12 @@ export function MarkersPanel({ project }: { project: ProjectView }) {
   useEffect(() => () => reset(), [reset]);
 
   return (
-    <Card header="Markers & prayer structure">
+    <PanelSection id="markers" title="Markers & prayer structure">
       <div className="flex flex-col gap-5">
         <MarkerControls projectId={project.id} hasMarkers={project.markers.length > 0} />
         <MarkerEditor project={project} />
         <PrayerStructurePanel markers={project.markers} structure={project.structure} />
       </div>
-    </Card>
+    </PanelSection>
   );
 }

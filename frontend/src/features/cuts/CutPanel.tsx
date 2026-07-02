@@ -4,7 +4,7 @@
  * the undo history with the silence panel via `useEdlEditor`; nothing is rendered destructively
  * until export, and playback skips committed cuts live (see `useCutSkip`).
  */
-import { Button, Card } from "@/components/ui";
+import { Button, PanelSection } from "@/components/ui";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { cn } from "@/lib/cn";
 import { cutColors, selectionColors, silenceColors } from "@/lib/themeColors";
@@ -152,7 +152,7 @@ export function CutPanel({ project }: { project: ProjectView }) {
   };
 
   return (
-    <Card header="Cuts">
+    <PanelSection id="cuts" title="Cuts">
       <div className="flex flex-col gap-4">
         <EditLegend />
 
@@ -227,7 +227,7 @@ export function CutPanel({ project }: { project: ProjectView }) {
           onSeek={(t) => wavesurfer?.setTime(t)}
         />
       </div>
-    </Card>
+    </PanelSection>
   );
 }
 

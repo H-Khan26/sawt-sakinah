@@ -1,6 +1,7 @@
-import { Button } from "@/components/ui";
-import { useNavigate } from "react-router-dom";
 import wordmark from "@/assets/logo-wordmark-cream.png";
+import { Button, Tooltip } from "@/components/ui";
+import { Plus } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 /**
  * Top banner: the cream Sawt Sakinah wordmark centered on the deep-purple accent field,
@@ -25,14 +26,19 @@ export function AppHeader() {
           draggable={false}
         />
       </button>
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() => navigate("/")}
-        className="absolute right-4"
-      >
-        New
-      </Button>
+      <span className="absolute right-4">
+        <Tooltip content="New project" side="bottom">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => navigate("/")}
+            aria-label="Start a new project"
+            className="w-8 px-0"
+          >
+            <Plus size={18} />
+          </Button>
+        </Tooltip>
+      </span>
     </header>
   );
 }
