@@ -1,7 +1,7 @@
 import { ApiError } from "@/api/client";
 import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
-import { Alert, EmptyState, LoadingSpinner } from "@/components/ui";
+import { Alert, EmptyState, LoadingSpinner, WorkbenchPanel } from "@/components/ui";
 import { CutPanel } from "@/features/cuts/CutPanel";
 import { useCutSkip } from "@/features/cuts/useCutSkip";
 import { useEditHotkeys } from "@/features/cuts/useEditHotkeys";
@@ -163,16 +163,18 @@ function EditorBody({ project }: { project: ProjectView }) {
   useEditHotkeys(project.id, ops);
   useCutSkip(ops);
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-4 p-6">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="font-serif text-2xl text-accent">{project.audio_source.title}</h1>
-        <ExportButton project={project} />
-      </div>
-      <WaveformView overlay={<MarkerLayer markers={project.markers} />} />
-      <TransportBar project={project} />
-      <SilencePanel project={project} />
-      <CutPanel project={project} />
-      <MarkersPanel project={project} />
+    <div className="mx-auto w-full max-w-6xl p-6">
+      <WorkbenchPanel>
+        <div className="flex items-center justify-between gap-4 px-5 py-4">
+          <h1 className="font-serif text-2xl text-accent">{project.audio_source.title}</h1>
+          <ExportButton project={project} />
+        </div>
+        <WaveformView overlay={<MarkerLayer markers={project.markers} />} />
+        <TransportBar project={project} />
+        <SilencePanel project={project} />
+        <CutPanel project={project} />
+        <MarkersPanel project={project} />
+      </WorkbenchPanel>
     </div>
   );
 }

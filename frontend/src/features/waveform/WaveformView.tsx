@@ -13,7 +13,7 @@ export function WaveformView({ overlay }: { overlay?: ReactNode }) {
   const { containerRef, isReady, isLoadingPeaks, error } = useWaveformContext();
 
   return (
-    <div className="relative w-full rounded-card bg-background-secondary p-4">
+    <div className="relative w-full rounded-card bg-background-secondary px-2 py-4">
       {error ? (
         <div className="p-4">
           <Alert variant="error" title="Couldn't load the waveform">

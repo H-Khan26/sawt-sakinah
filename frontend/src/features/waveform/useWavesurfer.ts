@@ -77,15 +77,15 @@ export function useWavesurfer({
       barWidth: 1,
       barGap: 1,
       barRadius: 0,
-      height: 128,
+      height: 200,
       // Peaks are already in [-1, 1]; do not renormalize per-render.
       normalize: false,
       interact: true,
       plugins: [
         TimelinePlugin.create({
-          height: 18,
+          height: 28,
           formatTimeCallback: formatClock,
-          style: { color: "var(--color-text-tertiary)" },
+          style: { color: "var(--color-text-tertiary)", fontSize: "13px" },
         }),
         HoverPlugin.create({
           lineColor: waveformColors.hover,
