@@ -11,6 +11,7 @@ import { cutColors, selectionColors, silenceColors } from "@/lib/themeColors";
 import { formatClock, formatClockPrecise, parseClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
 import type { EditOperation, ProjectView } from "@/types/api";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MIN_CUT_DURATION, addCut, cutKey, manualCuts, removeCutsByKey } from "./cutEdl";
 import { useEdlEditor } from "./useEdlEditor";
@@ -84,14 +85,12 @@ function Swatch({ color, label }: { color: string; label: string }) {
 function EditLegend() {
   return (
     <div className="flex flex-col gap-2 rounded border border-border bg-background-secondary/40 p-3 text-xs text-text-secondary">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <span>Click the waveform to play from / seek there. Mark a range, then cut:</span>
-      </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <Key k="I" /> set start
         <Key k="O" /> set end
         <Key k="Del" /> cut range
-        <span className="text-text-tertiary">·</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <Key k="Ctrl+Z" /> undo
         <Key k="Ctrl+Shift+Z" /> redo
       </div>
@@ -128,6 +127,8 @@ export function CutPanel({ project }: { project: ProjectView }) {
   const selectedIds = useEditStore((s) => s.selectedIds);
   const toggleSelected = useEditStore((s) => s.toggleSelected);
 
+  const [cutsOpen, setCutsOpen] = useState(false);
+
   const cuts = useMemo(() => manualCuts(ops, silences), [ops, silences]);
   const selectedCutKeys = useMemo(
     () => cuts.map(cutKey).filter((k) => selectedIds.has(k)),
@@ -152,80 +153,99 @@ export function CutPanel({ project }: { project: ProjectView }) {
   };
 
   return (
-    <PanelSection id="cuts" title="Cuts">
+    <PanelSection id="cuts" className="border-b border-border">
       <div className="flex flex-col gap-4">
-        <EditLegend />
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="grid grid-cols-[6rem_6rem_auto] items-end gap-2">
+            <label htmlFor="cut-start" className="flex flex-col gap-1 text-xs text-text-secondary">
+              Start
+              <TimeInput
+                id="cut-start"
+                value={selectionStart}
+                onCommit={setSelectionStart}
+                ariaLabel="Cut start"
+              />
+            </label>
+            <label htmlFor="cut-end" className="flex flex-col gap-1 text-xs text-text-secondary">
+              End
+              <TimeInput
+                id="cut-end"
+                value={selectionEnd}
+                onCommit={setSelectionEnd}
+                ariaLabel="Cut end"
+              />
+            </label>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={clearSelectionRange}
+              disabled={selectionStart == null && selectionEnd == null}
+            >
+              Clear
+            </Button>
 
-        <div className="flex flex-wrap items-end gap-3">
-          <label htmlFor="cut-start" className="flex flex-col gap-1 text-xs text-text-secondary">
-            Start
-            <TimeInput
-              id="cut-start"
-              value={selectionStart}
-              onCommit={setSelectionStart}
-              ariaLabel="Cut start"
-            />
-          </label>
-          <label htmlFor="cut-end" className="flex flex-col gap-1 text-xs text-text-secondary">
-            End
-            <TimeInput
-              id="cut-end"
-              value={selectionEnd}
-              onCommit={setSelectionEnd}
-              ariaLabel="Cut end"
-            />
-          </label>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => wavesurfer && setSelectionStart(wavesurfer.getCurrentTime())}
-            disabled={!wavesurfer}
-            title="Set start to the playhead (I)"
-          >
-            Set in
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => wavesurfer && setSelectionEnd(wavesurfer.getCurrentTime())}
-            disabled={!wavesurfer}
-            title="Set end to the playhead (O)"
-          >
-            Set out
-          </Button>
-          <Button size="sm" variant="danger" onClick={cutRange} disabled={!rangeReady || busy}>
-            Cut range
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={clearSelectionRange}
-            disabled={selectionStart == null && selectionEnd == null}
-          >
-            Clear
-          </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => wavesurfer && setSelectionStart(wavesurfer.getCurrentTime())}
+              disabled={!wavesurfer}
+              title="Set start to the playhead (I)"
+            >
+              Set in
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => wavesurfer && setSelectionEnd(wavesurfer.getCurrentTime())}
+              disabled={!wavesurfer}
+              title="Set end to the playhead (O)"
+            >
+              Set out
+            </Button>
+            <Button size="sm" variant="danger" onClick={cutRange} disabled={!rangeReady || busy}>
+              Cut
+            </Button>
+          </div>
+
+          <EditLegend />
         </div>
 
-        <div className="flex items-center justify-between text-sm text-text-secondary">
-          <span>
-            Manual cuts <span className="tabular-nums text-text">{cuts.length}</span>
-          </span>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={restoreSelected}
-            disabled={selectedCutKeys.length === 0 || busy}
-          >
-            Restore selected
-          </Button>
-        </div>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3 text-sm text-text-secondary">
+            <button
+              type="button"
+              className="flex items-center gap-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+              onClick={() => setCutsOpen((v) => !v)}
+              aria-expanded={cutsOpen}
+            >
+              <ChevronRight
+                size={16}
+                className={cn("transition-transform duration-fast", cutsOpen && "rotate-90")}
+                aria-hidden
+              />
+              Manual cuts <span className="tabular-nums text-text">{cuts.length}</span>
+            </button>
+            {cutsOpen && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={restoreSelected}
+                disabled={selectedCutKeys.length === 0 || busy}
+              >
+                Restore selected
+              </Button>
+            )}
+          </div>
 
-        <CutList
-          cuts={cuts}
-          selectedIds={selectedIds}
-          onToggle={toggleSelected}
-          onSeek={(t) => wavesurfer?.setTime(t)}
-        />
+          {cutsOpen && (
+            <CutList
+              cuts={cuts}
+              selectedIds={selectedIds}
+              onToggle={toggleSelected}
+              onSeek={(t) => wavesurfer?.setTime(t)}
+            />
+          )}
+        </div>
       </div>
     </PanelSection>
   );
