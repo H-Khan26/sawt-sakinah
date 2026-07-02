@@ -12,11 +12,11 @@ export function togglePlay(ws: WaveSurfer | null): void {
 }
 
 export function zoomIn(): void {
-  const { zoom, setZoom } = usePlaybackStore.getState();
-  if (zoom != null) setZoom(clampZoom(zoom * ZOOM_FACTOR));
+  const { zoom, zoomMin, setZoom } = usePlaybackStore.getState();
+  if (zoom != null) setZoom(clampZoom(zoom * ZOOM_FACTOR, zoomMin));
 }
 
 export function zoomOut(): void {
-  const { zoom, setZoom } = usePlaybackStore.getState();
-  if (zoom != null) setZoom(clampZoom(zoom / ZOOM_FACTOR));
+  const { zoom, zoomMin, setZoom } = usePlaybackStore.getState();
+  if (zoom != null) setZoom(clampZoom(zoom / ZOOM_FACTOR, zoomMin));
 }

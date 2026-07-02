@@ -9,7 +9,7 @@
 import { Button } from "@/components/ui";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { formatClock } from "@/lib/time";
-import { PLAYBACK_RATES, ZOOM_MAX, ZOOM_MIN, usePlaybackStore } from "@/stores/playbackStore";
+import { PLAYBACK_RATES, ZOOM_MAX, usePlaybackStore } from "@/stores/playbackStore";
 import { togglePlay, zoomIn, zoomOut } from "./transportControls";
 
 function TimeReadout() {
@@ -43,12 +43,13 @@ function PlayButton() {
 function ZoomControls() {
   const { isReady } = useWaveformContext();
   const zoom = usePlaybackStore((s) => s.zoom);
+  const zoomMin = usePlaybackStore((s) => s.zoomMin);
   return (
     <div className="flex items-center gap-1">
       <Button
         size="sm"
         variant="ghost"
-        disabled={!isReady || zoom == null || zoom <= ZOOM_MIN}
+        disabled={!isReady || zoom == null || zoom <= zoomMin}
         onClick={zoomOut}
         aria-label="Zoom out"
       >

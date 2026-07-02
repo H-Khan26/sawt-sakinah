@@ -11,7 +11,7 @@
 import { audioUrl } from "@/api/endpoints";
 import { waveformColors } from "@/lib/themeColors";
 import { formatClock } from "@/lib/time";
-import { clampZoom, usePlaybackStore } from "@/stores/playbackStore";
+import { ZOOM_MAX, usePlaybackStore } from "@/stores/playbackStore";
 import type { WaveformPeaks } from "@/types/api";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
@@ -73,6 +73,10 @@ export function useWavesurfer({
       progressColor: waveformColors.played,
       cursorColor: waveformColors.cursor,
       cursorWidth: 2,
+      // Fine-bar rendering: dense 1px ticks rather than one continuous filled shape.
+      barWidth: 1,
+      barGap: 1,
+      barRadius: 0,
       height: 128,
       // Peaks are already in [-1, 1]; do not renormalize per-render.
       normalize: false,
@@ -102,8 +106,16 @@ export function useWavesurfer({
       ws.setPlaybackRate(usePlaybackStore.getState().rate, true);
       // Establish a numeric zoom baseline from the fitted layout so zoom controls have a
       // starting point (until ready, zoom is null and wavesurfer fills the container).
+      // Fit-to-width (clientWidth / duration) is the most-zoomed-out useful value: the whole
+      // file fills the pane, and wavesurfer just fills the container below that. Use it as the
+      // dynamic zoom-out floor so long files can zoom out far enough to show everything,
+      // instead of bottoming out at the fixed px/sec minimum while still scrolled in.
       const fitted = el.clientWidth > 0 && duration > 0 ? el.clientWidth / duration : null;
-      if (fitted) store.setZoom(clampZoom(fitted));
+      if (fitted) {
+        const min = Math.min(fitted, ZOOM_MAX);
+        store.setZoomMin(min);
+        store.setZoom(min);
+      }
       setIsReady(true);
     });
     ws.on("play", () => store.setIsPlaying(true));
