@@ -1,6 +1,5 @@
 import { Badge } from "@/components/ui";
 import type { BadgeVariant } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import { formatRelativeTime, formatSourceHost } from "@/lib/format";
 import { formatClock } from "@/lib/time";
 import type { ProjectStatus, ProjectSummary } from "@/types/api";
@@ -65,13 +64,47 @@ export function ProjectCard({
           open();
         }
       }}
-      className="group relative flex min-h-44 cursor-pointer flex-col gap-3 rounded-[20px] border border-[rgba(224,224,224,0.96)] bg-[rgba(252,251,248,0.96)] p-5 text-left shadow-md transition-all duration-fast hover:-translate-y-0.5 hover:border-[rgba(69,3,119,0.24)] hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+      className="group relative flex cursor-pointer flex-col gap-4 rounded-[20px] border border-[rgba(224,224,224,0.96)] bg-[rgba(252,251,248,0.96)] p-5 text-left shadow-sm transition-all duration-fast hover:border-[rgba(69,3,119,0.24)] hover:bg-[rgba(255,255,255,0.98)] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus sm:flex-row sm:items-start sm:justify-between sm:gap-6"
     >
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="min-w-0 flex-1 truncate font-serif text-lg text-text" title={project.name}>
-          {project.name}
-        </h3>
-        <div className="relative" ref={menuRef}>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3 sm:gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-text-tertiary">
+              Project
+            </p>
+            <h3
+              className="mt-1 min-w-0 truncate font-serif text-xl text-text sm:text-[1.7rem]"
+              title={project.name}
+            >
+              {project.name}
+            </h3>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
+          <span className="truncate">{formatSourceHost(project.source_url)}</span>
+          <span className="text-text-tertiary">·</span>
+          <span>{formatClock(project.duration_sec)}</span>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Badge variant={stage.variant}>{stage.label}</Badge>
+          {project.export_count > 0 && (
+            <span className="rounded-full bg-[rgba(69,3,119,0.06)] px-3 py-1 text-xs text-text-secondary">
+              {project.export_count} export{project.export_count === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-4 border-t border-[rgba(224,224,224,0.9)] pt-4 sm:min-w-52 sm:flex-col sm:items-end sm:justify-between sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
+        <div className="text-xs uppercase tracking-[0.18em] text-text-tertiary sm:text-right">
+          Updated
+          <div className="mt-1 text-sm normal-case tracking-normal text-text-secondary">
+            {formatRelativeTime(project.updated_at)}
+          </div>
+        </div>
+        <div className="relative shrink-0" ref={menuRef}>
           <button
             type="button"
             aria-label="Project actions"
@@ -81,7 +114,7 @@ export function ProjectCard({
               e.stopPropagation();
               setMenuOpen((v) => !v);
             }}
-            className="-mr-1 -mt-1 rounded p-1 text-text-tertiary transition-colors duration-fast hover:bg-[rgba(69,3,119,0.06)] hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+            className="rounded p-1 text-text-tertiary transition-colors duration-fast hover:bg-[rgba(69,3,119,0.06)] hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
           >
             <MoreVertical size={18} />
           </button>
@@ -109,24 +142,6 @@ export function ProjectCard({
             </div>
           )}
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
-        <span className="truncate">{formatSourceHost(project.source_url)}</span>
-        <span className="text-text-tertiary">·</span>
-        <span>{formatClock(project.duration_sec)}</span>
-      </div>
-
-      <div className="mt-auto flex items-center justify-between gap-2 border-t border-[rgba(224,224,224,0.9)] pt-3">
-        <div className="flex items-center gap-2">
-          <Badge variant={stage.variant}>{stage.label}</Badge>
-          {project.export_count > 0 && (
-            <span className={cn("text-xs text-text-tertiary")}>
-              {project.export_count} export{project.export_count === 1 ? "" : "s"}
-            </span>
-          )}
-        </div>
-        <span className="text-xs text-text-tertiary">{formatRelativeTime(project.updated_at)}</span>
       </div>
     </div>
   );

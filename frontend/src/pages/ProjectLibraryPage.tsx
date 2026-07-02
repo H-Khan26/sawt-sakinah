@@ -11,9 +11,9 @@ import { useNavigate } from "react-router-dom";
 type Dialog = { kind: "rename" | "delete"; project: ProjectSummary } | null;
 
 /**
- * The app's entry point: a grid of every project, most-recently-edited first (server-sorted).
- * Click a card to open the editor; the kebab menu renames or deletes. A prominent "New
- * project" tile leads to `/new`.
+ * The app's entry point: a continuous library of every project, most-recently-edited first
+ * (server-sorted). Click a row to open the editor; the kebab menu renames or deletes. The
+ * primary "New project" action lives in the library header.
  */
 export function ProjectLibraryPage() {
   const navigate = useNavigate();
@@ -35,11 +35,21 @@ export function ProjectLibraryPage() {
               workspace.
             </p>
           </div>
-          {!isPending && !isError && (
-            <div className="rounded-full border border-[rgba(69,3,119,0.12)] bg-[rgba(255,255,255,0.72)] px-4 py-2 text-sm text-text-secondary shadow-sm">
-              {projectCount} project{projectCount === 1 ? "" : "s"}
-            </div>
-          )}
+          <div className="flex flex-col items-start gap-3 sm:items-end">
+            {!isPending && !isError && (
+              <div className="rounded-full border border-[rgba(69,3,119,0.12)] bg-[rgba(255,255,255,0.72)] px-4 py-2 text-sm text-text-secondary shadow-sm">
+                {projectCount} project{projectCount === 1 ? "" : "s"}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => navigate("/new")}
+              className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-medium text-white shadow-md transition-all duration-fast hover:bg-accent-hover hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:ring-offset-2"
+            >
+              <Plus size={18} />
+              New project
+            </button>
+          </div>
         </div>
 
         {isPending && (
@@ -65,22 +75,16 @@ export function ProjectLibraryPage() {
         )}
 
         {projects && projects.length > 0 && (
-          <div className="rounded-[24px] border border-[rgba(224,224,224,0.92)] bg-[rgba(255,255,255,0.56)] p-4 shadow-inner sm:p-5">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <button
-                type="button"
-                onClick={() => navigate("/new")}
-                className="group flex min-h-44 flex-col items-center justify-center gap-3 rounded-[20px] border border-dashed border-[rgba(69,3,119,0.28)] bg-[rgba(69,3,119,0.05)] px-6 text-text-secondary shadow-sm transition-all duration-fast hover:border-accent hover:bg-[rgba(69,3,119,0.09)] hover:text-accent hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
-              >
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[rgba(255,255,255,0.85)] text-accent shadow-sm transition-transform duration-fast group-hover:scale-105">
-                  <Plus size={28} />
-                </span>
-                <span className="font-serif text-2xl text-text">New project</span>
-                <span className="max-w-52 text-center text-sm leading-6 text-text-secondary">
-                  Paste a recitation link and start editing without leaving the library.
-                </span>
-              </button>
-
+          <div className="rounded-[24px] border border-[rgba(224,224,224,0.92)] bg-[rgba(255,255,255,0.56)] p-3 shadow-inner sm:p-4">
+            <div className="mb-4 flex items-center justify-between gap-3 px-2 pt-1">
+              <div>
+                <h2 className="font-serif text-xl text-text">Recent projects</h2>
+                <p className="text-sm text-text-secondary">
+                  Most recently edited first, with status and export details inline.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-3">
               {projects.map((project) => (
                 <ProjectCard
                   key={project.id}
