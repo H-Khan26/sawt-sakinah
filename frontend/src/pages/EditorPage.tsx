@@ -2,6 +2,10 @@ import { ApiError } from "@/api/client";
 import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { Alert, EmptyState, LoadingSpinner } from "@/components/ui";
+import { CutPanel } from "@/features/cuts/CutPanel";
+import { useCutSkip } from "@/features/cuts/useCutSkip";
+import { useEditHotkeys } from "@/features/cuts/useEditHotkeys";
+import { useEditRegions } from "@/features/cuts/useEditRegions";
 import { ExportButton } from "@/features/export/ExportButton";
 import { MarkerLayer } from "@/features/markers/MarkerLayer";
 import { MarkersPanel } from "@/features/markers/MarkersPanel";
@@ -139,8 +143,9 @@ export function EditorPage() {
 
 /**
  * The editor proper, mounted once the project is loaded. `WaveformProvider` owns the
- * wavesurfer instance and exposes it (via context) to the transport, the silence-region
- * layer, and the marker layer, which slot in around `WaveformView`.
+ * wavesurfer instance and exposes it (via context) to the transport, the region layer
+ * (silence + manual cuts + pending selection), and the marker layer, which slot in around
+ * `WaveformView`.
  */
 function EditorWorkspace({ project }: { project: ProjectView }) {
   return (
@@ -151,7 +156,12 @@ function EditorWorkspace({ project }: { project: ProjectView }) {
 }
 
 function EditorBody({ project }: { project: ProjectView }) {
+  const ops = project.edl.operations;
   useTransportHotkeys();
+  // Single owner of the Regions plugin; cut hotkeys; live playback-skip over cut spans.
+  useEditRegions(project.silences, ops);
+  useEditHotkeys(project.id, ops);
+  useCutSkip(ops);
   return (
     <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-4 p-6">
       <div className="flex items-center justify-between gap-4">
@@ -159,8 +169,9 @@ function EditorBody({ project }: { project: ProjectView }) {
         <ExportButton project={project} />
       </div>
       <WaveformView overlay={<MarkerLayer markers={project.markers} />} />
-      <TransportBar />
+      <TransportBar project={project} />
       <SilencePanel project={project} />
+      <CutPanel project={project} />
       <MarkersPanel project={project} />
     </div>
   );

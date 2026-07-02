@@ -94,6 +94,9 @@
   --silence-fill: rgba(150, 103, 186, 0.18);
   --silence-fill-selected: rgba(150, 103, 186, 0.38);
   --silence-bar-selected: var(--color-accent);
+  --cut-fill: rgba(239, 68, 68, 0.2);
+  --cut-fill-selected: rgba(239, 68, 68, 0.4);
+  --selection-fill: rgba(245, 158, 11, 0.3);
   --marker-line: var(--color-accent);
 
   /* Shadows */

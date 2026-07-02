@@ -1,40 +1,34 @@
 /**
  * Silence editing panel: detection controls, the detected-silence list, and the
- * non-destructive remove/restore actions with client-side undo/redo.
+ * non-destructive remove/restore actions.
  *
  * The live EDL is server state (the project cache, patched by `usePutEdl`); this component
  * reads `project.edl.operations` straight from props and never copies them into a store.
- * `editStore` holds only the selection and undo/redo snapshots. Detected silences stay in
- * the list after removal, marked "removed", so a cut can be restored.
+ * Edits route through `useEdlEditor`, so they share one undo history with the cut panel and
+ * the global undo/redo arrows in the transport bar. Detected silences stay in the list after
+ * removal, marked "removed", so a cut can be restored. Region drawing is owned by
+ * `useEditRegions` (mounted once in the editor), not here.
  */
-import { usePutEdl } from "@/api/hooks";
 import { Button, Card, SimpleModal } from "@/components/ui";
+import { useEdlEditor } from "@/features/cuts/useEdlEditor";
 import { useEditStore } from "@/stores/editStore";
-import type { EditOperation, ProjectView } from "@/types/api";
+import type { ProjectView } from "@/types/api";
 import { useEffect, useMemo, useState } from "react";
 import { SilenceControls } from "./SilenceControls";
 import { SilenceList } from "./SilenceList";
-import { addCuts, cutStats, removeCuts, silenceStats } from "./edl";
+import { addCuts, removeCuts, silenceStats } from "./edl";
 import { silenceKey } from "./regions";
-import { useSilenceRegions } from "./useSilenceRegions";
 
 export function SilencePanel({ project }: { project: ProjectView }) {
   const projectId = project.id;
   const silences = project.silences;
   const ops = project.edl.operations;
 
-  const putEdl = usePutEdl(projectId);
+  const editor = useEdlEditor(projectId);
 
   const selectedIds = useEditStore((s) => s.selectedIds);
   const clearSelection = useEditStore((s) => s.clearSelection);
-  const beginEdit = useEditStore((s) => s.beginEdit);
-  const undo = useEditStore((s) => s.undo);
-  const redo = useEditStore((s) => s.redo);
   const reset = useEditStore((s) => s.reset);
-  const undoDepth = useEditStore((s) => s.undoStack.length);
-  const redoDepth = useEditStore((s) => s.redoStack.length);
-
-  useSilenceRegions(silences);
 
   // Fresh detection replaces the silence set: drop stale selection + history. Keyed on the
   // silences identity, which changes only on (re)detection — EDL edits preserve it.
@@ -57,40 +51,25 @@ export function SilencePanel({ project }: { project: ProjectView }) {
   );
 
   const detected = silenceStats(silences);
-  const removed = cutStats(ops);
-
-  // Only persist when the op list actually changed. Our edits only add or remove `cut`
-  // ops, so a length change reliably signals a real edit.
-  const applyOps = (next: EditOperation[]) => {
-    if (next.length === ops.length) return;
-    beginEdit(ops);
-    putEdl.mutate(next);
-  };
+  // "Removed" here means detected silences marked for cut — manual cuts are tallied in CutPanel.
+  const removed = silenceStats(silences.filter((s) => removedIds.has(silenceKey(s))));
 
   const removeSelected = () => {
-    applyOps(addCuts(ops, selectedSegs));
+    editor.applyOps(ops, addCuts(ops, selectedSegs));
     clearSelection();
   };
   const restoreSelected = () => {
-    applyOps(removeCuts(ops, selectedSegs));
+    editor.applyOps(ops, removeCuts(ops, selectedSegs));
     clearSelection();
   };
   const removeAll = () => {
-    applyOps(addCuts(ops, silences));
+    editor.applyOps(ops, addCuts(ops, silences));
     clearSelection();
     setConfirmOpen(false);
   };
-  const onUndo = () => {
-    const prev = undo(ops);
-    if (prev) putEdl.mutate(prev);
-  };
-  const onRedo = () => {
-    const next = redo(ops);
-    if (next) putEdl.mutate(next);
-  };
 
   const hasSelection = selectedSegs.length > 0;
-  const busy = putEdl.isPending;
+  const busy = editor.isPending;
 
   return (
     <Card header="Silence">
@@ -128,14 +107,6 @@ export function SilencePanel({ project }: { project: ProjectView }) {
           >
             Remove all
           </Button>
-          <div className="ml-auto flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={onUndo} disabled={undoDepth === 0}>
-              Undo
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onRedo} disabled={redoDepth === 0}>
-              Redo
-            </Button>
-          </div>
         </div>
 
         <SilenceList silences={silences} removedIds={removedIds} />

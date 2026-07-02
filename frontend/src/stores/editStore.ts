@@ -1,19 +1,27 @@
 /**
- * Local editor state for silence editing: which silence rows are selected and the
- * undo/redo history of EDL edits.
+ * Local editor state for silence + manual-cut editing: which rows/regions are selected, the
+ * pending in/out selection range, and the undo/redo history of EDL edits.
  *
  * The *live* EDL (the current `operations[]`) is server state and lives in the React Query
  * project cache — never duplicated here. This store holds only what the server doesn't:
  * the transient selection and past/future snapshots for undo/redo. A snapshot is the whole
  * `operations[]` array captured just before an edit; `beginEdit`/`undo`/`redo` push and pop
  * those, and the caller applies the returned array via `usePutEdl`.
+ *
+ * `selectedIds` holds both silence keys (`start:end`, see `silenceKey`) and committed
+ * manual-cut keys (`cut:start:end`, see `cutKey`); the two never collide, so a single set
+ * drives selection for both the silence list and the cut list.
  */
 import type { EditOperation } from "@/types/api";
 import { create } from "zustand";
 
 interface EditState {
-  /** Selected silence keys (see `silenceKey` in features/silence/regions.ts). */
+  /** Selected silence keys and manual-cut keys (see `silenceKey` / `cutKey`). */
   selectedIds: Set<string>;
+  /** Pending in-point of a manual cut range (source seconds), or null. Set by the `I` key. */
+  selectionStart: number | null;
+  /** Pending out-point of a manual cut range (source seconds), or null. Set by the `O` key. */
+  selectionEnd: number | null;
   /** Past EDL snapshots (most recent last). */
   undoStack: EditOperation[][];
   /** Future EDL snapshots for redo (most recent last). */
@@ -22,6 +30,11 @@ interface EditState {
   toggleSelected: (id: string) => void;
   setSelected: (ids: string[]) => void;
   clearSelection: () => void;
+
+  setSelectionStart: (t: number | null) => void;
+  setSelectionEnd: (t: number | null) => void;
+  setSelectionRange: (start: number | null, end: number | null) => void;
+  clearSelectionRange: () => void;
 
   /** Record `current` as an undo point before applying a fresh edit; clears redo. */
   beginEdit: (current: EditOperation[]) => void;
@@ -36,6 +49,8 @@ interface EditState {
 
 export const useEditStore = create<EditState>((set, get) => ({
   selectedIds: new Set<string>(),
+  selectionStart: null,
+  selectionEnd: null,
   undoStack: [],
   redoStack: [],
 
@@ -48,6 +63,11 @@ export const useEditStore = create<EditState>((set, get) => ({
     }),
   setSelected: (ids) => set({ selectedIds: new Set(ids) }),
   clearSelection: () => set({ selectedIds: new Set<string>() }),
+
+  setSelectionStart: (t) => set({ selectionStart: t }),
+  setSelectionEnd: (t) => set({ selectionEnd: t }),
+  setSelectionRange: (start, end) => set({ selectionStart: start, selectionEnd: end }),
+  clearSelectionRange: () => set({ selectionStart: null, selectionEnd: null }),
 
   beginEdit: (current) => set((s) => ({ undoStack: [...s.undoStack, current], redoStack: [] })),
 
@@ -73,5 +93,12 @@ export const useEditStore = create<EditState>((set, get) => ({
     return next;
   },
 
-  reset: () => set({ selectedIds: new Set<string>(), undoStack: [], redoStack: [] }),
+  reset: () =>
+    set({
+      selectedIds: new Set<string>(),
+      selectionStart: null,
+      selectionEnd: null,
+      undoStack: [],
+      redoStack: [],
+    }),
 }));

@@ -7,9 +7,12 @@
  * editor tree.
  */
 import { Button } from "@/components/ui";
+import { UndoRedoControls } from "@/features/cuts/UndoRedoControls";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
-import { formatClock } from "@/lib/time";
+import { formatClock, formatClockPrecise } from "@/lib/time";
 import { PLAYBACK_RATES, ZOOM_MAX, usePlaybackStore } from "@/stores/playbackStore";
+import type { ProjectView } from "@/types/api";
+import { useState } from "react";
 import { togglePlay, zoomIn, zoomOut } from "./transportControls";
 
 function TimeReadout() {
@@ -20,6 +23,32 @@ function TimeReadout() {
       {formatClock(currentTime)} <span className="text-text-tertiary">/</span>{" "}
       {formatClock(duration)}
     </output>
+  );
+}
+
+/** Copy the current playhead timestamp (precise, `m:ss.s`) to the clipboard. */
+function CopyTimeButton() {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    const t = formatClockPrecise(usePlaybackStore.getState().currentTime);
+    try {
+      await navigator.clipboard.writeText(t);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // Clipboard may be unavailable (insecure context); silently ignore.
+    }
+  };
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      onClick={onCopy}
+      aria-label="Copy current timestamp"
+      title="Copy current timestamp"
+    >
+      {copied ? "Copied" : "Copy time"}
+    </Button>
   );
 }
 
@@ -91,12 +120,14 @@ function RateSelect() {
   );
 }
 
-export function TransportBar() {
+export function TransportBar({ project }: { project: ProjectView }) {
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-card border border-border bg-background px-4 py-2.5">
       <PlayButton />
       <TimeReadout />
+      <CopyTimeButton />
       <div className="ml-auto flex items-center gap-4">
+        <UndoRedoControls projectId={project.id} ops={project.edl.operations} />
         <ZoomControls />
         <RateSelect />
       </div>
