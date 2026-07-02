@@ -16,6 +16,7 @@ import type { WaveformPeaks } from "@/types/api";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import HoverPlugin from "wavesurfer.js/plugins/hover";
+import RegionsPlugin from "wavesurfer.js/plugins/regions";
 import TimelinePlugin from "wavesurfer.js/plugins/timeline";
 import { toWavesurferPeaks } from "./peaks";
 
@@ -28,6 +29,8 @@ interface UseWavesurferArgs {
 
 interface UseWavesurferResult {
   wavesurfer: WaveSurfer | null;
+  /** Regions plugin instance; the silence layer reconciles silence overlays onto it. */
+  regions: RegionsPlugin | null;
   isReady: boolean;
   error: Error | null;
 }
@@ -39,6 +42,7 @@ export function useWavesurfer({
 }: UseWavesurferArgs): UseWavesurferResult {
   const wsRef = useRef<WaveSurfer | null>(null);
   const [wavesurfer, setWavesurfer] = useState<WaveSurfer | null>(null);
+  const [regions, setRegions] = useState<RegionsPlugin | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -56,6 +60,9 @@ export function useWavesurfer({
     const store = usePlaybackStore.getState();
     setIsReady(false);
     setError(null);
+
+    // Read-only silence/marker overlays layer onto this plugin (drag/resize per-region).
+    const regionsPlugin = RegionsPlugin.create();
 
     const ws = WaveSurfer.create({
       container: el,
@@ -83,10 +90,12 @@ export function useWavesurfer({
           labelBackground: waveformColors.hover,
           formatTimeCallback: formatClock,
         }),
+        regionsPlugin,
       ],
     });
     wsRef.current = ws;
     setWavesurfer(ws);
+    setRegions(regionsPlugin);
 
     ws.on("ready", (duration) => {
       store.setDuration(duration);
@@ -110,6 +119,7 @@ export function useWavesurfer({
     return () => {
       wsRef.current = null;
       setWavesurfer(null);
+      setRegions(null);
       setIsReady(false);
       try {
         ws.destroy();
@@ -129,5 +139,5 @@ export function useWavesurfer({
     if (isReady && wsRef.current && zoom != null) wsRef.current.zoom(zoom);
   }, [zoom, isReady]);
 
-  return { wavesurfer, isReady, error };
+  return { wavesurfer, regions, isReady, error };
 }

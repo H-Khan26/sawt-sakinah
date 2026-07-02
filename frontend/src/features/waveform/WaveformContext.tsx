@@ -8,6 +8,7 @@
 import { useWaveform } from "@/api/hooks";
 import { type ReactNode, type RefObject, createContext, useContext, useMemo, useRef } from "react";
 import type WaveSurfer from "wavesurfer.js";
+import type RegionsPlugin from "wavesurfer.js/plugins/regions";
 import { useWavesurfer } from "./useWavesurfer";
 
 interface WaveformContextValue {
@@ -15,6 +16,8 @@ interface WaveformContextValue {
   containerRef: RefObject<HTMLDivElement>;
   /** The live instance, or null before creation / after teardown. */
   wavesurfer: WaveSurfer | null;
+  /** Regions plugin for silence/marker overlays; null before creation / after teardown. */
+  regions: RegionsPlugin | null;
   /** True once audio is decoded and playable. */
   isReady: boolean;
   /** Peaks are still being fetched. */
@@ -34,7 +37,7 @@ export function WaveformProvider({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const peaksQuery = useWaveform(projectId);
-  const { wavesurfer, isReady, error } = useWavesurfer({
+  const { wavesurfer, regions, isReady, error } = useWavesurfer({
     container: containerRef,
     projectId,
     peaks: peaksQuery.data,
@@ -44,11 +47,12 @@ export function WaveformProvider({
     () => ({
       containerRef,
       wavesurfer,
+      regions,
       isReady,
       isLoadingPeaks: peaksQuery.isPending,
       error: error ?? (peaksQuery.error as Error | null),
     }),
-    [wavesurfer, isReady, peaksQuery.isPending, peaksQuery.error, error],
+    [wavesurfer, regions, isReady, peaksQuery.isPending, peaksQuery.error, error],
   );
 
   return <WaveformContext.Provider value={value}>{children}</WaveformContext.Provider>;

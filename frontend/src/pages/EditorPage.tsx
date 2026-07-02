@@ -2,6 +2,7 @@ import { ApiError } from "@/api/client";
 import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { Alert, EmptyState, LoadingSpinner } from "@/components/ui";
+import { SilencePanel } from "@/features/silence/SilencePanel";
 import { TransportBar } from "@/features/transport/TransportBar";
 import { useTransportHotkeys } from "@/features/transport/useTransportHotkeys";
 import { WaveformProvider } from "@/features/waveform/WaveformContext";
@@ -135,8 +136,8 @@ export function EditorPage() {
 
 /**
  * The editor proper, mounted once the project is loaded. `WaveformProvider` owns the
- * wavesurfer instance and exposes it (via context) to the transport and, in later phases,
- * the silence-region and marker layers — which slot in around `WaveformView` here.
+ * wavesurfer instance and exposes it (via context) to the transport, the silence-region
+ * layer, and — in a later phase — the marker layer, which slot in around `WaveformView`.
  */
 function EditorWorkspace({ project }: { project: ProjectView }) {
   return (
@@ -153,6 +154,7 @@ function EditorBody({ project }: { project: ProjectView }) {
       <h1 className="font-serif text-2xl text-accent">{project.audio_source.title}</h1>
       <WaveformView />
       <TransportBar />
+      <SilencePanel project={project} />
     </div>
   );
 }
