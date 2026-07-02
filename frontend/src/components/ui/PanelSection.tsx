@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 export interface PanelSectionProps {
   /** Stable id — set as the DOM id and reserved for future per-section state (e.g. collapse). */
   id?: string;
-  /** Section heading. */
-  title: ReactNode;
+  /** Section heading. Omit to render a headerless section (body only). */
+  title?: ReactNode;
   /** Optional summary rendered next to the title (e.g. counts like "12 detected"). */
   meta?: ReactNode;
   /** Right-aligned slot for section-level controls — buttons, dropdowns, menus. */
@@ -32,14 +32,17 @@ export function PanelSection({
   className,
   children,
 }: PanelSectionProps) {
+  const hasHeader = title != null || meta != null || actions != null;
   return (
     <section id={id} className={cn("flex flex-col", className)}>
-      <header className="flex items-center gap-3 px-5 py-3">
-        <h2 className="font-serif text-lg">{title}</h2>
-        {meta ? <span className="text-sm text-text-tertiary">{meta}</span> : null}
-        {actions ? <div className="ml-auto flex items-center gap-2">{actions}</div> : null}
-      </header>
-      <div className={cn(!flush && "px-5 pb-5")}>{children}</div>
+      {hasHeader && (
+        <header className="flex items-center gap-3 px-5 py-3">
+          {title != null && <h2 className="font-serif text-lg">{title}</h2>}
+          {meta ? <span className="text-sm text-text-tertiary">{meta}</span> : null}
+          {actions ? <div className="ml-auto flex items-center gap-2">{actions}</div> : null}
+        </header>
+      )}
+      <div className={cn(!flush && (hasHeader ? "px-5 pb-5" : "px-5 py-5"))}>{children}</div>
     </section>
   );
 }

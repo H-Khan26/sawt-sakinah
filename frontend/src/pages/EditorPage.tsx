@@ -171,8 +171,8 @@ function EditorBody({ project }: { project: ProjectView }) {
         </div>
         <WaveformView overlay={<MarkerLayer markers={project.markers} />} />
         <TransportBar project={project} />
-        <SilencePanel project={project} />
         <CutPanel project={project} />
+        <SilencePanel project={project} />
         <MarkersPanel project={project} />
       </WorkbenchPanel>
     </div>

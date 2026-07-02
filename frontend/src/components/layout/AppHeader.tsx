@@ -33,9 +33,9 @@ export function AppHeader() {
             variant="secondary"
             onClick={() => navigate("/")}
             aria-label="Start a new project"
-            className="w-8 px-0"
+            className="h-11 w-11 px-0"
           >
-            <Plus size={18} />
+            <Plus size={24} />
           </Button>
         </Tooltip>
       </span>
