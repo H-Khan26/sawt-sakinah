@@ -84,7 +84,7 @@
   --color-info: #3b82f6;
 
   /* Glass */
-  --color-glass: rgba(255, 255, 255, 0.85);
+  --color-glass: rgba(252, 251, 248, 0.92);
   --blur-glass: 20px;
 
   /* Waveform palette (derived from the tokens above) */
@@ -124,11 +124,14 @@
   body {
     margin: 0;
     /* Warm cream base + a seamlessly-tiling Ottoman ogee-lattice wallmark
-     * (public/ogee-bg.svg). The pattern recolors the reference tile's blues to the
-     * app's purple (0.18 / 0.38 alpha) and keeps the gold. Body never scrolls
-     * (main handles overflow), so it reads as a fixed backdrop behind the UI. */
+     * (public/ogee-bg.svg). A soft cream wash sits above the pattern so library
+     * screens read as work surfaces instead of floating directly on the wallpaper.
+     * Body never scrolls (main handles overflow), so it reads as a fixed backdrop
+     * behind the UI. */
     background-color: var(--color-background);
-    background-image: url("/ogee-bg.svg");
+    background-image:
+      linear-gradient(rgba(252, 251, 248, 0.74), rgba(252, 251, 248, 0.74)),
+      url("/ogee-bg.svg");
     background-repeat: repeat;
     background-size: 300px 400px;
     color: var(--color-text);
