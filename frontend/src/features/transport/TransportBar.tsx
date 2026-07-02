@@ -20,7 +20,7 @@ function TimeReadout() {
   const currentTime = usePlaybackStore((s) => s.currentTime);
   const duration = usePlaybackStore((s) => s.duration);
   return (
-    <output className="min-w-[7.5rem] font-sans text-sm tabular-nums text-text-secondary">
+    <output className="min-w-[5rem] font-sans text-base tabular-nums text-text-secondary">
       {formatClock(currentTime)} <span className="text-text-tertiary">/</span>{" "}
       {formatClock(duration)}
     </output>
@@ -47,9 +47,9 @@ function CopyTimeButton() {
         variant="ghost"
         onClick={onCopy}
         aria-label={copied ? "Timestamp copied" : "Copy current timestamp"}
-        className="w-8 px-0"
+        className="h-9 w-9 px-0"
       >
-        {copied ? <Check size={18} /> : <Copy size={18} />}
+        {copied ? <Check size={20} /> : <Copy size={20} />}
       </Button>
     </Tooltip>
   );
@@ -67,12 +67,12 @@ function PlayButton() {
         onClick={() => togglePlay(wavesurfer)}
         aria-label={isPlaying ? "Pause" : "Play"}
         aria-pressed={isPlaying}
-        className="w-8 px-0"
+        className="h-9 w-9 px-0"
       >
         {isPlaying ? (
-          <Pause size={18} fill="currentColor" />
+          <Pause size={20} fill="currentColor" />
         ) : (
-          <Play size={18} fill="currentColor" />
+          <Play size={20} fill="currentColor" />
         )}
       </Button>
     </Tooltip>
@@ -91,6 +91,7 @@ function ZoomControls() {
         disabled={!isReady || zoom == null || zoom <= zoomMin}
         onClick={zoomOut}
         aria-label="Zoom out"
+        className="h-9 text-base"
       >
         −
       </Button>
@@ -100,6 +101,7 @@ function ZoomControls() {
         disabled={!isReady || zoom == null || zoom >= ZOOM_MAX}
         onClick={zoomIn}
         aria-label="Zoom in"
+        className="h-9 text-base"
       >
         +
       </Button>
@@ -118,7 +120,7 @@ function RateSelect() {
         disabled={!isReady}
         onChange={(e) => setRate(Number(e.target.value))}
         aria-label="Playback speed"
-        className="h-8 rounded border border-border bg-background px-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50"
+        className="h-9 rounded border border-border bg-background px-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50"
       >
         {PLAYBACK_RATES.map((r) => (
           <option key={r} value={r}>
@@ -134,8 +136,10 @@ export function TransportBar({ project }: { project: ProjectView }) {
   return (
     <div className="flex flex-wrap items-center gap-4 px-5 py-3">
       <PlayButton />
-      <TimeReadout />
-      <CopyTimeButton />
+      <div className="flex items-center gap-1.5">
+        <TimeReadout />
+        <CopyTimeButton />
+      </div>
       <div className="ml-auto flex items-center gap-4">
         <UndoRedoControls projectId={project.id} ops={project.edl.operations} />
         <ZoomControls />

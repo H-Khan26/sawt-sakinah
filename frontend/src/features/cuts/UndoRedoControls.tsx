@@ -28,6 +28,7 @@ export function UndoRedoControls({
         onClick={() => editor.undo(ops)}
         aria-label="Undo"
         title="Undo (Ctrl+Z)"
+        className="h-9 text-base"
       >
         ↶
       </Button>
@@ -38,6 +39,7 @@ export function UndoRedoControls({
         onClick={() => editor.redo(ops)}
         aria-label="Redo"
         title="Redo (Ctrl+Shift+Z)"
+        className="h-9 text-base"
       >
         ↷
       </Button>

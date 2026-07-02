@@ -14,8 +14,8 @@ export function ExportButton({ project }: { project: ProjectView }) {
   return (
     <>
       <Tooltip content="Export" side="bottom">
-        <Button onClick={() => setOpen(true)} aria-label="Export" className="w-10 px-0">
-          <Download size={20} />
+        <Button onClick={() => setOpen(true)} aria-label="Export" className="h-11 w-11 px-0">
+          <Download size={24} />
         </Button>
       </Tooltip>
       {open && <ExportModal project={project} onClose={() => setOpen(false)} />}
