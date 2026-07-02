@@ -66,7 +66,7 @@ export function EditorPage() {
   const retry = useCreateProject();
   const onRetry = () => {
     if (!url) {
-      navigate("/");
+      navigate("/new");
       return;
     }
     retry.mutate(
@@ -123,8 +123,8 @@ export function EditorPage() {
       return (
         <EmptyState
           title="Nothing here yet"
-          description="This project's extraction is still in progress, or the project doesn't exist. Start again from a link."
-          action={{ label: "Back to start", onClick: () => navigate("/") }}
+          description="This project's extraction is still in progress, or the project doesn't exist."
+          action={{ label: "Back to library", onClick: () => navigate("/") }}
         />
       );
     }
@@ -166,7 +166,7 @@ function EditorBody({ project }: { project: ProjectView }) {
     <div className="mx-auto w-full max-w-6xl p-6">
       <WorkbenchPanel>
         <div className="flex items-center justify-between gap-4 px-5 py-4">
-          <h1 className="font-serif text-2xl text-accent">{project.audio_source.title}</h1>
+          <h1 className="font-serif text-2xl text-accent">{project.name}</h1>
           <ExportButton project={project} />
         </div>
         <WaveformView overlay={<MarkerLayer markers={project.markers} />} />

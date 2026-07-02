@@ -9,6 +9,7 @@ import type {
   JobRecord,
   Marker,
   PhraseRequest,
+  ProjectListResponse,
   ProjectView,
   SilenceParams,
   WaveformPeaks,
@@ -17,6 +18,18 @@ import { request } from "./client";
 
 export const createProject = (body: CreateProjectRequest) =>
   request<CreateProjectResponse>("/projects", { method: "POST", body });
+
+/** The library list, most-recently-edited first. Returns just the summaries array. */
+export const listProjects = (signal?: AbortSignal) =>
+  request<ProjectListResponse>("/projects", { signal }).then((r) => r.projects);
+
+/** Rename a project. Returns the full updated view (server re-derives nothing). */
+export const renameProject = (projectId: string, name: string) =>
+  request<ProjectView>(`/projects/${projectId}`, { method: "PATCH", body: { name } });
+
+/** Delete a project and its audio + exports. Resolves on 204. */
+export const deleteProject = (projectId: string) =>
+  request<void>(`/projects/${projectId}`, { method: "DELETE" });
 
 export const getProject = (projectId: string, signal?: AbortSignal) =>
   request<ProjectView>(`/projects/${projectId}`, { signal });
@@ -56,7 +69,11 @@ export const exportDownloadUrl = (projectId: string, artifactId: string) =>
 
 /** React Query cache keys. */
 export const queryKeys = {
+  projects: ["projects"] as const,
   project: (projectId: string) => ["project", projectId] as const,
   job: (jobId: string) => ["job", jobId] as const,
   waveform: (projectId: string) => ["waveform", projectId] as const,
 };
+
+/** Mutation key prefix for the per-edit autosaves, so `SaveStatus` can observe them. */
+export const editSaveKey = (projectId: string) => ["edit-save", projectId] as const;

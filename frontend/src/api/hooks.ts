@@ -1,9 +1,12 @@
+import { ApiError } from "@/api/client";
+import { useToast } from "@/components/ui";
 import type {
   CreateProjectRequest,
   EditOperation,
   ExportRequest,
   Marker,
   PhraseRequest,
+  ProjectSummary,
   ProjectView,
   SilenceParams,
 } from "@/types/api";
@@ -12,18 +15,32 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import {
   createProject,
+  deleteProject,
   detectPhrases,
   detectSilence,
+  editSaveKey,
   exportAudio,
   getJob,
   getProject,
   getWaveform,
+  listProjects,
   putEdl,
   queryKeys,
+  renameProject,
   updateMarkers,
 } from "./endpoints";
 
 const DEFAULT_POLL_MS = 1000;
+
+/**
+ * Retry policy for the per-edit autosaves: give transient/server failures a few tries with
+ * backoff, but never retry a 4xx (bad input won't fix itself). Mirrors the query default.
+ */
+const editSaveRetry = (failureCount: number, error: unknown) => {
+  if (error instanceof ApiError && error.status < 500) return false;
+  return failureCount < 3;
+};
+const editSaveRetryDelay = (attempt: number) => Math.min(500 * 2 ** attempt, 5000);
 
 /** Fetch a project; disabled until `projectId` is known. */
 export function useProject(projectId: string | undefined) {
@@ -31,6 +48,62 @@ export function useProject(projectId: string | undefined) {
     queryKey: queryKeys.project(projectId ?? "none"),
     queryFn: ({ signal }) => getProject(projectId as string, signal),
     enabled: Boolean(projectId),
+  });
+}
+
+/** The project library list. Refetches on focus so the grid stays fresh across tabs. */
+export function useProjects() {
+  return useQuery({
+    queryKey: queryKeys.projects,
+    queryFn: ({ signal }) => listProjects(signal),
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+/**
+ * Rename a project. Optimistically patches both the library list and the project view, and
+ * rolls back on error. The server returns the full view, so `onSuccess` reconciles from it.
+ */
+export function useRenameProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => renameProject(id, name),
+    onMutate: async ({ id, name }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.projects });
+      const prevList = queryClient.getQueryData<ProjectSummary[]>(queryKeys.projects);
+      const prevProject = queryClient.getQueryData<ProjectView>(queryKeys.project(id));
+      queryClient.setQueryData<ProjectSummary[]>(queryKeys.projects, (list) =>
+        list?.map((p) => (p.id === id ? { ...p, name } : p)),
+      );
+      queryClient.setQueryData<ProjectView>(queryKeys.project(id), (p) => (p ? { ...p, name } : p));
+      return { prevList, prevProject };
+    },
+    onError: (_err, { id }, ctx) => {
+      if (ctx?.prevList) queryClient.setQueryData(queryKeys.projects, ctx.prevList);
+      if (ctx?.prevProject) queryClient.setQueryData(queryKeys.project(id), ctx.prevProject);
+    },
+    onSuccess: (view) => {
+      queryClient.setQueryData<ProjectView>(queryKeys.project(view.id), view);
+      queryClient.setQueryData<ProjectSummary[]>(queryKeys.projects, (list) =>
+        list?.map((p) => (p.id === view.id ? { ...p, name: view.name } : p)),
+      );
+    },
+  });
+}
+
+/** Delete a project. Drops it from the cached list and removes its per-project queries. */
+export function useDeleteProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteProject(id),
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData<ProjectSummary[]>(queryKeys.projects, (list) =>
+        list?.filter((p) => p.id !== id),
+      );
+      queryClient.removeQueries({ queryKey: queryKeys.project(id) });
+      queryClient.removeQueries({ queryKey: queryKeys.waveform(id) });
+    },
   });
 }
 
@@ -104,13 +177,18 @@ export function useDetectPhrases(projectId: string) {
 /** Persist the EDL and patch the cached project so the editor stays in sync. */
 export function usePutEdl(projectId: string) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   return useMutation({
+    mutationKey: editSaveKey(projectId),
     mutationFn: (operations: EditOperation[]) => putEdl(projectId, operations),
+    retry: editSaveRetry,
+    retryDelay: editSaveRetryDelay,
     onSuccess: (edl) => {
       queryClient.setQueryData<ProjectView>(queryKeys.project(projectId), (prev) =>
         prev ? { ...prev, edl } : prev,
       );
     },
+    onError: () => toast("Couldn't save your last edit. Use “retry” in the header.", "error"),
   });
 }
 
@@ -121,8 +199,12 @@ export function usePutEdl(projectId: string) {
  */
 export function useUpdateMarkers(projectId: string) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   return useMutation({
+    mutationKey: editSaveKey(projectId),
     mutationFn: (markers: Marker[]) => updateMarkers(projectId, markers),
+    retry: editSaveRetry,
+    retryDelay: editSaveRetryDelay,
     onSuccess: (view) => {
       queryClient.setQueryData<ProjectView>(queryKeys.project(projectId), (prev) =>
         prev
@@ -130,6 +212,7 @@ export function useUpdateMarkers(projectId: string) {
           : view,
       );
     },
+    onError: () => toast("Couldn't save your last edit. Use “retry” in the header.", "error"),
   });
 }
 

@@ -1,13 +1,15 @@
 import { AppShell } from "@/components/layout/AppShell";
 import { EditorPage } from "@/pages/EditorPage";
-import { LandingPage } from "@/pages/LandingPage";
+import { NewProjectPage } from "@/pages/NewProjectPage";
+import { ProjectLibraryPage } from "@/pages/ProjectLibraryPage";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 export function App() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<ProjectLibraryPage />} />
+        <Route path="/new" element={<NewProjectPage />} />
         <Route path="/p/:projectId" element={<EditorPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

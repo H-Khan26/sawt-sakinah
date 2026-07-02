@@ -1,10 +1,23 @@
 # Frontend Plan — Project Library, In-Editor Switcher, and Saving Mechanics
 
-> Status: proposed. Companion to `docs/backend-project-crud-plan.md`, which defines the
-> `GET /projects`, `PATCH /projects/{id}`, and `DELETE /projects/{id}` contracts this plan
-> consumes. Scope: turn the single-document app into a multi-project one — a library on
-> entry, a collapsible in-editor switcher, rename/delete, export naming, and an explicit
-> save-state story.
+> Status: proposed. Companion to `docs/backend-project-crud-plan.md`, whose contracts
+> (`GET /projects`, `PATCH /projects/{id}`, `DELETE /projects/{id}`, export naming) are now
+> **implemented and landed** — see "Backend status" below. Scope: turn the single-document
+> app into a multi-project one — a library on entry, a collapsible in-editor switcher,
+> rename/delete, export naming, and an explicit save-state story.
+
+> **Backend status (landed).** All endpoints this plan consumes now exist:
+> - `GET /projects` -> `{ projects: ProjectSummary[] }`, sorted `updated_at`-desc.
+> - `PATCH /projects/{id}` `{ name }` -> full `ProjectView`. Rejects empty/whitespace-only
+>   names (400) and caps length at 200 chars.
+> - `DELETE /projects/{id}` -> `204` (`404` if missing). Removes audio + exports.
+> - `ProjectView` now carries `name`, `created_at`, `updated_at`; `ExportArtifactView`
+>   carries `name`; `ExportRequest` accepts `name?`.
+> - Export downloads set a friendly `Content-Disposition` (`<safe-name>-<YYYYMMDD>.<ext>`,
+>   with RFC 5987 `filename*` so Arabic titles survive) on both 200 and 206 responses.
+> - **The wire types in [types/api.ts](../frontend/src/types/api.ts) are already updated**
+>   (`ProjectSummary`, `ProjectListResponse`, `PatchProjectRequest`, and the new fields),
+>   so §3.1 is done. Endpoints/hooks (§3.2–§3.3) and all UI remain to build.
 
 ---
 
@@ -50,30 +63,32 @@ remember and offer the last-opened project.)
 
 ## 3. API layer additions
 
-### 3.1 Types ([types/api.ts](../frontend/src/types/api.ts))
+### 3.1 Types ([types/api.ts](../frontend/src/types/api.ts)) — DONE
 
-Mirror the new backend contracts (see backend plan §7):
+Already landed, mirroring the backend contracts:
 
 ```ts
-interface ProjectSummaryView {
+interface ProjectSummary {          // note: named ProjectSummary, not ...View
   id: string; name: string; source_url: string; duration_sec: number;
   created_at: string; updated_at: string; status: ProjectStatus; export_count: number;
 }
+interface ProjectListResponse { projects: ProjectSummary[] }   // body of GET /projects
+interface PatchProjectRequest { name: string }
 // ProjectView       += name, created_at, updated_at
 // ExportArtifactView += name
 // ExportRequest      += name?
-interface PatchProjectRequest { name: string }
 ```
 
 ### 3.2 Endpoints ([endpoints.ts](../frontend/src/api/endpoints.ts))
 
 ```ts
-listProjects()                      -> GET    /projects        // { projects: ProjectSummaryView[] }
+listProjects()                      -> GET    /projects        // ProjectListResponse -> .projects
 renameProject(id, name)             -> PATCH  /projects/{id}   // ProjectView
 deleteProject(id)                   -> DELETE /projects/{id}   // 204
 ```
 
-Add `queryKeys.projects = ["projects"] as const`.
+Add `queryKeys.projects = ["projects"] as const`. `renameProject` surfaces a 400 for
+blank names — validate/trim in the rename UI before firing to avoid the round-trip.
 
 ### 3.3 Hooks ([hooks.ts](../frontend/src/api/hooks.ts))
 
@@ -205,8 +220,9 @@ In [ExportModal.tsx](../frontend/src/features/export/ExportModal.tsx):
 - Add a **Name** input (defaulting to the project `name`) passed as `name` in the
   `ExportRequest`.
 - The download `<a>` already uses `exportDownloadUrl`; the backend now sets a friendly
-  `Content-Disposition` filename (backend plan §4.2). Also set the `download` attribute to
-  the friendly name for good measure (same-origin, so it applies).
+  `Content-Disposition` filename (`<safe-name>-<YYYYMMDD>.<ext>`). The header wins on
+  download, so the `download` attribute is optional; set it to the same friendly name only
+  as a fallback.
 - Optional: show a small list of prior exports for the project (from `project.exports`,
   each now carrying `name` + `download_url`) so users can re-download without re-rendering.
 
@@ -236,7 +252,8 @@ Changed:
 
 ## 10. Sequencing
 
-1. API layer: types + endpoints + hooks (§3). Depends on backend §3–§5, §7.
+1. API layer: types (§3.1 **done**) + endpoints + hooks (§3.2–§3.3). Backend has landed,
+   so this is unblocked.
 2. Library page + routing split `/` and `/new` (§2, §4, §5). Delivers "project pages upon
    entering."
 3. Context-aware header + collapsible switcher (§6). Delivers in-editor switching.
@@ -245,8 +262,8 @@ Changed:
 5. Export naming UI (§8). Small, independent.
 6. Optional: debounce (§7.3), last-opened resume (§7.4).
 
-Steps 2–4 are the heart of the request. Step 1 is the prerequisite and tracks the backend
-contract landing.
+Steps 2–4 are the heart of the request. Step 1's prerequisite (backend contract) has
+landed, and its types are already in `api.ts`.
 
 ---
 

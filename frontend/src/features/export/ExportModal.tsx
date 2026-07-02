@@ -27,6 +27,7 @@ export function ExportModal({ project, onClose }: { project: ProjectView; onClos
   const [format, setFormat] = useState<string>("mp3");
   const [bitrate, setBitrate] = useState("");
   const [embedMarkers, setEmbedMarkers] = useState(true);
+  const [name, setName] = useState(project.name);
   const [jobId, setJobId] = useState<string | undefined>(undefined);
   const [artifactId, setArtifactId] = useState<string | null>(null);
 
@@ -43,22 +44,40 @@ export function ExportModal({ project, onClose }: { project: ProjectView; onClos
     }
   }, [state, job.data?.result]);
 
+  const trimmedName = name.trim();
   const runExport = () => {
     setArtifactId(null);
     exportAudio.mutate(
-      { format, bitrate: bitrate.trim() || null, embed_markers: embedMarkers },
+      {
+        format,
+        bitrate: bitrate.trim() || null,
+        embed_markers: embedMarkers,
+        name: trimmedName || null,
+      },
       { onSuccess: (r) => setJobId(r.job_id) },
     );
   };
 
   const downloadUrl = artifactId ? exportDownloadUrl(project.id, artifactId) : null;
+  // Fallback filename only; the backend's Content-Disposition wins on download.
+  const downloadName = `${trimmedName || project.name}.${format}`;
   const noMarkers = embedMarkers && project.markers.length === 0;
+  const priorExports = project.exports;
 
   return (
     <Modal open onClose={onClose} ariaLabel="Export audio">
       <div className="border-b border-border px-5 py-3 font-serif text-lg">Export audio</div>
 
       <div className="flex flex-col gap-4 px-5 py-4">
+        <Input
+          label="Name"
+          placeholder={project.name}
+          value={name}
+          disabled={running}
+          onChange={(e) => setName(e.target.value)}
+          hint="Used for the download filename."
+        />
+
         <label className="flex flex-col gap-1.5 text-sm font-medium text-text-secondary">
           Format
           <select
@@ -113,6 +132,27 @@ export function ExportModal({ project, onClose }: { project: ProjectView; onClos
             Your file is rendered. Download it below.
           </Alert>
         )}
+
+        {priorExports.length > 0 && (
+          <div className="flex flex-col gap-1.5 border-t border-border pt-4">
+            <span className="text-sm font-medium text-text-secondary">Previous exports</span>
+            <ul className="flex flex-col gap-1">
+              {priorExports.map((ex) => (
+                <li key={ex.id}>
+                  <a
+                    href={exportDownloadUrl(project.id, ex.id)}
+                    className="flex items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-text hover:bg-background-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                  >
+                    <span className="truncate">{ex.name ?? project.name}</span>
+                    <span className="shrink-0 text-xs uppercase text-text-tertiary">
+                      {ex.format}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
@@ -120,7 +160,7 @@ export function ExportModal({ project, onClose }: { project: ProjectView; onClos
           Close
         </Button>
         {downloadUrl && !running ? (
-          <a href={downloadUrl} download className={DOWNLOAD_LINK_CLASS}>
+          <a href={downloadUrl} download={downloadName} className={DOWNLOAD_LINK_CLASS}>
             Download
           </a>
         ) : (
