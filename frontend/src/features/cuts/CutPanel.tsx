@@ -5,6 +5,7 @@
  * until export, and playback skips committed cuts live (see `useCutSkip`).
  */
 import { Button, PanelSection } from "@/components/ui";
+import { activeSilences } from "@/features/silence/active";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { cn } from "@/lib/cn";
 import { cutColors, selectionColors, silenceColors } from "@/lib/themeColors";
@@ -129,7 +130,10 @@ export function CutPanel({ project }: { project: ProjectView }) {
 
   const [cutsOpen, setCutsOpen] = useState(false);
 
-  const cuts = useMemo(() => manualCuts(ops, silences), [ops, silences]);
+  // Manual cuts are all cut ops that aren't a (possibly clipped) silence removal — classify
+  // against the active silence set so removing a clipped silence doesn't also list it here.
+  const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
+  const cuts = useMemo(() => manualCuts(ops, active), [ops, active]);
   const selectedCutKeys = useMemo(
     () => cuts.map(cutKey).filter((k) => selectedIds.has(k)),
     [cuts, selectedIds],

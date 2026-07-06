@@ -16,6 +16,7 @@ import type { ProjectView } from "@/types/api";
 import { useEffect, useMemo, useState } from "react";
 import { SilenceControls } from "./SilenceControls";
 import { SilenceList } from "./SilenceList";
+import { activeSilences } from "./active";
 import { addCuts, removeCuts, silenceStats } from "./edl";
 import { silenceKey } from "./regions";
 
@@ -41,18 +42,23 @@ export function SilencePanel({ project }: { project: ProjectView }) {
 
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  // Detected silences clipped to the audio still active after manual cuts: silences (or parts of
+  // them) inside deleted regions drop out of the list, stats, and actions — regardless of whether
+  // the cut was made before or after detection.
+  const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
+
   const selectedSegs = useMemo(
-    () => silences.filter((s) => selectedIds.has(silenceKey(s))),
-    [silences, selectedIds],
+    () => active.filter((s) => selectedIds.has(silenceKey(s))),
+    [active, selectedIds],
   );
   const removedIds = useMemo(
     () => new Set(ops.filter((o) => o.type === "cut").map((o) => `${o.start}:${o.end}`)),
     [ops],
   );
 
-  const detected = silenceStats(silences);
+  const detected = silenceStats(active);
   // "Removed" here means detected silences marked for cut — manual cuts are tallied in CutPanel.
-  const removed = silenceStats(silences.filter((s) => removedIds.has(silenceKey(s))));
+  const removed = silenceStats(active.filter((s) => removedIds.has(silenceKey(s))));
 
   const removeSelected = () => {
     editor.applyOps(ops, addCuts(ops, selectedSegs));
@@ -63,7 +69,7 @@ export function SilencePanel({ project }: { project: ProjectView }) {
     clearSelection();
   };
   const removeAll = () => {
-    editor.applyOps(ops, addCuts(ops, silences));
+    editor.applyOps(ops, addCuts(ops, active));
     clearSelection();
     setConfirmOpen(false);
   };
@@ -109,7 +115,7 @@ export function SilencePanel({ project }: { project: ProjectView }) {
           </Button>
         </div>
 
-        <SilenceList silences={silences} removedIds={removedIds} />
+        <SilenceList silences={active} removedIds={removedIds} />
       </div>
 
       <SimpleModal

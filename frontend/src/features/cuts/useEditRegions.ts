@@ -4,6 +4,7 @@
  * a view of app state, so this hook only reconciles — it holds no state of its own. It is the
  * single owner of the Regions plugin (it clears + rebuilds), so no other hook may draw onto it.
  */
+import { activeSilences } from "@/features/silence/active";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { useEditStore } from "@/stores/editStore";
 import type { EditOperation, SilenceSegment } from "@/types/api";
@@ -17,20 +18,23 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
   const selectionStart = useEditStore((s) => s.selectionStart);
   const selectionEnd = useEditStore((s) => s.selectionEnd);
 
-  const cuts = useMemo(() => manualCuts(ops, silences), [ops, silences]);
+  // Draw only the silence that survives manual cuts; classify manual cuts against that same
+  // active set so a removed clipped-silence isn't also drawn as a manual-cut region.
+  const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
+  const cuts = useMemo(() => manualCuts(ops, active), [ops, active]);
 
   // Reconcile overlays whenever the inputs or the selection change (once laid out).
   useEffect(() => {
     if (!regions || !isReady) return;
     reconcileEditRegions(regions, {
-      silences,
+      silences: active,
       manualCuts: cuts,
       selectedIds,
       selectionStart,
       selectionEnd,
     });
     return () => regions.clearRegions();
-  }, [regions, isReady, silences, cuts, selectedIds, selectionStart, selectionEnd]);
+  }, [regions, isReady, active, cuts, selectedIds, selectionStart, selectionEnd]);
 
   // Click a region -> select it (silence/cut) and seek there. Plugin-level so it survives the
   // region rebuilds above; read store actions via getState to avoid stale closures.
