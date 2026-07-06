@@ -9,10 +9,11 @@
  * arrays disagree in length (shouldn't happen, but guard anyway) we fall back to the
  * `max`-only envelope, which wavesurfer mirrors — losing the negative lobe but still
  * rendering.
+ *
+ * Accepts any `{ min, max }` envelope — the raw source peaks or the sliced edited peaks
+ * (`editedPeaks.ts`) — since both feed the same renderer.
  */
-import type { WaveformPeaks } from "@/types/api";
-
-export function toWavesurferPeaks(peaks: WaveformPeaks): number[][] {
+export function toWavesurferPeaks(peaks: { min: number[]; max: number[] }): number[][] {
   const { min, max } = peaks;
   if (max.length === 0) return [[]];
   if (min.length === max.length) return [max, min];

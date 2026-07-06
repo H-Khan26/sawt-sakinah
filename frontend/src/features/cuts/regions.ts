@@ -1,4 +1,5 @@
 import { silenceKey } from "@/features/silence/regions";
+import type { TimeMap } from "@/features/waveform/timeMap";
 /**
  * Reconciles *all* waveform overlays onto the single shared Regions plugin: detected-silence
  * spans, committed manual cuts, and the pending in/out selection. The regions are a pure
@@ -23,43 +24,57 @@ export interface EditRegionsState {
   manualCuts: EditOperation[];
   /** Selected silence/cut keys (drives fill emphasis). */
   selectedIds: Set<string>;
-  /** Pending in/out points; a region is drawn only when both are set and span > 0. */
+  /** Pending in/out points (source time); a region is drawn only when both are set and span > 0. */
   selectionStart: number | null;
   selectionEnd: number | null;
+  /** Source -> edited mapping. Region ids stay in source keys; coordinates are projected. */
+  timeMap: TimeMap;
 }
 
-/** Clear and re-add every overlay region from the current app state. */
+/**
+ * Clear and re-add every overlay region from the current app state. All state is authored in
+ * source time; coordinates are projected onto the (possibly collapsed) edited timeline via
+ * `timeMap`. In the collapsed view cut audio is gone from the timeline, so cut overlays are
+ * omitted and any silence that collapses to zero width (e.g. a removed one) is skipped.
+ */
 export function reconcileEditRegions(regions: RegionsPlugin, state: EditRegionsState): void {
-  const { silences, manualCuts, selectedIds, selectionStart, selectionEnd } = state;
+  const { silences, manualCuts, selectedIds, selectionStart, selectionEnd, timeMap } = state;
   regions.clearRegions();
 
   for (const seg of silences) {
     const key = silenceKey(seg);
+    const start = timeMap.toEdited(seg.start);
+    const end = timeMap.toEdited(seg.end);
+    if (end <= start) continue;
     regions.addRegion({
       id: key,
-      start: seg.start,
-      end: seg.end,
+      start,
+      end,
       drag: false,
       resize: false,
       color: selectedIds.has(key) ? silenceColors.fillSelected : silenceColors.fill,
     });
   }
 
-  for (const op of manualCuts) {
-    const key = cutKey(op);
-    regions.addRegion({
-      id: key,
-      start: op.start,
-      end: op.end ?? op.start,
-      drag: false,
-      resize: false,
-      color: selectedIds.has(key) ? cutColors.fillSelected : cutColors.fill,
-    });
+  // Cut regions mark deleted audio in place — only meaningful when that audio is still on the
+  // timeline (the show-deleted / identity view). Collapsed, there is nothing to mark.
+  if (timeMap.identity) {
+    for (const op of manualCuts) {
+      const key = cutKey(op);
+      regions.addRegion({
+        id: key,
+        start: op.start,
+        end: op.end ?? op.start,
+        drag: false,
+        resize: false,
+        color: selectedIds.has(key) ? cutColors.fillSelected : cutColors.fill,
+      });
+    }
   }
 
   if (selectionStart != null && selectionEnd != null) {
-    const a = Math.min(selectionStart, selectionEnd);
-    const b = Math.max(selectionStart, selectionEnd);
+    const a = timeMap.toEdited(Math.min(selectionStart, selectionEnd));
+    const b = timeMap.toEdited(Math.max(selectionStart, selectionEnd));
     if (b > a) {
       regions.addRegion({
         id: SELECTION_REGION_ID,

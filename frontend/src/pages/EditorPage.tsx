@@ -3,7 +3,6 @@ import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { Alert, EmptyState, WaveformLoader, WorkbenchPanel } from "@/components/ui";
 import { CutPanel } from "@/features/cuts/CutPanel";
-import { useCutSkip } from "@/features/cuts/useCutSkip";
 import { useEditHotkeys } from "@/features/cuts/useEditHotkeys";
 import { useEditRegions } from "@/features/cuts/useEditRegions";
 import { ExportButton } from "@/features/export/ExportButton";
@@ -149,7 +148,7 @@ export function EditorPage() {
  */
 function EditorWorkspace({ project }: { project: ProjectView }) {
   return (
-    <WaveformProvider projectId={project.id}>
+    <WaveformProvider project={project}>
       <EditorBody project={project} />
     </WaveformProvider>
   );
@@ -158,10 +157,10 @@ function EditorWorkspace({ project }: { project: ProjectView }) {
 function EditorBody({ project }: { project: ProjectView }) {
   const ops = project.edl.operations;
   useTransportHotkeys();
-  // Single owner of the Regions plugin; cut hotkeys; live playback-skip over cut spans.
+  // Single owner of the Regions plugin; cut hotkeys. Live playback-skip over cut spans lives in
+  // the waveform engine (it owns the playback element), so no hook is mounted here for it.
   useEditRegions(project.silences, ops);
   useEditHotkeys(project.id, ops);
-  useCutSkip(ops);
   return (
     <div className="mx-auto w-full max-w-6xl p-6">
       <WorkbenchPanel>

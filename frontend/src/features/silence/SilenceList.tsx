@@ -18,7 +18,7 @@ export function SilenceList({
   /** Keys of silences currently marked for removal (a `cut` op exists in the EDL). */
   removedIds: Set<string>;
 }) {
-  const { wavesurfer } = useWaveformContext();
+  const { controller } = useWaveformContext();
   const selectedIds = useEditStore((s) => s.selectedIds);
   const toggleSelected = useEditStore((s) => s.toggleSelected);
 
@@ -46,7 +46,7 @@ export function SilenceList({
               className="flex flex-1 items-center justify-between gap-4 text-left"
               onClick={() => {
                 if (!selected) toggleSelected(key);
-                wavesurfer?.setTime(seg.start);
+                controller.setSourceTime(seg.start);
               }}
             >
               <span className="w-6 tabular-nums text-text-tertiary">{i + 1}</span>

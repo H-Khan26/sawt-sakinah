@@ -13,7 +13,7 @@ import { manualCuts } from "./cutEdl";
 import { SELECTION_REGION_ID, reconcileEditRegions } from "./regions";
 
 export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[]): void {
-  const { regions, wavesurfer, isReady } = useWaveformContext();
+  const { regions, controller, timeMap, isReady } = useWaveformContext();
   const selectedIds = useEditStore((s) => s.selectedIds);
   const selectionStart = useEditStore((s) => s.selectionStart);
   const selectionEnd = useEditStore((s) => s.selectionEnd);
@@ -23,7 +23,7 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
   const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
   const cuts = useMemo(() => manualCuts(ops, active), [ops, active]);
 
-  // Reconcile overlays whenever the inputs or the selection change (once laid out).
+  // Reconcile overlays whenever the inputs, the selection, or the mapping change (once laid out).
   useEffect(() => {
     if (!regions || !isReady) return;
     reconcileEditRegions(regions, {
@@ -32,20 +32,22 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
       selectedIds,
       selectionStart,
       selectionEnd,
+      timeMap,
     });
     return () => regions.clearRegions();
-  }, [regions, isReady, active, cuts, selectedIds, selectionStart, selectionEnd]);
+  }, [regions, isReady, active, cuts, selectedIds, selectionStart, selectionEnd, timeMap]);
 
-  // Click a region -> select it (silence/cut) and seek there. Plugin-level so it survives the
-  // region rebuilds above; read store actions via getState to avoid stale closures.
+  // Click a region -> select it (silence/cut) and seek there. Region coordinates are edited-time,
+  // so invert through the map to seek in source time. Read store actions via getState to avoid
+  // stale closures.
   useEffect(() => {
     if (!regions) return;
     return regions.on("region-clicked", (region, e) => {
       e.stopPropagation();
-      wavesurfer?.setTime(region.start);
+      controller.setSourceTime(timeMap.toSource(region.start));
       // The pending selection is a passive overlay — clicking it only seeks.
       if (region.id === SELECTION_REGION_ID) return;
       useEditStore.getState().toggleSelected(region.id);
     });
-  }, [regions, wavesurfer]);
+  }, [regions, controller, timeMap]);
 }

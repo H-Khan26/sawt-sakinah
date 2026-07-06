@@ -15,7 +15,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export function useTransportHotkeys(): void {
-  const { wavesurfer } = useWaveformContext();
+  const { controller } = useWaveformContext();
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -24,7 +24,7 @@ export function useTransportHotkeys(): void {
 
       if (e.code === "Space") {
         e.preventDefault();
-        togglePlay(wavesurfer);
+        togglePlay(controller);
       } else if (e.key === "]") {
         e.preventDefault();
         zoomIn();
@@ -33,14 +33,14 @@ export function useTransportHotkeys(): void {
         zoomOut();
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        seekBy(wavesurfer, SEEK_STEP_SEC);
+        seekBy(controller, SEEK_STEP_SEC);
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        seekBy(wavesurfer, -SEEK_STEP_SEC);
+        seekBy(controller, -SEEK_STEP_SEC);
       }
     }
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [wavesurfer]);
+  }, [controller]);
 }

@@ -11,8 +11,9 @@ import { UndoRedoControls } from "@/features/cuts/UndoRedoControls";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { formatClock, formatClockPrecise } from "@/lib/time";
 import { PLAYBACK_RATES, ZOOM_MAX, usePlaybackStore } from "@/stores/playbackStore";
+import { useViewPrefs } from "@/stores/viewPrefs";
 import type { ProjectView } from "@/types/api";
-import { Check, Copy, Pause, Play } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, Pause, Play } from "lucide-react";
 import { useState } from "react";
 import { togglePlay, zoomIn, zoomOut } from "./transportControls";
 
@@ -56,7 +57,7 @@ function CopyTimeButton() {
 }
 
 function PlayButton() {
-  const { wavesurfer, isReady } = useWaveformContext();
+  const { controller, isReady } = useWaveformContext();
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   return (
     <Tooltip content={isPlaying ? "Pause" : "Play"}>
@@ -64,7 +65,7 @@ function PlayButton() {
         size="sm"
         variant="primary"
         disabled={!isReady}
-        onClick={() => togglePlay(wavesurfer)}
+        onClick={() => togglePlay(controller)}
         aria-label={isPlaying ? "Pause" : "Play"}
         aria-pressed={isPlaying}
         className="h-9 w-9 px-0"
@@ -109,6 +110,26 @@ function ZoomControls() {
   );
 }
 
+/** Toggle whether deleted (cut) audio is shown on the waveform. Off = collapsed edited view. */
+function ViewToggle() {
+  const showDeleted = useViewPrefs((s) => s.showDeleted);
+  const toggle = useViewPrefs((s) => s.toggleShowDeleted);
+  return (
+    <Tooltip content={showDeleted ? "Hide deleted audio" : "Show deleted audio"}>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={toggle}
+        aria-label={showDeleted ? "Hide deleted audio" : "Show deleted audio"}
+        aria-pressed={showDeleted}
+        className="h-9 w-9 px-0"
+      >
+        {showDeleted ? <Eye size={20} /> : <EyeOff size={20} />}
+      </Button>
+    </Tooltip>
+  );
+}
+
 function RateSelect() {
   const { isReady } = useWaveformContext();
   const rate = usePlaybackStore((s) => s.rate);
@@ -142,6 +163,7 @@ export function TransportBar({ project }: { project: ProjectView }) {
       </div>
       <div className="ml-auto flex items-center gap-4">
         <UndoRedoControls projectId={project.id} ops={project.edl.operations} />
+        <ViewToggle />
         <ZoomControls />
         <RateSelect />
       </div>

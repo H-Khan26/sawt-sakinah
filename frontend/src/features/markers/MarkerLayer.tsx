@@ -17,7 +17,7 @@ import { useMarkerLayout } from "./useMarkerLayout";
 const OFFSCREEN_MARGIN = 48;
 
 export function MarkerLayer({ markers }: { markers: Marker[] }) {
-  const { wavesurfer } = useWaveformContext();
+  const { controller, timeMap } = useWaveformContext();
   const layout = useMarkerLayout();
   const selectedId = useMarkerStore((s) => s.selectedMarkerId);
   const selectMarker = useMarkerStore((s) => s.selectMarker);
@@ -27,7 +27,10 @@ export function MarkerLayer({ markers }: { markers: Marker[] }) {
   return (
     <>
       {markers.map((m) => {
-        const x = m.time * layout.pxPerSec - layout.scrollLeft;
+        // Markers live on the source timeline; project onto the (possibly collapsed) edited
+        // timeline, and drop any marker whose audio has been cut away.
+        if (timeMap.isDeleted(m.time)) return null;
+        const x = timeMap.toEdited(m.time) * layout.pxPerSec - layout.scrollLeft;
         if (x < -OFFSCREEN_MARGIN || x > layout.width + OFFSCREEN_MARGIN) return null;
         return (
           <MarkerChip
@@ -37,7 +40,7 @@ export function MarkerLayer({ markers }: { markers: Marker[] }) {
             selected={m.id === selectedId}
             onSelect={() => {
               selectMarker(m.id);
-              wavesurfer?.setTime(m.time);
+              controller.setSourceTime(m.time);
             }}
           />
         );

@@ -2,7 +2,7 @@
  * Manual cut editing: mark a range by playhead (I/O keys) or by typing timestamps, commit it
  * as a non-destructive `cut`, and manage committed cuts (restore = uncut). Shares the EDL and
  * the undo history with the silence panel via `useEdlEditor`; nothing is rendered destructively
- * until export, and playback skips committed cuts live (see `useCutSkip`).
+ * until export, and the waveform engine skips committed cuts live during playback.
  */
 import { Button, PanelSection } from "@/components/ui";
 import { activeSilences } from "@/features/silence/active";
@@ -117,7 +117,7 @@ export function CutPanel({ project }: { project: ProjectView }) {
   const ops = project.edl.operations;
   const silences = project.silences;
 
-  const { wavesurfer } = useWaveformContext();
+  const { controller, isReady } = useWaveformContext();
   const editor = useEdlEditor(projectId);
 
   const selectionStart = useEditStore((s) => s.selectionStart);
@@ -191,8 +191,8 @@ export function CutPanel({ project }: { project: ProjectView }) {
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => wavesurfer && setSelectionStart(wavesurfer.getCurrentTime())}
-              disabled={!wavesurfer}
+              onClick={() => setSelectionStart(controller.getSourceTime())}
+              disabled={!isReady}
               title="Set start to the playhead (I)"
             >
               Set in
@@ -200,8 +200,8 @@ export function CutPanel({ project }: { project: ProjectView }) {
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => wavesurfer && setSelectionEnd(wavesurfer.getCurrentTime())}
-              disabled={!wavesurfer}
+              onClick={() => setSelectionEnd(controller.getSourceTime())}
+              disabled={!isReady}
               title="Set end to the playhead (O)"
             >
               Set out
@@ -246,7 +246,7 @@ export function CutPanel({ project }: { project: ProjectView }) {
               cuts={cuts}
               selectedIds={selectedIds}
               onToggle={toggleSelected}
-              onSeek={(t) => wavesurfer?.setTime(t)}
+              onSeek={(t) => controller.setSourceTime(t)}
             />
           )}
         </div>

@@ -25,7 +25,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export function useEditHotkeys(projectId: string, ops: EditOperation[]): void {
-  const { wavesurfer } = useWaveformContext();
+  const { controller } = useWaveformContext();
   const editor = useEdlEditor(projectId);
 
   const opsRef = useRef(ops);
@@ -54,10 +54,10 @@ export function useEditHotkeys(projectId: string, ops: EditOperation[]): void {
 
       if (e.key === "i" || e.key === "I") {
         e.preventDefault();
-        if (wavesurfer) store.setSelectionStart(wavesurfer.getCurrentTime());
+        store.setSelectionStart(controller.getSourceTime());
       } else if (e.key === "o" || e.key === "O") {
         e.preventDefault();
-        if (wavesurfer) store.setSelectionEnd(wavesurfer.getCurrentTime());
+        store.setSelectionEnd(controller.getSourceTime());
       } else if (e.key === "Delete" || e.key === "Backspace") {
         const { selectionStart, selectionEnd } = store;
         if (selectionStart == null || selectionEnd == null) return;
@@ -74,5 +74,5 @@ export function useEditHotkeys(projectId: string, ops: EditOperation[]): void {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [wavesurfer]);
+  }, [controller]);
 }

@@ -1,0 +1,102 @@
+/**
+ * Source <-> edited time mapping for the collapsed ("deleted portions hidden") waveform view.
+ *
+ * The whole editor works in *source* time — the EDL, markers, silences, and cut authoring are
+ * all source seconds. Only the waveform *presentation* collapses cut spans out of the timeline.
+ * A `TimeMap` is the bridge: it projects a source time onto the contiguous edited timeline that
+ * the collapsed waveform draws, and inverts an edited time back to source for seeking.
+ *
+ * When deleted portions are shown (or there are no cuts) the map is the identity: edited time ==
+ * source time, so the same rendering/seek code path serves both views. The kept-span math mirrors
+ * the server-side `editing/render.py` (`_resolve_keeps` / `_remap_time`) so what you see collapsed
+ * matches what export produces.
+ */
+import { mergeCutSpans } from "@/features/cuts/cutEdl";
+import type { EditOperation } from "@/types/api";
+
+export type Span = [number, number];
+
+export interface TimeMap {
+  /** True when edited time == source time (deleted portions shown, or nothing cut). */
+  readonly identity: boolean;
+  /** Length of the edited (collapsed) timeline in seconds. */
+  readonly editedTotal: number;
+  /** The surviving source spans, in order — what the collapsed waveform is built from. */
+  readonly keptSpans: Span[];
+  /** Project a source time onto the edited timeline (a cut interior maps to its join point). */
+  toEdited(sourceT: number): number;
+  /** Invert an edited time back to source time. */
+  toSource(editedT: number): number;
+  /** Whether a source time falls inside a cut (always false for the identity map). */
+  isDeleted(sourceT: number): boolean;
+}
+
+const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
+
+function identityMap(duration: number): TimeMap {
+  const d = Math.max(0, duration);
+  return {
+    identity: true,
+    editedTotal: d,
+    keptSpans: [[0, d]],
+    toEdited: (s) => clamp(s, 0, d),
+    toSource: (e) => clamp(e, 0, d),
+    isDeleted: () => false,
+  };
+}
+
+/**
+ * Build a `TimeMap` for `ops` against a source of `duration` seconds. `collapsed` false (or a
+ * source with no cuts / zero duration) yields the identity map.
+ */
+export function buildTimeMap(ops: EditOperation[], duration: number, collapsed: boolean): TimeMap {
+  if (!collapsed || duration <= 0) return identityMap(duration);
+
+  const cuts = mergeCutSpans(ops)
+    .map(([a, b]): Span => [clamp(a, 0, duration), clamp(b, 0, duration)])
+    .filter(([a, b]) => b > a);
+  if (cuts.length === 0) return identityMap(duration);
+
+  // Kept spans = the complement of the (merged, sorted) cuts within [0, duration].
+  const kept: Span[] = [];
+  let cursor = 0;
+  for (const [a, b] of cuts) {
+    if (a > cursor) kept.push([cursor, a]);
+    cursor = Math.max(cursor, b);
+  }
+  if (cursor < duration) kept.push([cursor, duration]);
+  if (kept.length === 0) return identityMap(duration); // everything cut — nothing to collapse to
+
+  // Cumulative edited offset at the start of each kept span.
+  const offsets: number[] = [];
+  let acc = 0;
+  for (const [a, b] of kept) {
+    offsets.push(acc);
+    acc += b - a;
+  }
+  const editedTotal = acc;
+
+  const toEdited = (sourceT: number): number => {
+    const s = clamp(sourceT, 0, duration);
+    for (let i = 0; i < kept.length; i++) {
+      const [a, b] = kept[i];
+      if (s < a) return offsets[i]; // inside the cut before this span -> its join point
+      if (s <= b) return offsets[i] + (s - a);
+    }
+    return editedTotal;
+  };
+
+  const toSource = (editedT: number): number => {
+    const e = clamp(editedT, 0, editedTotal);
+    for (let i = 0; i < kept.length; i++) {
+      const [a, b] = kept[i];
+      if (e <= offsets[i] + (b - a)) return a + (e - offsets[i]);
+    }
+    return kept[kept.length - 1][1];
+  };
+
+  const isDeleted = (sourceT: number): boolean =>
+    !kept.some(([a, b]) => sourceT >= a && sourceT <= b);
+
+  return { identity: false, editedTotal, keptSpans: kept, toEdited, toSource, isDeleted };
+}

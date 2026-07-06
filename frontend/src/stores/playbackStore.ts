@@ -1,10 +1,11 @@
 /**
  * Playback state, isolated from the server-data caches and the rest of the editor tree.
  *
- * `currentTime` updates on every animation frame during playback; components that need it
- * (the transport readout, the future active-position indicator) subscribe to *just that
- * slice* via a selector so the editor tree does not re-render per frame. Nothing here is
- * server state — it is fed from wavesurfer's own events by `useWavesurfer`.
+ * `currentTime` and `duration` are in *edited* time (the collapsed timeline the waveform shows);
+ * they equal source time when deleted portions are shown. `currentTime` updates every animation
+ * frame during playback; components that need it (the transport readout) subscribe to *just that
+ * slice* via a selector so the editor tree does not re-render per frame. Nothing here is server
+ * state — the waveform engine (`useWaveformEngine`) feeds it from the playback element.
  */
 import { create } from "zustand";
 
