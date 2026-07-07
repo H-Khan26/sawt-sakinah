@@ -77,7 +77,7 @@ export function Modal({ open, onClose, children, ariaLabel, className }: ModalPr
         aria-modal="true"
         aria-label={ariaLabel}
         className={cn(
-          "m-0 max-h-[90vh] w-full max-w-lg overflow-auto rounded-card border border-border bg-background p-0 text-text shadow-xl focus:outline-none",
+          "static m-0 max-h-[90vh] w-full max-w-lg overflow-auto rounded-card border border-border bg-background p-0 text-text shadow-xl focus:outline-none",
           className,
         )}
       >

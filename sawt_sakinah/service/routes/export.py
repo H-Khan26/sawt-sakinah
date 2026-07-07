@@ -68,7 +68,7 @@ def download_export(
     if not path.is_relative_to(exports_root) or not path.exists():
         raise HTTPException(status_code=404, detail="export not found")
 
-    base = _safe_base(project.name or artifact.name or "export")
+    base = _safe_base(artifact.name or project.name or "export")
     filename = f"{base}-{artifact.created_at:%Y%m%d}.{artifact.format}"
     return ranged_file_response(
         path, request.headers.get("range"), media_type_for(path), filename=filename

@@ -1,5 +1,5 @@
 /**
- * Export dialog: pick format / bitrate / whether to embed markers, render the EDL, and
+ * Export dialog: pick format / whether to embed markers, render the EDL, and
  * download the result. Export is the one destructive/rendered step — cuts are applied and
  * (when embedding) the project's markers are written as labeled chapters, all server-side.
  *
@@ -25,8 +25,7 @@ const DOWNLOAD_LINK_CLASS =
 
 export function ExportModal({ project, onClose }: { project: ProjectView; onClose: () => void }) {
   const [format, setFormat] = useState<string>("mp3");
-  const [bitrate, setBitrate] = useState("");
-  const [embedMarkers, setEmbedMarkers] = useState(true);
+  const [embedMarkers, setEmbedMarkers] = useState(false);
   const [name, setName] = useState(project.name);
   const [jobId, setJobId] = useState<string | undefined>(undefined);
   const [artifactId, setArtifactId] = useState<string | null>(null);
@@ -50,7 +49,7 @@ export function ExportModal({ project, onClose }: { project: ProjectView; onClos
     exportAudio.mutate(
       {
         format,
-        bitrate: bitrate.trim() || null,
+        bitrate: null,
         embed_markers: embedMarkers,
         name: trimmedName || null,
       },
@@ -93,14 +92,6 @@ export function ExportModal({ project, onClose }: { project: ProjectView; onClos
             ))}
           </select>
         </label>
-
-        <Input
-          label="Bitrate"
-          placeholder="e.g. 192k (blank = best VBR)"
-          value={bitrate}
-          disabled={running}
-          onChange={(e) => setBitrate(e.target.value)}
-        />
 
         <label className="flex items-center gap-2 text-sm text-text-secondary">
           <input
