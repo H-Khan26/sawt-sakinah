@@ -96,19 +96,27 @@ export function SilenceControls({
     [detectSilence],
   );
 
-  // Debounced auto re-detect keyed on slider values only: skipped on mount, before the first
-  // run, and on mode switches (mode is read through a ref so it is not a dependency).
-  const mounted = useRef(false);
+  // Debounced auto re-detect keyed on slider values only: skipped before the first run and on
+  // mode switches (mode is read through a ref so it is not a dependency). The effect compares
+  // against the last values it saw rather than using a mount flag: React StrictMode runs
+  // effects twice on mount in development, which would flip a mount flag and fire a detect on
+  // every editor open, silently replacing the saved silences.
+  const lastValues = useRef<SliderValues>({ threshold, sensitivity, minGap });
   const timer = useRef<number | null>(null);
   const hasDetectedRef = useRef(hasDetected);
   hasDetectedRef.current = hasDetected;
   const modeRef = useRef(mode);
   modeRef.current = mode;
   useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true;
+    const prev = lastValues.current;
+    if (
+      prev.threshold === threshold &&
+      prev.sensitivity === sensitivity &&
+      prev.minGap === minGap
+    ) {
       return;
     }
+    lastValues.current = { threshold, sensitivity, minGap };
     if (!hasDetectedRef.current) return;
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(
