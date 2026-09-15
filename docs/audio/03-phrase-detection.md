@@ -48,8 +48,14 @@ Pure analysis: no audio mutation.
      for the target phrases (with fuzzy/diacritic-insensitive matching).
    - Pros: semantic, multi-phrase out of the box, gives real labels and times.
    - Cons: may struggle with melodic recitation and exact onset timing; heavier compute.
-   - Mitigations: domain prompt/initial-prompt biasing toward the known phrases;
-     post-align onsets with energy/forced alignment.
+   - Mitigations: domain prompt/initial-prompt biasing toward the known phrases; when
+     the source's Silero speech map exists, its spans are grouped into padded clips,
+     the clip audio is concatenated into one stream and transcribed with Whisper's own
+     VAD disabled (no second VAD pass; one packed stream costs far fewer 30 s encoder
+     windows than per-clip decoding), and word times are mapped back to source time
+     through the clip offsets. Marker onsets/ends are then snapped to the nearest
+     speech-span edge within `phrases.snap_window`, so a takbir that follows a pause
+     lands on the real speech onset rather than Whisper's coarse (~+-0.5 s) word time.
 
 2. **Query-by-example via audio embeddings** *(strong complement / fallback)*
    - User (or a library) supplies one or more **reference clips** of the takbir.

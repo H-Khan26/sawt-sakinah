@@ -1,9 +1,12 @@
 """Detect silent / relatively-silent regions as data (no audio mutation).
 
-Baseline implementation uses FFmpeg's ``silencedetect`` filter, which reports
-timestamps to stderr instead of cutting. This is the analysis counterpart to the
-editing layer's ``remove_silence``. See docs/audio/02-silence-detection.md for the
-candidate upgrades (librosa energy, VAD) an implementing agent may evaluate.
+Two backends share one contract. The default, ``"vad"``, thresholds the source's Silero
+speech-probability map (see ``segmentation.py`` / ``vad.py``) and reports the gaps
+between speech spans, which separates quiet dhikr and room noise from real pauses. The
+fallback, ``"ffmpeg"``, is FFmpeg's ``silencedetect`` energy gate: dependency-free, and
+what the service uses when the ``vad`` extra is not installed. Both report timestamps
+instead of cutting; this is the analysis counterpart to the editing layer's
+``remove_silence``. See docs/audio/02-silence-detection.md.
 """
 
 from __future__ import annotations
@@ -12,10 +15,15 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..config import CONFIG
 from ..models import SilenceSegment
+from ._spans import merge_within_gap
 from .loudness import measure_mean_db
+
+if TYPE_CHECKING:  # pragma: no cover - typing only; segmentation needs numpy
+    from .segmentation import SpeechMap
 
 _START_RE = re.compile(r"silence_start:\s*(-?\d+(?:\.\d+)?)")
 _END_RE = re.compile(r"silence_end:\s*(-?\d+(?:\.\d+)?)")
@@ -31,7 +39,9 @@ def detect_silence(
     measure_loudness: bool = CONFIG.silence.measure_loudness,
     total_duration: float | None = None,
     detector: str = CONFIG.silence.detector,
-    speech_threshold: float = CONFIG.silence.speech_threshold,
+    speech_threshold: float = CONFIG.segmentation.speech_threshold,
+    min_speech_duration: float = CONFIG.segmentation.min_speech_duration,
+    speech_map: "SpeechMap | None" = None,
 ) -> list[SilenceSegment]:
     """Return the silent regions in ``input_path`` as structured segments.
 
@@ -41,6 +51,7 @@ def detect_silence(
         input_path: Source audio file.
         threshold_db: Loudness below this (in dB) counts as silence. Closer to 0
             (e.g. -30) flags more as silent; more negative (e.g. -50) is stricter.
+            ffmpeg detector only.
         min_silence_duration: Minimum length in seconds of a quiet run to report.
             Shorter pauses are ignored so natural gaps between words are preserved.
         ffmpeg_bin: Name/path of the ffmpeg executable.
@@ -49,12 +60,15 @@ def detect_silence(
         measure_loudness: When true, populate each segment's ``mean_db`` with a short
             ``volumedetect`` pass over the region. Disable to skip the extra passes.
         total_duration: File duration in seconds, used to close a silence that runs to
-            EOF. Probed via ffprobe when needed and not supplied.
-        detector: Detection backend. ``"ffmpeg"`` (silencedetect energy gate, default)
-            or ``"vad"`` (Silero voice-activity detection; requires the optional 'vad'
-            extra). The VAD path better separates quiet dhikr / noise from recitation.
+            EOF. Probed via ffprobe when needed and not supplied (ffmpeg path).
+        detector: Detection backend. ``"vad"`` (default) inverts the Silero speech
+            map; ``"ffmpeg"`` runs the silencedetect energy gate.
         speech_threshold: Speech-probability threshold for the ``"vad"`` detector;
             ignored by the ffmpeg path.
+        min_speech_duration: ``"vad"`` only: drop speech runs shorter than this before
+            inverting, so brief blips do not split a silence.
+        speech_map: ``"vad"`` only: the source's precomputed speech map. ``None``
+            computes it in memory (requires the ``vad`` extra).
 
     Returns:
         List of ``SilenceSegment`` ordered by start time.
@@ -63,22 +77,26 @@ def detect_silence(
         FileNotFoundError: If ffmpeg or the input file is missing.
         RuntimeError: If FFmpeg exits with an error.
         ValueError: If an unsupported ``detector`` is requested.
-        ImportError: If ``detector="vad"`` and the optional VAD deps are missing.
+        ImportError: If ``detector="vad"``, no ``speech_map`` is given, and
+            onnxruntime is not installed.
     """
     if detector == "vad":
         from .vad import detect_silence_vad
 
         return detect_silence_vad(
             input_path,
+            speech_map=speech_map,
             speech_threshold=speech_threshold,
             min_silence_duration=min_silence_duration,
+            min_speech_duration=min_speech_duration,
             merge_gap=merge_gap,
             measure_loudness=measure_loudness,
+            total_duration=total_duration,
             ffmpeg_bin=ffmpeg_bin,
         )
     if detector != "ffmpeg":
         raise ValueError(
-            f"Unsupported detector {detector!r}; use 'ffmpeg' or 'vad'."
+            f"Unsupported detector {detector!r}; use 'vad' or 'ffmpeg'."
         )
 
     src = Path(input_path)
@@ -115,7 +133,7 @@ def detect_silence(
             spans.pop()
 
     if merge_gap is not None:
-        spans = _merge_within_gap(spans, merge_gap)
+        spans = merge_within_gap(spans, merge_gap)
 
     segments: list[SilenceSegment] = []
     for start, end in spans:
@@ -148,22 +166,6 @@ def _parse_silencedetect(stderr: str) -> list[tuple[float, float | None]]:
         spans.append((pending_start, None))
 
     return spans
-
-
-def _merge_within_gap(
-    spans: list[tuple[float, float]], merge_gap: float
-) -> list[tuple[float, float]]:
-    """Merge adjacent spans separated by a gap no larger than ``merge_gap``."""
-    if not spans:
-        return spans
-    merged: list[tuple[float, float]] = [spans[0]]
-    for start, end in spans[1:]:
-        prev_start, prev_end = merged[-1]
-        if start - prev_end <= merge_gap:
-            merged[-1] = (prev_start, max(prev_end, end))
-        else:
-            merged.append((start, end))
-    return merged
 
 
 def _probe_duration(src: Path, ffmpeg_bin: str) -> float:

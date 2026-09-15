@@ -3,11 +3,12 @@
 Both acquisition front-ends converge here. Once a decodable audio file exists on disk --
 whether yt-dlp downloaded and transcoded it (:mod:`extractor`) or the importer transcoded
 a user upload (:mod:`importer`) -- this module probes it, optionally builds the detection
-working copy, assembles the :class:`AudioSource`, and persists it to the cache. Keeping the
-tail in one place means the two front-ends share identical metadata, working-copy, and
-cache semantics and never drift apart.
+working copy and its speech-map sidecar, assembles the :class:`AudioSource`, and persists
+it to the cache. Keeping the tail in one place means the two front-ends share identical
+metadata, working-copy, and cache semantics and never drift apart.
 
-Side-effecting (filesystem): probes, may write a working copy, may write a cache sidecar.
+Side-effecting (filesystem): probes, may write a working copy and a speech map, may write
+a cache sidecar.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from . import cache as _cache
 from .hashing import content_hash
 from .normalize import make_working_copy
 from .probe import ffprobe_for, probe
+from .segment import write_speech_map
 
 
 def emit(callback: Optional[Callable[[dict], None]], **payload) -> None:
@@ -40,6 +42,7 @@ def finalize_source(
     source_url: Optional[str] = None,
     original_filename: Optional[str] = None,
     create_working_copy: bool = CONFIG.extraction.create_working_copy,
+    create_speech_map: bool = CONFIG.extraction.create_speech_map,
     normalize_loudness: bool = CONFIG.extraction.normalize_loudness,
     use_cache: bool = CONFIG.extraction.use_cache,
     cache_dir: str | os.PathLike | None = None,
@@ -56,12 +59,15 @@ def finalize_source(
         source_url: Canonical URL for downloads; ``None`` for uploads.
         original_filename: The uploaded file's name; ``None`` for downloads.
         create_working_copy: Also emit the 16 kHz mono WAV detection feeds on.
+        create_speech_map: Also compute the Silero speech-probability sidecar from the
+            working copy (requires it, and the ``vad`` extra; skipped with a
+            ``"segment"``/``"skipped"`` progress event when onnxruntime is missing).
         normalize_loudness: Apply EBU R128 loudnorm to the working copy.
         use_cache: Persist the resulting source as a cache sidecar.
         cache_dir: Cache root (resolved to the default when ``None``).
         ffmpeg_bin: ffmpeg executable; the matching ffprobe is derived from it.
         progress_callback: Normalized ``{stage, ...}`` progress sink; stages are
-            ``"probe"``, ``"normalize"``, ``"done"``.
+            ``"probe"``, ``"normalize"``, ``"segment"``, ``"done"``.
 
     Raises:
         FileNotFoundError: If ``result_path`` (or ffmpeg/ffprobe) is missing.
@@ -83,6 +89,17 @@ def finalize_source(
             result, normalize_loudness=normalize_loudness, ffmpeg_bin=ffmpeg_bin
         )
 
+    # The speech map derives from the working copy, so it is only attempted once that
+    # exists. A missing onnxruntime is not an extraction failure: the detectors fall
+    # back (energy gate / full-file Whisper) and the field stays None.
+    speech_map = None
+    if working_copy is not None and create_speech_map:
+        emit(progress_callback, stage="segment", status="start")
+        try:
+            speech_map = write_speech_map(working_copy, ffmpeg_bin=ffmpeg_bin)
+        except ImportError as err:
+            emit(progress_callback, stage="segment", status="skipped", reason=str(err))
+
     source = AudioSource(
         local_path=result,
         title=title,
@@ -97,6 +114,7 @@ def finalize_source(
         source_url=source_url,
         original_filename=original_filename,
         working_copy=working_copy,
+        speech_map=speech_map,
     )
 
     if use_cache:

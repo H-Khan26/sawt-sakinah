@@ -90,8 +90,8 @@ class ProjectStore:
         """Return the stored ``Project``, or ``None`` on miss / unreadable sidecar.
 
         References to files that no longer exist on disk are healed: a missing
-        ``working_copy`` is nulled out and export artifacts whose files are gone are
-        dropped, so the wire never advertises dangling resources.
+        ``working_copy`` or ``speech_map`` is nulled out and export artifacts whose
+        files are gone are dropped, so the wire never advertises dangling resources.
         """
         path = self._json_path(project_id)
         if not path.exists():
@@ -125,8 +125,13 @@ class ProjectStore:
     def _heal(self, project: Project) -> Project:
         updates: dict = {}
         src = project.audio_source
+        src_updates: dict = {}
         if src.working_copy is not None and not Path(src.working_copy).exists():
-            updates["audio_source"] = src.model_copy(update={"working_copy": None})
+            src_updates["working_copy"] = None
+        if src.speech_map is not None and not Path(src.speech_map).exists():
+            src_updates["speech_map"] = None
+        if src_updates:
+            updates["audio_source"] = src.model_copy(update=src_updates)
         live = [a for a in project.exports if Path(a.path).exists()]
         if len(live) != len(project.exports):
             updates["exports"] = live

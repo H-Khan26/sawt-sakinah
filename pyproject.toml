@@ -34,15 +34,12 @@ phrases = [
     "faster-whisper>=1.0",
     "rapidfuzz>=3.0",
 ]
-# Silero VAD silence detector (detector="vad"). Inference runs through onnxruntime, but
-# silero-vad declares torch/torchaudio as hard deps, so they are pinned for a
-# reproducible install.
+# Silero VAD speech segmentation (detection/segmentation.py; the "vad" silence detector
+# and speech-scoped phrase detection build on it). The network ships as a vendored ONNX
+# file under sawt_sakinah/detection/assets and runs on onnxruntime + numpy; no torch.
 vad = [
     "numpy>=1.24",
     "onnxruntime>=1.17",
-    "silero-vad>=5.1",
-    "torch>=1.12.0",
-    "torchaudio>=0.12.0",
 ]
 # Desktop shell (sawt_sakinah.desktop): a native window over the local service via
 # pywebview. Requires the built SPA (frontend/dist) and the `service` extra. Kept out of
@@ -65,3 +62,5 @@ include = ["sawt_sakinah*"]
 [tool.setuptools.package-data]
 # Ship the single-source-of-truth config alongside the code.
 "sawt_sakinah.config" = ["*.yaml"]
+# Vendored Silero VAD network (ONNX) and its license.
+"sawt_sakinah.detection" = ["assets/*"]

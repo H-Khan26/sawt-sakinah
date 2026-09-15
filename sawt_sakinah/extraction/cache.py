@@ -44,9 +44,14 @@ def load(cache_dir: str | os.PathLike, source_id: str) -> Optional[AudioSource]:
         return None
     if not source.local_path.exists():
         return None
+    # The mp3 is still valid; drop references to derived files that have gone missing.
+    healed: dict = {}
     if source.working_copy is not None and not source.working_copy.exists():
-        # The mp3 is still valid; drop the missing working-copy reference.
-        return AudioSource.from_dict({**source.to_dict(), "working_copy": None})
+        healed["working_copy"] = None
+    if source.speech_map is not None and not source.speech_map.exists():
+        healed["speech_map"] = None
+    if healed:
+        return AudioSource.from_dict({**source.to_dict(), **healed})
     return source
 
 

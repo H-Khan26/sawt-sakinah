@@ -1,4 +1,4 @@
-"""Shared ffmpeg PCM decode used by VAD and waveform code.
+"""Shared ffmpeg PCM decode used by speech segmentation, phrase clip packing and waveform peaks.
 
 Decodes any ffmpeg-readable file into an in-memory mono 16 kHz float32 numpy array.
 Read-only: no file is written and the input is never mutated. ``numpy`` is imported

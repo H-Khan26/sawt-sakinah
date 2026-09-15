@@ -1,8 +1,8 @@
 """Produce a normalized PCM working copy (16 kHz mono WAV) for detection.
 
-Detection thresholds (and the future VAD path) behave consistently when fed a
-standardized signal regardless of the source's sample rate / channels / level. This
-write lives in the extraction (side-effecting) layer so detection stays read-only.
+Detection thresholds and the Silero speech-segmentation pass behave consistently when
+fed a standardized signal regardless of the source's sample rate / channels / level.
+This write lives in the extraction (side-effecting) layer so detection stays read-only.
 """
 
 from __future__ import annotations
@@ -15,6 +15,10 @@ from ..config import CONFIG
 
 # Sample rate that both energy thresholds and Silero/WebRTC VAD expect.
 WORKING_SAMPLE_RATE = CONFIG.audio.working_sample_rate
+
+# Suffix appended to the source stem for the working copy. The speech-map sidecar strips
+# it to share the source's stem, so the two must agree on the one literal.
+WORKING_SUFFIX = ".work.wav"
 
 
 def make_working_copy(
@@ -52,7 +56,7 @@ def make_working_copy(
         )
 
     dst = Path(output_path) if output_path is not None else src.with_name(
-        f"{src.stem}.work.wav"
+        f"{src.stem}{WORKING_SUFFIX}"
     )
 
     cmd = [ffmpeg_bin, "-y" if overwrite else "-n", "-i", str(src)]
