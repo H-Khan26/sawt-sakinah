@@ -129,8 +129,7 @@
      * Body never scrolls (main handles overflow), so it reads as a fixed backdrop
      * behind the UI. */
     background-color: var(--color-background);
-    background-image:
-      linear-gradient(rgba(252, 251, 248, 0.74), rgba(252, 251, 248, 0.74)),
+    background-image: linear-gradient(rgba(252, 251, 248, 0.74), rgba(252, 251, 248, 0.74)),
       url("/ogee-bg.svg");
     background-repeat: repeat;
     background-size: 300px 400px;
