@@ -1,6 +1,6 @@
 # Layout & Pages
 
-> Status: planning. Defines the screen/route structure and the editor layout. Follows
+> Status: implemented. Defines the screen/route structure and the editor layout. Follows
 > the base theme's layout conventions (sidebar/header shell, cards, spacing scale).
 
 ## Goal

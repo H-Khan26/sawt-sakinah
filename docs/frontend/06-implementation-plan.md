@@ -1,6 +1,6 @@
 # Implementation Plan
 
-> Status: active. The build plan for the Sawt Sakinah frontend, written so any agent can
+> Status: implemented; retained as the build record. The build plan for the Sawt Sakinah frontend, written so any agent can
 > pick up a phase and execute it without re-deriving context. Phases 0-7 are **done**
 > (code in `frontend/`), plus a small backend **marker layer** (Phase B) that Phases 6-7
 > depend on. Where the planning docs (00-05) and the live backend disagree, **the backend

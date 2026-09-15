@@ -1,6 +1,7 @@
 # Backend Plan — Project CRUD, Export Naming, and GET Efficacy
 
-> Status: proposed. Companion to `docs/frontend-project-library-plan.md`. Scope: complete
+> Status: implemented; kept as a design record. Companion to
+> `docs/plans/frontend-project-library-plan.md`. Scope: complete
 > the CRUD surface for projects (list, rename, delete) on top of the existing create/read,
 > add human-friendly export naming, and review the read-path (`GET`) mechanics for
 > efficiency. Single-user, local/desktop assumptions hold throughout.
@@ -10,7 +11,7 @@
 ## 1. Where we are today
 
 The persistence layer already exists and is solid. `ProjectStore`
-([projects.py](../sawt_sakinah/service/projects.py)) writes each project as a directory:
+([projects.py](../../sawt_sakinah/service/projects.py)) writes each project as a directory:
 
 ```
 <projects_root>/<project_id>/
@@ -20,13 +21,13 @@ The persistence layer already exists and is solid. `ProjectStore`
   waveform.json    # cached peaks (lazy)
 ```
 
-Writes are crash-safe (temp-write + `os.replace`, [projects.py:109](../sawt_sakinah/service/projects.py#L109)),
+Writes are crash-safe (temp-write + `os.replace`, [projects.py:109](../../sawt_sakinah/service/projects.py#L109)),
 and `update()` serializes read-modify-write under a per-project lock so concurrent detection
-jobs never clobber each other ([projects.py:118](../sawt_sakinah/service/projects.py#L118)).
+jobs never clobber each other ([projects.py:118](../../sawt_sakinah/service/projects.py#L118)).
 
 **Editing already autosaves.** Every EDL/marker edit is a synchronous atomic write via
 `PUT /projects/{id}/edl` and `PUT /projects/{id}/markers`
-([routes/projects.py](../sawt_sakinah/service/routes/projects.py)). There is no unsaved
+([routes/projects.py](../../sawt_sakinah/service/routes/projects.py)). There is no unsaved
 in-memory buffer to lose on app close. Undo/redo history is intentionally client-only and
 is not persisted, which matches the "no history needed" requirement.
 
@@ -43,7 +44,7 @@ is not persisted, which matches the "no history needed" requirement.
 | Delete | — | **Missing** |
 | Export naming | exports are `{uuid}.{ext}`; download filename is the uuid | **Weak** |
 
-The `Project` model ([project.py](../sawt_sakinah/models/project.py)) has no project-level
+The `Project` model ([project.py](../../sawt_sakinah/models/project.py)) has no project-level
 `name`, `created_at`, or `updated_at`. Title lives on `audio_source.title`; the only edit
 timestamp is `edl.updated_at`, which misses marker edits. A "recent projects" list needs a
 real project-level `updated_at`.
@@ -54,7 +55,7 @@ real project-level `updated_at`.
 
 ### 2.1 `Project` gains identity + timestamps
 
-In [models/project.py](../sawt_sakinah/models/project.py), add three fields to `Project`:
+In [models/project.py](../../sawt_sakinah/models/project.py), add three fields to `Project`:
 
 ```python
 name: str                      # user-facing label; defaults to audio_source.title
@@ -75,7 +76,7 @@ this is additive.
 Existing files predate these fields. Make the load path tolerant rather than forcing a
 migration script:
 
-- In `ProjectStore.load()` ([projects.py:83](../sawt_sakinah/service/projects.py#L83)),
+- In `ProjectStore.load()` ([projects.py:83](../../sawt_sakinah/service/projects.py#L83)),
   after `Project.from_dict(...)`, backfill any missing fields inside `_heal()`:
   - `name` -> `audio_source.title`
   - `created_at` -> `audio_source.created_at`
@@ -86,7 +87,7 @@ migration script:
 
 ### 2.3 Bump `updated_at` centrally
 
-In `ProjectStore.update()` ([projects.py:118](../sawt_sakinah/service/projects.py#L118)),
+In `ProjectStore.update()` ([projects.py:118](../../sawt_sakinah/service/projects.py#L118)),
 after `mutator` returns, stamp the result before saving:
 
 ```python
@@ -101,7 +102,7 @@ touching any route. `create()` sets `created_at == updated_at` naturally.
 
 ### 2.4 Export artifact gains an optional name
 
-In [models/project.py](../sawt_sakinah/models/project.py), `ExportArtifact` gains:
+In [models/project.py](../../sawt_sakinah/models/project.py), `ExportArtifact` gains:
 
 ```python
 name: Optional[str] = None     # user-supplied export label, used for the download filename
@@ -114,7 +115,7 @@ only drives the `Content-Disposition` filename on download (see 4).
 
 ## 3. New store methods
 
-Add to `ProjectStore` ([projects.py](../sawt_sakinah/service/projects.py)):
+Add to `ProjectStore` ([projects.py](../../sawt_sakinah/service/projects.py)):
 
 ### 3.1 `list_summaries() -> list[ProjectSummary]`
 
@@ -137,7 +138,7 @@ ProjectSummary:
 ```
 
 Sort by `updated_at` desc. A project mid-extraction has no `project.json` yet (it is written
-only when extraction completes, [workers.py:90](../sawt_sakinah/service/workers.py#L90)); such
+only when extraction completes, [workers.py:90](../../sawt_sakinah/service/workers.py#L90)); such
 dirs are simply skipped, which is correct — the library shows completed/extracting projects
 via the jobs channel, not half-written dirs.
 
@@ -155,8 +156,8 @@ Remove the whole project directory (`shutil.rmtree`) under the per-project lock.
 `False` if the dir did not exist.
 
 - **Cache is untouched.** The extraction cache lives in a separate `cache_dir`
-  ([settings.py:44](../sawt_sakinah/service/settings.py#L46)) and each project owns copies of
-  its audio (`_localize`, [workers.py:41](../sawt_sakinah/service/workers.py#L41)), so
+  ([settings.py:44](../../sawt_sakinah/service/settings.py#L46)) and each project owns copies of
+  its audio (`_localize`, [workers.py:41](../../sawt_sakinah/service/workers.py#L41)), so
   deleting one project never strands another. Deleting a project does **not** evict the
   shared download cache — correct, since another project may reuse it.
 - Drop the in-memory lock entry for the id after deletion to avoid unbounded lock-map growth.
@@ -174,16 +175,16 @@ Goal: a downloaded export is named after the project (and optional user label), 
 
 ### 4.1 Request + worker
 
-- `ExportRequest` ([schemas.py:95](../sawt_sakinah/service/schemas.py#L95)) gains
+- `ExportRequest` ([schemas.py:95](../../sawt_sakinah/service/schemas.py#L95)) gains
   `name: Optional[str] = None`.
-- `export_worker` ([workers.py:178](../sawt_sakinah/service/workers.py#L178)) writes the
+- `export_worker` ([workers.py:178](../../sawt_sakinah/service/workers.py#L178)) writes the
   `name` onto the `ExportArtifact`. Keep the on-disk path as `{artifact_id}.{format}` — do
   **not** name files by user input (avoids collisions and path-traversal). Default `name`
   when omitted: the project `name`.
 
 ### 4.2 Download filename
 
-In `download_export` ([routes/export.py:38](../sawt_sakinah/service/routes/export.py#L38)),
+In `download_export` ([routes/export.py:38](../../sawt_sakinah/service/routes/export.py#L38)),
 build a human filename instead of passing `filename=path.name`:
 
 ```
@@ -200,7 +201,7 @@ build a human filename instead of passing `filename=path.name`:
 
 ### 4.3 Wire view
 
-`ExportArtifactView` ([schemas.py:117](../sawt_sakinah/service/schemas.py#L117)) gains `name`
+`ExportArtifactView` ([schemas.py:117](../../sawt_sakinah/service/schemas.py#L117)) gains `name`
 so the frontend can show export labels in a list. `download_url` is unchanged.
 
 ---
@@ -208,7 +209,7 @@ so the frontend can show export labels in a list. `download_url` is unchanged.
 ## 5. New / changed routes
 
 All under the existing `projects.router`
-([routes/projects.py](../sawt_sakinah/service/routes/projects.py)).
+([routes/projects.py](../../sawt_sakinah/service/routes/projects.py)).
 
 ### 5.1 `GET /projects` — list
 
@@ -248,7 +249,7 @@ DELETE /projects/{id}  ->  204
 
 ### 5.4 Registration
 
-No change to `create_app` router wiring ([app.py:96](../sawt_sakinah/service/app.py#L96)) —
+No change to `create_app` router wiring ([app.py:96](../../sawt_sakinah/service/app.py#L96)) —
 these are new methods on the existing `projects.router`.
 
 ---
@@ -259,7 +260,7 @@ Findings and recommended fixes, ordered by impact.
 
 ### 6.1 Audio range requests re-parse `project.json` on every chunk (fix)
 
-`GET /projects/{id}/audio` ([routes/media.py:21](../sawt_sakinah/service/routes/media.py#L21))
+`GET /projects/{id}/audio` ([routes/media.py:21](../../sawt_sakinah/service/routes/media.py#L21))
 calls `store.load()` — a full JSON parse **plus** `_heal()` (which stats `working_copy` and
 every export file) — solely to read `audio_source.local_path`. The browser issues many range
 requests while seeking/scrubbing the waveform, so this cost repeats per chunk. It is cheap
@@ -276,7 +277,7 @@ today but scales with `project.json` size (a concern once transcripts land).
 
 ### 6.2 `GET /waveform` loads the whole project just for a path (minor)
 
-`get_waveform` ([routes/media.py:36](../sawt_sakinah/service/routes/media.py#L36)) calls
+`get_waveform` ([routes/media.py:36](../../sawt_sakinah/service/routes/media.py#L36)) calls
 `store.load()` even on a cache hit, only to reach `local_path` for the recompute branch.
 Reorder so a `waveform.json` cache hit returns **before** loading the project; only load
 (or use the 6.1 path resolver) when a recompute is actually needed. Waveform is immutable
@@ -296,8 +297,8 @@ A single-project fetch healing dangling refs is correct and cheap. No change.
 
 ## 7. Wire contract additions (shared with frontend plan)
 
-New/changed response shapes (add to [schemas.py](../sawt_sakinah/service/schemas.py) and
-mirror in [frontend/src/types/api.ts](../frontend/src/types/api.ts)):
+New/changed response shapes (add to [schemas.py](../../sawt_sakinah/service/schemas.py) and
+mirror in [frontend/src/types/api.ts](../../frontend/src/types/api.ts)):
 
 ```
 ProjectSummaryView { id, name, source_url, duration_sec, created_at,

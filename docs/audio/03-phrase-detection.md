@@ -1,6 +1,6 @@
 # Phrase Detection (Takbir & Recurring Utterances)
 
-> Status: planning / research-heavy. This is the most open-ended component. The doc
+> Status: implemented (Whisper backend). This remains the most open-ended component. The doc
 > frames the problem and lays out candidate approaches; the implementing agent should
 > prototype and compare on real recitation audio.
 

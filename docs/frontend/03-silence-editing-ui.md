@@ -1,6 +1,6 @@
 # Silence Editing UI
 
-> Status: planning. The primary editing workflow: see the gaps, choose which to remove,
+> Status: implemented. The primary editing workflow: see the gaps, choose which to remove,
 > save. Consumes silence detection data; posts edits to the backend.
 
 ## Goal
@@ -23,7 +23,7 @@ The UI never trims audio itself — it manipulates the EDL and asks the backend 
 ## Waveform highlighting
 
 - Draw each `SilenceSegment` as a region overlay (wavesurfer Regions). Fill with a
-  low-alpha warning/red or burgundy overlay; selected regions get higher alpha + a solid
+  low-alpha purple overlay; selected regions get higher alpha + a solid
   left accent bar (mirror the base theme's table-row selection treatment).
 - Hover a region → tooltip with start/end/duration (the base theme `Tooltip`).
 - Click a region → toggle selection; selection state lives in app state and reflects in
@@ -68,6 +68,6 @@ A `Card` beside/below the waveform:
 
 ## Theming
 
-Reuse the base theme tokens: selected = burgundy accent; destructive actions = `danger`
+Reuse the theme tokens: selected = purple accent; destructive actions = `danger`
 button variant (red); sliders/inputs = ported `Slider`/`Input`; counts/labels =
 `Badge`. Keep destructive actions guarded (confirm on "remove all" / irreversible export).

@@ -1,6 +1,6 @@
 # State & API Integration
 
-> Status: planning. How the frontend holds state and talks to the audio engine's API.
+> Status: implemented. How the frontend holds state and talks to the audio engine's API.
 > Uses TanStack React Query for server state and React state/stores for local state.
 
 ## Goal

@@ -1,8 +1,9 @@
 # Frontend Plan — Project Library, In-Editor Switcher, and Saving Mechanics
 
-> Status: proposed. Companion to `docs/backend-project-crud-plan.md`, whose contracts
-> (`GET /projects`, `PATCH /projects/{id}`, `DELETE /projects/{id}`, export naming) are now
-> **implemented and landed** — see "Backend status" below. Scope: turn the single-document
+> Status: implemented; kept as a design record. Companion to
+> `docs/plans/backend-project-crud-plan.md`, whose contracts (`GET /projects`,
+> `PATCH /projects/{id}`, `DELETE /projects/{id}`, export naming) landed first — see
+> "Backend status" below. Scope: turn the single-document
 > app into a multi-project one — a library on entry, a collapsible in-editor switcher,
 > rename/delete, export naming, and an explicit save-state story.
 
@@ -15,7 +16,7 @@
 >   carries `name`; `ExportRequest` accepts `name?`.
 > - Export downloads set a friendly `Content-Disposition` (`<safe-name>-<YYYYMMDD>.<ext>`,
 >   with RFC 5987 `filename*` so Arabic titles survive) on both 200 and 206 responses.
-> - **The wire types in [types/api.ts](../frontend/src/types/api.ts) are already updated**
+> - **The wire types in [types/api.ts](../../frontend/src/types/api.ts) are already updated**
 >   (`ProjectSummary`, `ProjectListResponse`, `PatchProjectRequest`, and the new fields),
 >   so §3.1 is done. Endpoints/hooks (§3.2–§3.3) and all UI remain to build.
 
@@ -23,21 +24,21 @@
 
 ## 1. Where we are today
 
-- Routing ([App.tsx](../frontend/src/App.tsx)): `/` = paste-a-URL landing
-  ([LandingPage.tsx](../frontend/src/pages/LandingPage.tsx)); `/p/:projectId` = editor
-  ([EditorPage.tsx](../frontend/src/pages/EditorPage.tsx)); `*` -> `/`.
+- Routing ([App.tsx](../../frontend/src/App.tsx)): `/` = paste-a-URL landing
+  ([LandingPage.tsx](../../frontend/src/pages/LandingPage.tsx)); `/p/:projectId` = editor
+  ([EditorPage.tsx](../../frontend/src/pages/EditorPage.tsx)); `*` -> `/`.
 - There is **no way to see existing projects**. You reach a project only by creating it
   (the id comes back from `POST /projects`) or by already knowing its URL. Refreshing
   `/p/:id` re-fetches by id and works, but the app never lists what exists.
-- Header ([AppHeader.tsx](../frontend/src/components/layout/AppHeader.tsx)) is a wordmark +
+- Header ([AppHeader.tsx](../../frontend/src/components/layout/AppHeader.tsx)) is a wordmark +
   a "New" button that navigates to `/`. Shell
-  ([AppShell.tsx](../frontend/src/components/layout/AppShell.tsx)) is header + full-bleed
+  ([AppShell.tsx](../../frontend/src/components/layout/AppShell.tsx)) is header + full-bleed
   main; explicitly "no sidebar, single-document tool."
 - Server state is React Query; local UI state is Zustand
-  ([editStore.ts](../frontend/src/stores/editStore.ts),
-  [markerStore.ts](../frontend/src/stores/markerStore.ts)). Edits already persist per-mutation
+  ([editStore.ts](../../frontend/src/stores/editStore.ts),
+  [markerStore.ts](../../frontend/src/stores/markerStore.ts)). Edits already persist per-mutation
   via `usePutEdl` / `useUpdateMarkers`
-  ([hooks.ts:104](../frontend/src/api/hooks.ts#L104)). Undo/redo is client-only and not
+  ([hooks.ts:104](../../frontend/src/api/hooks.ts#L104)). Undo/redo is client-only and not
   persisted — by design.
 
 **Implication:** saving already works. The gaps are navigation (a library + switcher),
@@ -63,7 +64,7 @@ remember and offer the last-opened project.)
 
 ## 3. API layer additions
 
-### 3.1 Types ([types/api.ts](../frontend/src/types/api.ts)) — DONE
+### 3.1 Types ([types/api.ts](../../frontend/src/types/api.ts)) — DONE
 
 Already landed, mirroring the backend contracts:
 
@@ -79,7 +80,7 @@ interface PatchProjectRequest { name: string }
 // ExportRequest      += name?
 ```
 
-### 3.2 Endpoints ([endpoints.ts](../frontend/src/api/endpoints.ts))
+### 3.2 Endpoints ([endpoints.ts](../../frontend/src/api/endpoints.ts))
 
 ```ts
 listProjects()                      -> GET    /projects        // ProjectListResponse -> .projects
@@ -90,7 +91,7 @@ deleteProject(id)                   -> DELETE /projects/{id}   // 204
 Add `queryKeys.projects = ["projects"] as const`. `renameProject` surfaces a 400 for
 blank names — validate/trim in the rename UI before firing to avoid the round-trip.
 
-### 3.3 Hooks ([hooks.ts](../frontend/src/api/hooks.ts))
+### 3.3 Hooks ([hooks.ts](../../frontend/src/api/hooks.ts))
 
 - `useProjects()` — `useQuery(queryKeys.projects, listProjects)`. Moderate `staleTime`
   (e.g. 30s); refetch on window focus so the library stays fresh.
@@ -111,7 +112,7 @@ New `frontend/src/pages/ProjectLibraryPage.tsx`.
 - **Layout:** responsive card grid, sorted by `updated_at` desc (server already sorts;
   keep client-side stable). Each card shows:
   - `name` (the editable title),
-  - source host + formatted `duration_sec` (reuse [lib/time.ts](../frontend/src/lib/time.ts)),
+  - source host + formatted `duration_sec` (reuse [lib/time.ts](../../frontend/src/lib/time.ts)),
   - relative `updated_at` ("edited 2h ago"),
   - status badges from `status` (extracted / analyzed / edited) using existing `Badge`,
   - export count when `> 0`.
@@ -128,7 +129,7 @@ optimistic with rollback on error.
 
 ## 5. New project flow (`/new`)
 
-Move the current [LandingPage.tsx](../frontend/src/pages/LandingPage.tsx) body to
+Move the current [LandingPage.tsx](../../frontend/src/pages/LandingPage.tsx) body to
 `/new` (rename to `NewProjectPage` or keep as a modal launched from the library — a route
 is simpler and deep-linkable). On success it already navigates to `/p/:id` carrying the
 `jobId` in router state; keep that. Add a "Back to library" affordance.
@@ -140,7 +141,7 @@ form — see §6.
 
 ## 6. Editor header: collapsible project switcher
 
-Rework [AppHeader.tsx](../frontend/src/components/layout/AppHeader.tsx) so it is
+Rework [AppHeader.tsx](../../frontend/src/components/layout/AppHeader.tsx) so it is
 context-aware. The header is always present (it lives in `AppShell`), but its middle region
 changes:
 
@@ -188,10 +189,10 @@ instead of silently dropping it.
 ### 7.2 Failure handling + retry
 
 Today a failed `PUT` leaves the React Query cache patched only on success
-([hooks.ts:109](../frontend/src/api/hooks.ts#L109)), so a failed save does not corrupt local
+([hooks.ts:109](../../frontend/src/api/hooks.ts#L109)), so a failed save does not corrupt local
 state, but the user is not told. Add:
 
-- A toast on save failure (reuse [Toast.tsx](../frontend/src/components/ui/Toast.tsx)).
+- A toast on save failure (reuse [Toast.tsx](../../frontend/src/components/ui/Toast.tsx)).
 - Automatic retry with backoff on 5xx/network (React Query mutation retry), stop on 4xx.
 - A `beforeunload` guard **only while a save is genuinely in flight** (any edit mutation
   `isPending`), warning before close. Do not guard on idle — normal closes must be seamless
@@ -215,7 +216,7 @@ convenience, not the default path.
 
 ## 8. Export naming (frontend side)
 
-In [ExportModal.tsx](../frontend/src/features/export/ExportModal.tsx):
+In [ExportModal.tsx](../../frontend/src/features/export/ExportModal.tsx):
 
 - Add a **Name** input (defaulting to the project `name`) passed as `name` in the
   `ExportRequest`.
@@ -238,14 +239,14 @@ New:
 - `components/SaveStatus.tsx` — save-state indicator (§7.1).
 
 Changed:
-- [App.tsx](../frontend/src/App.tsx) — add `/` (library) and `/new`; keep `/p/:id`.
-- [AppHeader.tsx](../frontend/src/components/layout/AppHeader.tsx) — context-aware header +
+- [App.tsx](../../frontend/src/App.tsx) — add `/` (library) and `/new`; keep `/p/:id`.
+- [AppHeader.tsx](../../frontend/src/components/layout/AppHeader.tsx) — context-aware header +
   switcher mount; wordmark -> `/`.
-- [api/endpoints.ts](../frontend/src/api/endpoints.ts),
-  [api/hooks.ts](../frontend/src/api/hooks.ts),
-  [types/api.ts](../frontend/src/types/api.ts) — list/rename/delete + new fields (§3).
-- [ExportModal.tsx](../frontend/src/features/export/ExportModal.tsx) — name input (§8).
-- [EditorPage.tsx](../frontend/src/pages/EditorPage.tsx) — mount `SaveStatus`; expose
+- [api/endpoints.ts](../../frontend/src/api/endpoints.ts),
+  [api/hooks.ts](../../frontend/src/api/hooks.ts),
+  [types/api.ts](../../frontend/src/types/api.ts) — list/rename/delete + new fields (§3).
+- [ExportModal.tsx](../../frontend/src/features/export/ExportModal.tsx) — name input (§8).
+- [EditorPage.tsx](../../frontend/src/pages/EditorPage.tsx) — mount `SaveStatus`; expose
   current project name to the header via cache (§6, §7.1).
 
 ---

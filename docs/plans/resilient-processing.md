@@ -1,8 +1,8 @@
 # Resilient Processing & Checkpoint Support
 
-> Status: proposed. Out of scope for the current frontend build plan (Phases 2–7). This
-> document describes gaps in the existing backend and frontend, then proposes concrete
-> work. Nothing here requires changes to the planned phases; it layers on top.
+> Status: proposed, not started. This document describes gaps in the existing backend
+> and frontend, then proposes concrete work. Nothing here changes the shipped editor;
+> it layers on top.
 
 ---
 

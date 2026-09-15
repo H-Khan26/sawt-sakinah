@@ -1,7 +1,7 @@
 # Frontend — Architecture Overview
 
-> Status: planning. Jumping-off point for an implementing agent. Defines vision, stack,
-> design tokens to inherit from `the base theme`, and how the UI talks to the audio engine.
+> Status: implemented. Defines the vision, the stack as built, the design tokens
+> inherited from `the base theme`, and how the UI talks to the audio engine.
 
 ## Vision
 
@@ -21,74 +21,76 @@ and [../audio/05-data-model-and-api.md](../audio/05-data-model-and-api.md) for t
 
 ## Stack
 
-Borrow `the base theme`'s **aesthetic** (palette, type, spacing, shape) but not its tech
-stack — that is purely CSS and is portable to any web frontend. The app is a **locally
-run interactive editor** over a Python audio engine, which drives these choices:
+The app borrows `the base theme`'s **aesthetic** (palette, type, spacing, shape) but not its
+tech stack — that is purely CSS and is portable to any web frontend. The app is a
+**locally run interactive editor** over a Python audio engine, which drives these choices:
 
 - **Framework:** React 18 + **TypeScript**.
 - **Build:** Vite. The frontend builds to static assets.
 - **Shell:** the built SPA is **served by the Python backend (FastAPI)** and opened in a
   **pywebview** native window. Develop against `localhost` in a browser first (fastest
   loop, identical app); point pywebview at the same URL when a real app window is wanted.
-  No Tauri, no Electron, no Node runtime at runtime — one Python process serves everything.
+  One Python process serves everything; there is no separate Node runtime at run time.
 - **Routing:** React Router.
 - **Styling:** Tailwind CSS 3 + **CSS custom properties** for all design tokens
   (`src/index.css`). Utility-first classes plus component classes (`.btn-*`, `.card-*`).
 - **Data layer:** `@tanstack/react-query` for async fetching, caching, and job polling.
+- **Editor state:** Zustand stores (`src/stores/`) for selection, playhead, zoom, and the
+  in-progress edit list; server data stays in the React Query cache.
+- **Waveform:** wavesurfer.js v7, wrapped in `src/features/waveform/`.
 - **Components:** a **custom UI library** in `src/components/ui/` (no shadcn/Radix/MUI).
-  Rebuild the primitives — `Button`, `Card`, `Input`, `Modal`, `Badge`, `Progress`,
-  `Slider`, `Tooltip`, `LoadingSpinner` — in React, styled to the base theme's tokens.
+  The primitives — `Button`, `Card`, `Input`, `Modal`, `Badge`, `Progress`, `Slider`,
+  `Tooltip`, `LoadingSpinner` — are React components styled to the base theme's tokens.
 - **Lint/format:** Biome (as in the base theme).
 
-> Recommendation for the implementing agent: copy the base theme's `index.css`,
-> `tailwind.config.js`, and the `/public/fonts/` assets to lock in theme parity, then
-> rebuild the UI primitives in React and build the waveform editor on top. Component
-> code does not port from Solid, but the design tokens and Tailwind config do — copy
-> those verbatim rather than re-deriving them.
+> the base theme's `index.css`, `tailwind.config.js`, and `/public/fonts/` assets were copied
+> verbatim to lock in theme parity; the UI primitives were rebuilt in React on top of those
+> tokens, and the waveform editor sits on top of the primitives. Only the design tokens and
+> Tailwind config carry over from the base theme — none of its component code does.
 
-## Design tokens to inherit (from the base theme)
+## Design tokens (`frontend/src/index.css`, mapped 1:1 into Tailwind)
 
-Light mode only. Warm, burgundy-accented aesthetic.
+Light mode only. Warm cream paper tiled with an ogee lattice, deep purple accent, slate
+text. The token structure is inherited from the base theme; the accent was remapped from
+burgundy to purple.
 
 ```
-Background     --color-background          #fcfbf8  (surface-flat)
-  secondary    --color-background-secondary #f4f3ef (cream-2)
-  tertiary     --color-background-tertiary  #ecebe6 (cream-3)
-Text           --color-text                #334155  (slate-700)
-  secondary    --color-text-secondary      #475569  (slate-600)
-  tertiary     --color-text-tertiary       #64748b  (slate-500)
-Accent         --color-accent              #330403  (burgundy-1)
-  hover        --color-accent-hover        #460303  (burgundy-2)
-Border         --color-border              #e0e0e0  (grey-2)
-  focus        --color-border-focus        #330403  (burgundy-1)
+Background     --color-background            #fcfbf8
+  secondary    --color-background-secondary  #f4f3ef
+  tertiary     --color-background-tertiary   #ecebe6
+Text           --color-text                  #334155
+  secondary    --color-text-secondary        #475569
+  tertiary     --color-text-tertiary         #64748b
+Accent         --color-accent                #450377
+  hover        --color-accent-hover          #38025f
+  secondary    --color-accent-secondary      #9667ba
+  soft         --color-accent-soft           rgba(69,3,119,0.10)
+Border         --color-border                #e0e0e0
+  focus        --color-border-focus          #450377
 Semantic       error #ef4444  success #22c55e  warning #f59e0b  info #3b82f6
-Glass          --color-glass rgba(255,255,255,0.85), blur(20px)
+Glass          rgba(252,251,248,0.92), blur(20px)
 ```
 
-Typography: **Ibarra Real Nova** (serif) for H1/logo/main headings; **Futura** for
-subheadings and body. Type scale and weights as defined in the base theme's `index.css`
-(`--font-size-*`, `--font-weight-*`).
+Typography: **Ibarra Real Nova** (serif) for H1 and main headings; **Futura** for body;
+**Amiri** and **IBM Plex Sans Arabic** for Arabic (applied via `:lang(ar)`). All faces
+are self-hosted `@font-face` declarations with system fallbacks, because the desktop
+shell's content policy blocks CDN fetches.
 
 Shape & motion: radius ~10px (buttons/inputs), 12–16px (cards/panels); shadows
 `--shadow-xs..2xl`; durations `--duration-fast 150ms` / `normal 250ms`; easings
 `--ease-out`, `--ease-spring`.
 
-### Waveform-specific palette (derive from the above)
-
-To keep the audio editor on-brand, map waveform states onto existing tokens:
+### Waveform palette
 
 ```
-Waveform body (played)     burgundy-1 (#330403)         --color-accent
-Waveform body (unplayed)   slate-400 (#94a3b8) / grey   --color-text-tertiary-ish
-Progress / cursor          burgundy-1
-Silence region fill        red/orange overlay (warning), low alpha for highlight
-Silence region (selected)  higher-alpha burgundy or red, with a solid left accent bar
-Takbir marker              burgundy vertical line + label chip (Badge styling)
+Waveform (played)          --waveform-played     accent
+Waveform (unplayed)        --waveform-unplayed   #cbd5e1
+Silence region fill        --silence-fill        rgba(150,103,186,0.18); selected 0.38
+Cut region fill            --cut-fill            rgba(239,68,68,0.20);   selected 0.40
+Range selection            --selection-fill      rgba(245,158,11,0.30)
+Marker line                --marker-line         accent
 Position label             cream chip with slate text (Badge variants)
 ```
-
-Confirm exact alphas during implementation; reuse the overlay variables
-(`--burgundy-overlay-*`, `--black-overlay-*`) rather than inventing new colors.
 
 ## UX flow
 

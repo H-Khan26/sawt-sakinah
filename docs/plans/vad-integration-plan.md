@@ -1,6 +1,6 @@
 # Plan: One speech-probability pass, shared by silence and phrase detection
 
-> Status: design record, revision 3 (implemented). Makes Silero VAD the active backend
+> Status: implemented; kept as a design record (revision 3). Makes Silero VAD the active backend
 > for **silence detection** and a precision aid for **takbir / phrase detection**.
 > Grounded against the code in `sawt_sakinah/detection/`, `prayer/`, `service/`,
 > `extraction/`, `frontend/`.

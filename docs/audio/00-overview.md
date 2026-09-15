@@ -1,8 +1,8 @@
 # Audio Engine — Architecture Overview
 
-> Status: planning. This is a jumping-off point for an implementing agent to research
-> options and choose concrete libraries/algorithms. It defines goals, boundaries, and
-> data contracts — not final implementation choices.
+> Status: implemented. Defines the goals, layer boundaries, and data contracts of the
+> audio engine as built under `sawt_sakinah/`; the per-topic docs below record the
+> concrete library and algorithm choices.
 
 ## Vision
 
@@ -54,7 +54,9 @@ Consequences for the engine:
 sawt_sakinah/
   extraction/      # YouTube URL -> mp3 + metadata. Side-effecting (network, files).
   detection/       # Pure analysis. Audio in -> structured segments/markers out.
-    silence.py     #   detect_silence(audio) -> [SilenceSegment]
+    silence.py     #   detect_silence(audio) -> [SilenceSegment]  (vad or ffmpeg backend)
+    segmentation.py#   Silero VAD speech probabilities -> SpeechMap (one pass per source)
+    vad.py         #   invert a SpeechMap into [SilenceSegment]
     phrases.py     #   detect_phrases(audio, refs) -> [Marker]
   prayer/          # Domain logic. [Marker] -> labeled positions / rak'ah structure.
   editing/         # Transformations. (audio + edit decisions) -> new audio file.
@@ -67,16 +69,18 @@ They take audio (a path or array) and return data. `editing/` is the only place 
 produces new audio. This is what makes the frontend possible: the UI consumes
 detection output, the user selects, and only then does an edit get rendered.
 
-### Migration from current code
+### Detection and removal in code
 
-Today `silence.py` does both detection (the ffmpeg `silenceremove` filter) and
-removal in one call. Refactor target:
+Detection and removal are separate modules with one contract between them:
 
-- Add `detection/silence.py::detect_silence(...) -> list[SilenceSegment]` using
-  ffmpeg `silencedetect` (which reports timestamps instead of cutting).
-- Move the existing `remove_silence(...)` into `editing/` and let it accept either a
-  threshold (compute internally) or an explicit list of segments to cut.
-- Keep `extract.py` as `extraction/`.
+- `detection/silence.py::detect_silence(...) -> list[SilenceSegment]` reports timestamps
+  instead of cutting, via the Silero speech map (`"vad"` backend) or the ffmpeg
+  `silencedetect` energy gate (`"ffmpeg"` fallback).
+- `editing/silence.py::remove_silence(...)` accepts either a threshold (segments computed
+  internally) or an explicit list of segments to cut, and renders through
+  `editing/render.py`.
+- `extraction/` acquires audio from a YouTube URL (`extractor.py`) or an uploaded file
+  (`importer.py`) and hands downstream layers an `AudioSource`.
 
 ## Data contracts (the spine of the system)
 

@@ -1,122 +1,97 @@
-# sawt-sakinah
+<p align="center">
+  <img src="docs/assets/wordmark.png" alt="Sawt Sakinah" width="520">
+</p>
 
-`sawt-sakinah` is a Quran recitation audio workflow centered on salah recordings. The product vision is simple: paste a YouTube link, extract the recitation audio, detect the parts that matter structurally, and let the user clean and navigate the recording without destructive editing.
+<p align="center">
+  A non-destructive editor for salah and Quran recitation recordings.<br>
+  Paste a YouTube link or drop in a file, find the silences and the takbirs, cut what you do not need, export.
+</p>
 
-At a high level, the app is designed to:
+<p align="center">
+  <img src="docs/assets/editor.png" alt="The editor: waveform with detected silences, markers and the prayer-structure panel" width="900">
+</p>
 
-- extract audio from a YouTube URL into a local working artifact
-- detect silent or relatively silent regions as structured data
-- detect takbir and other prayer phrases as timeline markers
-- derive prayer-position structure from those markers
-- render user-selected cuts and exports as a new audio file
+## What it does
 
-The architectural rule across the repo is: **detection returns data, editing produces files**. That separation is what supports the planned interactive frontend.
+- **Acquires** audio from a YouTube URL or an uploaded file and keeps a 16 kHz working copy per project.
+- **Detects silence** with Silero voice-activity detection, so quiet dhikr and room noise are treated as non-speech rather than as recitation. An ffmpeg energy gate remains available as a fallback.
+- **Detects prayer phrases** (takbir, tasmi', tahmid, tasleem) with Whisper and turns them into timeline markers, then derives the rak'ah and position outline from the marker stream.
+- **Edits non-destructively.** Cuts, keeps and markers live in an edit decision list. The waveform collapses cut audio out of view, and nothing is rendered until you export.
+- **Exports** the edited result, or a selected range, with chapter markers embedded. A range can also be split off into its own project.
+
+Detection returns data; only export writes audio. That rule shapes every module in the repo.
 
 ## Quickstart
 
-`make` is the primary way to install and run the app. It requires [FFmpeg](https://ffmpeg.org/) on your `PATH` (a standalone binary, not a pip package), GNU make (on Windows: `choco install make`, or run the targets from Git Bash / WSL), and [Node.js](https://nodejs.org/) for the frontend.
+Prerequisites: Python 3.10+, [FFmpeg](https://ffmpeg.org/) (ffmpeg and ffprobe on `PATH`), [Node.js](https://nodejs.org/), and GNU make (on Windows: `choco install make`, or use Git Bash or WSL).
 
 ```sh
-make requirements   # install the app: service + phrase detection + desktop shell (editable)
-make dev            # develop: backend + frontend with hot reload (http://localhost:5173)
-make desktop        # run the app: build the SPA and open it in a native window
+make requirements   # pip install -e ".[service,phrases,vad,desktop]"
+make dev            # backend http://127.0.0.1:38427 + frontend http://localhost:38428, hot reload
+make desktop        # build the frontend and open the app in a native window
 ```
 
-The Silero VAD silence detector is a heavy, optional extra (pulls torch); everything else is in `make requirements`:
+`make help` lists every target. The Whisper model downloads on first phrase detection (about 3 GB for `large-v3`).
 
-```sh
-make requirements-vad   # add the Silero VAD silence detector (pulls torch)
-make requirements-all   # absolutely everything, including VAD/torch
-```
-
-`make help` lists every target. For a quick one-shot with no server:
+One-shot extraction with silence removal, no server:
 
 ```sh
 python -m sawt_sakinah extract "https://www.youtube.com/watch?v=..."
 ```
 
-Operational settings (storage dirs, worker counts, ffmpeg path) accept `SAWT_*` environment variables or a `.env` file; all tuning knobs live in `sawt_sakinah/config/defaults.yaml`.
+## How it works
 
-## Current Repo Shape
+```
+ YouTube / file ──> extraction ──> mp3 + working copy + speech map ──┐
+                                                                    │
+            ┌────────────── detection (read-only) ──────────────────┘
+            │  silence:  speech map ──> spans ──> gaps >= 3 s
+            │  phrases:  speech clips ──> Whisper ──> fuzzy match ──> markers
+            │  prayer:   markers ──> positions / rak'ahs
+            ▼
+      edit decision list  (cut / keep / marker, built in the UI)
+            │
+            ▼
+        editing (ffmpeg render) ──> exported audio + chapters
+```
 
-Today this repository is primarily a Python backend/audio-engine project, with frontend architecture docs alongside it.
+The speech map is a per-frame speech-probability track computed once when a source is
+acquired. Every later silence re-detect is a numpy threshold over that track, so the
+speech-threshold slider responds instantly, and phrase detection transcribes only the
+speech it describes.
 
-- `sawt_sakinah/extraction/`: YouTube ingestion, validation, probing, normalization, hashing, and caching
-- `sawt_sakinah/detection/`: silence detection, phrase detection, PCM decoding, loudness helpers, optional VAD path
-- `sawt_sakinah/prayer/`: prayer-structure derivation from marker streams
-- `sawt_sakinah/editing/`: silence removal and general EDL-based export rendering
-- `sawt_sakinah/service/`: optional FastAPI service with async jobs, project storage, waveform peaks, media/export routes
-- `docs/audio/`: audio-engine architecture and data-contract docs
-- `docs/frontend/`: planned frontend architecture for the waveform editor
+## Configuration
 
-## Product Vision
+Every tuning knob lives in one strictly validated file, `sawt_sakinah/config/defaults.yaml`
+(silence thresholds, VAD sensitivity, Whisper model, export format). Point
+`SAWT_CONFIG_FILE` at a copy to override the whole set. Operational settings such as
+storage directories, worker counts and the ffmpeg path accept `SAWT_*` environment
+variables or a `.env` file.
 
-The intended user flow is:
+## Repository layout
 
-1. paste a YouTube link containing a Quran recitation or prayer recording
-2. extract the audio and normalize it into a dependable working source
-3. analyze the recording for silence-like gaps and spoken prayer phrases
-4. show those segments and markers in a waveform editor
-5. let the user select cuts or exports and render a cleaned result
+```
+sawt_sakinah/
+  config/       defaults.yaml + strict schema (the single source of tuning knobs)
+  models/       pydantic contracts shared by every layer
+  extraction/   YouTube download, file import, working copy, speech map, cache
+  detection/    silence (VAD / ffmpeg), phrases (Whisper), Silero ONNX asset
+  prayer/       prayer-position state machine over the marker stream
+  editing/      EDL render and export (the only layer that writes audio)
+  service/      FastAPI app, job pools, project store, routes
+frontend/       React 18 + TypeScript + Vite + Tailwind + TanStack Query, wavesurfer.js
+docs/           architecture (audio/, frontend/), design records (plans/), screenshots
+scripts/dev.py  runs backend and frontend together
+```
 
-The prayer-specific focus matters here: this is not a generic audio trimmer. The system is being shaped around recitation inside salah, where takbir, tasmi', tahmid, and tasleem help identify transitions between prayer positions and rak'ahs.
+## Screens
 
-## Major Dependencies
+| Library | New project | Export |
+|---|---|---|
+| ![Project library](docs/assets/library.png) | ![New project](docs/assets/new-project.png) | ![Export modal](docs/assets/export.png) |
 
-### Core runtime
+## Documentation
 
-- **FFmpeg / ffprobe**: hard runtime dependency for extraction post-processing, probing, decoding, silence detection, waveform generation, and final audio rendering
-- **yt-dlp**: YouTube extraction
-- **Pydantic 2**: typed models and contracts
-- **PyYAML**: config loading
-
-These are the base install (`pip install -e .`, or `make requirements` which also adds the service stack).
-
-### Optional service stack — `.[service]`
-
-- **FastAPI**
-- **Uvicorn**
-- **pydantic-settings**
-- **NumPy** for waveform peak generation
-
-### Optional phrase-detection stack — `.[phrases]`
-
-- **faster-whisper** for Arabic ASR with word timestamps
-- **RapidFuzz** for normalized phrase matching against the transcript
-
-### Optional VAD stack — `.[vad]`
-
-- **Silero VAD**
-- **ONNX Runtime**
-- **torch / torchaudio** as pinned transitive support for the Silero package
-
-All dependencies and these optional extras are declared in `pyproject.toml`; install them via the matching `make requirements-*` target.
-
-## Models Underpinning It
-
-The repo currently leans on two model-backed analysis paths:
-
-- **Whisper-family phrase detection**: `sawt_sakinah.detection.phrases.detect_phrases()` uses `faster-whisper` for Arabic transcription with word timestamps, then matches canonical prayer phrases. The default model setting is a Whisper-style model such as `large-v3`, and the code is designed to allow a Quran-tuned drop-in model id as well.
-- **Silero VAD silence detection**: `sawt_sakinah.detection.vad.detect_silence_vad()` treats silence as non-speech, which is a better fit than a pure dB gate for quiet dhikr and room noise.
-
-The non-ML baseline remains important too:
-
-- **FFmpeg `silencedetect`** is the default deterministic silence baseline
-- **FFmpeg filtergraph rendering** underpins export and non-destructive edit application
-
-## Frontend Direction
-
-The frontend is planned, not yet implemented in this repo. The docs define a waveform editor built around:
-
-- **SolidJS + TypeScript**
-- **Vite**
-- **Tailwind CSS**
-- **@tanstack/solid-query**
-- **wavesurfer.js v7** as the recommended waveform starting point
-- **Tauri 2** as an optional desktop shell
-
-The UI is intended to inherit visual patterns from `the base theme` and act as a control surface over the Python engine rather than duplicating analysis logic in the browser.
-
-## Status
-
-This repo already contains more than raw planning notes: extraction, silence detection, phrase detection, prayer-structure derivation, EDL-based export, and an optional async FastAPI service are present. The main missing piece is the user-facing frontend described in `docs/frontend/`.
+Start at [docs/README.md](docs/README.md) for the architecture map, then the audio-engine
+and frontend documents it links. Design records for larger changes are kept in
+[docs/plans/](docs/plans/).

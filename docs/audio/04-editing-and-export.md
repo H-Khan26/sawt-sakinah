@@ -1,6 +1,7 @@
 # Audio Editing & Export
 
-> Status: planning (the current `remove_silence` is the seed of this layer).
+> Status: implemented (`sawt_sakinah/editing/`: `render.py` renders an EDL,
+> `silence.py` is the bulk silence-removal shortcut on top of it).
 > This is the **only** layer that produces new audio.
 
 ## Goal
@@ -46,19 +47,19 @@ asks for: detection produces data, the user/edit layer decides, rendering execut
 - **Marker export** — markers are metadata, not edits, but export may embed them
   (chapters/cue points) or emit a sidecar file.
 
-## Rendering approaches (evaluate)
+## Rendering approach
 
-- **FFmpeg filtergraph** — `atrim` + `concat`, or `aselect`/`silenceremove` for the
-  bulk-silence case; `afade`/`acrossfade` for boundaries. Fast, no full decode into
-  memory, scales to long files. Natural continuation of current code.
-- **pydub** — slice `AudioSegment` objects and concatenate with crossfades. Very
-  readable; loads audio into memory (watch long files). Good for prototyping.
-- **numpy/librosa + soundfile** — full control for sample-accurate edits and fades;
-  most code, best precision.
+- **FFmpeg filtergraph** *(adopted, `editing/render.py`)* — `atrim` + `concat` over the
+  kept spans, with `afade` at every boundary. Fast, no full decode into memory, scales
+  to long files.
+- **pydub** *(not adopted)* — slice `AudioSegment` objects and concatenate with
+  crossfades. Very readable; loads audio into memory (a problem for long files).
+- **numpy/librosa + soundfile** *(not adopted)* — full control for sample-accurate edits
+  and fades; most code, best precision.
 
-The existing `remove_silence` (ffmpeg `silenceremove`) should be relocated here and
-generalized to accept either a threshold (compute segments internally) or an explicit
-segment/EDL input.
+`editing/silence.py::remove_silence` lives alongside the renderer and accepts either a
+threshold (segments computed internally by the detection layer) or an explicit list of
+segments, which it turns into `cut` operations and hands to the same render path.
 
 ## Export
 

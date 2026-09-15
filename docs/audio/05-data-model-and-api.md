@@ -1,8 +1,8 @@
 # Data Model & Service API
 
-> Status: planning. Defines the contracts shared across layers and the service surface
-> the frontend talks to. An implementing agent chooses the concrete framework and
-> persistence; the shapes below are the target.
+> Status: implemented (`sawt_sakinah/models/` for the contracts, `sawt_sakinah/service/`
+> for the FastAPI surface). Defines the contracts shared across layers and the service
+> surface the frontend talks to; the pydantic models are the authoritative shapes.
 
 ## Why this doc
 
@@ -85,19 +85,20 @@ POST /projects/{id}/export     { format, params }      -> { job_id } -> artifact
 - **Waveform peaks**: consider precomputing min/max peak data server-side so the
   frontend renders instantly instead of decoding the whole file in the browser.
 
-## Suggested stack (for the agent to confirm)
+## Stack
 
 - **API**: FastAPI (Python) — same language as the audio engine; native async; clean
-  job endpoints. Pydantic models double as the contracts above.
-- **Jobs**: start simple (FastAPI `BackgroundTasks` / a thread or process pool). Move
-  to a real queue (Celery/RQ/arq + Redis) only if concurrency/scale demands it.
-- **Persistence**: begin with on-disk project JSON + audio files in a project dir;
-  introduce SQLite/Postgres if multi-user or history is needed. Don't over-build first.
+  job endpoints. The pydantic models double as the contracts above.
+- **Jobs**: an in-process worker pool (`service/jobs.py`, `service/workers.py`) polled
+  through `GET /jobs/{id}`. A real queue (Celery/RQ/arq + Redis) is only warranted if
+  concurrency or scale ever demands it.
+- **Persistence**: on-disk project JSON plus audio files in a per-project directory
+  (`service/projects.py`); SQLite/Postgres only if multi-user or history is needed.
 
 ## Contract discipline
 
-- Define these types **once** (pydantic) and share them across detection, editing, and
-  API. The frontend gets a generated/typed mirror (see frontend docs).
+- These types are defined **once** (pydantic) and shared across detection, editing, and
+  API. The frontend keeps a hand-maintained typed mirror in `frontend/src/types/api.ts`.
 - All times are **seconds (float)** everywhere — no mixing ms/samples across the
   boundary. Document the convention and stick to it.
 - Detection endpoints return data and **never** alter audio; only `/export` (editing)
