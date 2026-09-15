@@ -1,25 +1,84 @@
 /**
- * Silence-detection controls: threshold + minimum-gap sliders and a detect button.
- * Defaults mirror `CONFIG.silence` on the backend (threshold -40 dB, min gap 3.0 s). Once
- * an initial detection exists, changing a slider debounces (~400 ms) a re-detect; the job
+ * Silence-detection controls: a detector mode switch, the mode's tuning sliders, and a detect
+ * button.
+ *
+ * Two modes, each mapping to a backend detector:
+ * - Speech detection (`detector: "vad"`): Silero speech probabilities. "Speech threshold" is
+ *   `speech_threshold` (0..1 probability cutoff; higher is stricter about what counts as speech,
+ *   so more audio is treated as silence). The first run computes the speech map server-side;
+ *   later runs reuse it (`has_speech_map`) and are cheap.
+ * - Energy gate (`detector: "ffmpeg"`): the ffmpeg `silencedetect` level gate. "Silence
+ *   threshold" is `threshold_db`.
+ * "Minimum gap" is `min_silence_duration` in both modes. Only the fields relevant to the active
+ * mode are sent; the backend fills its own defaults for the rest.
+ *
+ * Defaults mirror the backend config (threshold -40 dB, speech threshold 0.5, min gap 3.0 s).
+ * Once an initial detection exists, changing a slider debounces (~400 ms) a re-detect; the job
  * poll invalidates the project so the new silences refetch and the regions re-reconcile.
+ * Switching mode alone never auto-detects: it changes what the sliders mean, so the user confirms
+ * with the button. The chosen mode persists per browser via `useViewPrefs`.
+ *
+ * The server may silently substitute the energy gate for a VAD request (no onnxruntime, no
+ * working copy). The job still succeeds, so the substitution is surfaced from the job result
+ * (`fallback`) as an inline warning rather than as a failure.
  */
 import { useDetectSilence, useJob } from "@/api/hooks";
 import { Button, Slider } from "@/components/ui";
+import { useViewPrefs } from "@/stores/viewPrefs";
+import type { JobRecord, SilenceDetector, SilenceJobResult, SilenceParams } from "@/types/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const THRESHOLD = { min: -60, max: -20, step: 1, default: -40 };
+const SENSITIVITY = { min: 0.1, max: 0.9, step: 0.05, default: 0.5 };
 const MIN_GAP = { min: 0.2, max: 10, step: 0.1, default: 3.0 };
 const DEBOUNCE_MS = 400;
+
+const MODES: { value: SilenceDetector; label: string }[] = [
+  { value: "vad", label: "Speech detection" },
+  { value: "ffmpeg", label: "Energy gate" },
+];
+
+interface SliderValues {
+  threshold: number;
+  sensitivity: number;
+  minGap: number;
+}
+
+/** Request body for a mode: only the knobs that detector reads. */
+function buildParams(mode: SilenceDetector, v: SliderValues): SilenceParams {
+  return mode === "vad"
+    ? { detector: "vad", speech_threshold: v.sensitivity, min_silence_duration: v.minGap }
+    : { detector: "ffmpeg", threshold_db: v.threshold, min_silence_duration: v.minGap };
+}
+
+/**
+ * Read a silence job's result. `JobRecord.result` is an untyped per-kind dict, so the fields
+ * are checked at runtime instead of cast; anything malformed reads as "no result".
+ */
+function silenceResult(job: JobRecord | undefined): SilenceJobResult | undefined {
+  const r = job?.result;
+  if (!r || (r.detector !== "vad" && r.detector !== "ffmpeg")) return undefined;
+  return {
+    detector: r.detector,
+    fallback: typeof r.fallback === "string" ? r.fallback : undefined,
+    silences: typeof r.silences === "number" ? r.silences : 0,
+  };
+}
 
 export function SilenceControls({
   projectId,
   hasDetected,
+  hasSpeechMap,
 }: {
   projectId: string;
   hasDetected: boolean;
+  /** Whether the backend already holds this recording's speech map (VAD re-detects are instant). */
+  hasSpeechMap: boolean;
 }) {
+  const mode = useViewPrefs((s) => s.silenceDetector);
+  const setMode = useViewPrefs((s) => s.setSilenceDetector);
   const [threshold, setThreshold] = useState(THRESHOLD.default);
+  const [sensitivity, setSensitivity] = useState(SENSITIVITY.default);
   const [minGap, setMinGap] = useState(MIN_GAP.default);
   const [jobId, setJobId] = useState<string | undefined>(undefined);
 
@@ -29,19 +88,22 @@ export function SilenceControls({
   const detecting =
     detect.isPending || job.data?.state === "pending" || job.data?.state === "running";
 
-  // Stable across renders except when the params change; `mutate` is referentially stable.
-  const runDetect = useCallback(() => {
-    detectSilence(
-      { threshold_db: threshold, min_silence_duration: minGap },
-      { onSuccess: (r) => setJobId(r.job_id) },
-    );
-  }, [detectSilence, threshold, minGap]);
+  // `mutate` is referentially stable, so this only changes with `projectId`.
+  const runDetect = useCallback(
+    (params: SilenceParams) => {
+      detectSilence(params, { onSuccess: (r) => setJobId(r.job_id) });
+    },
+    [detectSilence],
+  );
 
-  // Debounced auto re-detect when params change — skipped on mount and before the first run.
+  // Debounced auto re-detect keyed on slider values only: skipped on mount, before the first
+  // run, and on mode switches (mode is read through a ref so it is not a dependency).
   const mounted = useRef(false);
   const timer = useRef<number | null>(null);
   const hasDetectedRef = useRef(hasDetected);
   hasDetectedRef.current = hasDetected;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   useEffect(() => {
     if (!mounted.current) {
       mounted.current = true;
@@ -49,24 +111,73 @@ export function SilenceControls({
     }
     if (!hasDetectedRef.current) return;
     if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(runDetect, DEBOUNCE_MS);
+    timer.current = window.setTimeout(
+      () => runDetect(buildParams(modeRef.current, { threshold, sensitivity, minGap })),
+      DEBOUNCE_MS,
+    );
     return () => {
       if (timer.current) window.clearTimeout(timer.current);
     };
-  }, [runDetect]);
+  }, [runDetect, threshold, sensitivity, minGap]);
+
+  // A mode click within the debounce window must not fire the pending re-detect: the timer
+  // would read the new mode through `modeRef` and auto-run a detector the user never confirmed.
+  const changeMode = (next: SilenceDetector) => {
+    if (timer.current) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+    setMode(next);
+  };
+
+  const detectNow = () => runDetect(buildParams(mode, { threshold, sensitivity, minGap }));
+  const fellBack = job.data?.state === "succeeded" && Boolean(silenceResult(job.data)?.fallback);
+  // The fallback notice already tells the user the VAD is unavailable; promising a first-run
+  // speech analysis alongside it would contradict that.
+  const showFirstRunHint = mode === "vad" && !hasSpeechMap && !fellBack;
 
   return (
     <div className="flex flex-col gap-4">
-      <Slider
-        label="Silence threshold"
-        min={THRESHOLD.min}
-        max={THRESHOLD.max}
-        step={THRESHOLD.step}
-        value={threshold}
-        onChange={setThreshold}
-        format={(v) => `${v} dB`}
-        disabled={detecting}
-      />
+      <fieldset className="min-w-0">
+        <legend className="mb-1 text-sm text-text-secondary">Detector</legend>
+        <div className="flex gap-2">
+          {MODES.map((m) => (
+            <Button
+              key={m.value}
+              size="sm"
+              variant={mode === m.value ? "primary" : "secondary"}
+              aria-pressed={mode === m.value}
+              onClick={() => changeMode(m.value)}
+              disabled={detecting}
+            >
+              {m.label}
+            </Button>
+          ))}
+        </div>
+      </fieldset>
+      {mode === "vad" ? (
+        <Slider
+          label="Speech threshold"
+          min={SENSITIVITY.min}
+          max={SENSITIVITY.max}
+          step={SENSITIVITY.step}
+          value={sensitivity}
+          onChange={setSensitivity}
+          format={(v) => v.toFixed(2)}
+          disabled={detecting}
+        />
+      ) : (
+        <Slider
+          label="Silence threshold"
+          min={THRESHOLD.min}
+          max={THRESHOLD.max}
+          step={THRESHOLD.step}
+          value={threshold}
+          onChange={setThreshold}
+          format={(v) => `${v} dB`}
+          disabled={detecting}
+        />
+      )}
       <Slider
         label="Minimum gap"
         min={MIN_GAP.min}
@@ -77,12 +188,25 @@ export function SilenceControls({
         format={(v) => `${v.toFixed(1)} s`}
         disabled={detecting}
       />
-      <div className="flex items-center gap-3">
-        <Button size="sm" onClick={runDetect} loading={detecting}>
-          {hasDetected ? "Re-detect silence" : "Detect silence"}
-        </Button>
-        {job.data?.state === "failed" && (
-          <span className="text-sm text-danger">Detection failed. Try again.</span>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-3">
+          <Button size="sm" onClick={detectNow} loading={detecting}>
+            {hasDetected ? "Re-detect silence" : "Detect silence"}
+          </Button>
+          {job.data?.state === "failed" && (
+            <span className="text-sm text-danger">Detection failed. Try again.</span>
+          )}
+        </div>
+        {fellBack && (
+          <span className="text-sm text-warning">
+            Speech detection is unavailable on this server; the energy gate was used instead. Switch
+            to Energy gate to tune the dB threshold.
+          </span>
+        )}
+        {showFirstRunHint && (
+          <span className="text-xs text-text-secondary">
+            First run analyses speech for this recording.
+          </span>
         )}
       </div>
     </div>
