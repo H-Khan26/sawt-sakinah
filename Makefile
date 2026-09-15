@@ -15,28 +15,28 @@ PORT ?= 38427
 
 help:  ## List available commands
 	@$(PYTHON) -c "print('Commands:\n'\
-	'  make requirements          install everything to run the app (service + phrases + desktop; no VAD)\n'\
+	'  make requirements          install everything to run the app (service + phrases + vad + desktop)\n'\
 	'  make requirements-phrases  just the Whisper phrase detection deps (faster-whisper)\n'\
-	'  make requirements-vad      add the Silero VAD silence detector (heavy: torch)\n'\
+	'  make requirements-vad      just the Silero VAD speech detector (numpy + onnxruntime; no torch)\n'\
 	'  make requirements-desktop  just the pywebview desktop shell\n'\
-	'  make requirements-all      absolutely everything, including VAD/torch\n'\
+	'  make requirements-all      every extra, including the desktop shell (same set as requirements)\n'\
 	'  make dev                   develop: backend (autoreload) + frontend, hot reload\n'\
 	'  make desktop               run the app: build the SPA + open the native window\n'\
 	'  make clean                 remove caches and build artifacts')"
 
-requirements:  ## Install everything to run the app (service + phrases + desktop; no VAD)
-	$(PIP) install -e ".[service,phrases,desktop]"
+requirements:  ## Install everything to run the app (service + phrases + vad + desktop)
+	$(PIP) install -e ".[service,phrases,vad,desktop]"
 
 requirements-phrases:  ## Install just the Whisper phrase-detection deps
 	$(PIP) install -e ".[phrases]"
 
-requirements-vad:  ## Install the Silero VAD silence detector (heavy: torch)
+requirements-vad:  ## Install just the Silero VAD speech detector (numpy + onnxruntime; no torch)
 	$(PIP) install -e ".[vad]"
 
 requirements-desktop:  ## Install just the pywebview desktop shell (needs service too)
 	$(PIP) install -e ".[service,desktop]"
 
-requirements-all:  ## Install absolutely everything, including VAD/torch
+requirements-all:  ## Install every extra, including the desktop shell
 	$(PIP) install -e ".[all,desktop]"
 
 dev:  ## Develop: backend (autoreload) + frontend dev server together, hot reload

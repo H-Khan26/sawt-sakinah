@@ -60,6 +60,8 @@ sawt = "sawt_sakinah.cli:main"
 include = ["sawt_sakinah*"]
 
 [tool.setuptools.package-data]
+# PEP 561 marker: the package is fully annotated, so type checkers may use it inline.
+"sawt_sakinah" = ["py.typed"]
 # Ship the single-source-of-truth config alongside the code.
 "sawt_sakinah.config" = ["*.yaml"]
 # Vendored Silero VAD network (ONNX) and its license.
