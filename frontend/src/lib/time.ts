@@ -18,6 +18,28 @@ export function formatClockPrecise(seconds: number): string {
 }
 
 /**
+ * Format a timeline-axis tick for the waveform ruler. Compact and fixed-width so labels
+ * don't crowd or clip as values grow across a long file: anything an hour or longer renders
+ * as `h:mm` (dropping the redundant `:ss` on whole-minute ticks), so a 174-minute mark reads
+ * `2:54` instead of `174:00` and every coarse label is a uniform 4 chars. Ticks that land on
+ * a sub-minute boundary (zoomed in, where labels are far apart) keep the seconds component.
+ * Shorter files stay in `m:ss`, matching the transport clock. `durationSec` is the total
+ * clip length, used to pick the mode for the whole axis (not per-label, to avoid a jarring
+ * width change at the 1-hour boundary).
+ */
+export function formatTimelineTime(seconds: number, durationSec: number): string {
+  const s = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  if (durationSec >= 3600) {
+    const hm = `${h}:${m.toString().padStart(2, "0")}`;
+    return secs === 0 ? hm : `${hm}:${secs.toString().padStart(2, "0")}`;
+  }
+  return `${m}:${secs.toString().padStart(2, "0")}`;
+}
+
+/**
  * Parse a user-typed timestamp into seconds, or `null` if it isn't a valid time.
  * Accepts bare seconds (`83`, `83.4`) or `m:ss(.d)` (`1:23`, `1:23.4`). The seconds part
  * of an `m:ss` value must be in `[0, 60)`.
