@@ -12,12 +12,17 @@ import type {
   ProjectListResponse,
   ProjectView,
   SilenceParams,
+  SplitRequest,
   WaveformPeaks,
 } from "@/types/api";
-import { request } from "./client";
+import { type UploadOptions, request, upload } from "./client";
 
 export const createProject = (body: CreateProjectRequest) =>
   request<CreateProjectResponse>("/projects", { method: "POST", body });
+
+/** Upload a local media file; the backend transcodes it and returns `{ project_id, job_id }`. */
+export const uploadProject = (file: File, opts?: UploadOptions) =>
+  upload<CreateProjectResponse>("/projects/upload", file, opts);
 
 /** The library list, most-recently-edited first. Returns just the summaries array. */
 export const listProjects = (signal?: AbortSignal) =>
@@ -58,6 +63,10 @@ export const updateMarkers = (projectId: string, markers: Marker[]) =>
 
 export const exportAudio = (projectId: string, body: ExportRequest) =>
   request<JobAccepted>(`/projects/${projectId}/export`, { method: "POST", body });
+
+/** Carve a source-time range into a new independent project. Returns `{ project_id, job_id }`. */
+export const splitProject = (projectId: string, body: SplitRequest) =>
+  request<CreateProjectResponse>(`/projects/${projectId}/split`, { method: "POST", body });
 
 export const getWaveform = (projectId: string, signal?: AbortSignal) =>
   request<WaveformPeaks>(`/projects/${projectId}/waveform`, { signal });

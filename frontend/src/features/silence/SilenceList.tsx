@@ -18,7 +18,7 @@ export function SilenceList({
   /** Keys of silences currently marked for removal (a `cut` op exists in the EDL). */
   removedIds: Set<string>;
 }) {
-  const { controller } = useWaveformContext();
+  const { controller, timeMap } = useWaveformContext();
   const selectedIds = useEditStore((s) => s.selectedIds);
   const toggleSelected = useEditStore((s) => s.toggleSelected);
 
@@ -56,7 +56,8 @@ export function SilenceList({
                   removed && "text-text-tertiary line-through",
                 )}
               >
-                {formatClock(seg.start)} – {formatClock(seg.end)}
+                {formatClock(timeMap.toEdited(seg.start))} –{" "}
+                {formatClock(timeMap.toEdited(seg.end))}
               </span>
               {removed && <span className="text-xs text-accent-secondary">removed</span>}
               <span className="tabular-nums text-text-tertiary">{seg.duration.toFixed(1)}s</span>

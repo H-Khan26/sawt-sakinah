@@ -3,12 +3,17 @@
  * waveform's Regions plugin, and wires region clicks back to selection + seek. The regions are
  * a view of app state, so this hook only reconciles — it holds no state of its own. It is the
  * single owner of the Regions plugin (it clears + rebuilds), so no other hook may draw onto it.
+ *
+ * It also owns drag-to-select: dragging on empty waveform paints a new selection, and dragging
+ * the selection region's body/edges fine-tunes it. Region coordinates are edited-time, so they
+ * invert through the `TimeMap` back to the source-time selection the store holds.
  */
 import { activeSilences } from "@/features/silence/active";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
+import { selectionColors } from "@/lib/themeColors";
 import { useEditStore } from "@/stores/editStore";
 import type { EditOperation, SilenceSegment } from "@/types/api";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { manualCuts } from "./cutEdl";
 import { SELECTION_REGION_ID, reconcileEditRegions } from "./regions";
 
@@ -45,9 +50,47 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
     return regions.on("region-clicked", (region, e) => {
       e.stopPropagation();
       controller.setSourceTime(timeMap.toSource(region.start));
-      // The pending selection is a passive overlay — clicking it only seeks.
+      // The selection is an editable overlay — clicking it only seeks (drag moves/resizes it).
       if (region.id === SELECTION_REGION_ID) return;
       useEditStore.getState().toggleSelected(region.id);
     });
   }, [regions, controller, timeMap]);
+
+  // Enable drag-to-select once per plugin instance. Kept separate from the reconcile/handler
+  // effects so an in-progress drag is never torn down by a state change mid-gesture.
+  useEffect(() => {
+    if (!regions || !isReady) return;
+    return regions.enableDragSelection({ color: selectionColors.fill });
+  }, [regions, isReady]);
+
+  // Bridge Regions-plugin gestures back to the source-time selection store. `timeMap` is read
+  // through a ref so these subscribe once (a fresh map mid-drag must not resubscribe). Both
+  // `region-created` (a fresh drag) and `region-updated` (moving/resizing the selection) fire
+  // only for user gestures we care about; programmatic `addRegion` never emits `region-updated`,
+  // and drag-created regions carry an auto id (`region-…`) distinct from our known keys.
+  const timeMapRef = useRef(timeMap);
+  timeMapRef.current = timeMap;
+  useEffect(() => {
+    if (!regions) return;
+    const offCreated = regions.on("region-created", (region) => {
+      // Only a fresh drag-selection (auto id); ignore our own programmatic silence/cut/selection.
+      if (!region.id.startsWith("region-")) return;
+      const map = timeMapRef.current;
+      const a = map.toSource(region.start);
+      const b = map.toSource(region.end);
+      region.remove(); // reconcile redraws the canonical, editable `selection` region
+      useEditStore.getState().setSelectionRange(Math.min(a, b), Math.max(a, b));
+    });
+    const offUpdated = regions.on("region-updated", (region) => {
+      if (region.id !== SELECTION_REGION_ID) return;
+      const map = timeMapRef.current;
+      const a = map.toSource(region.start);
+      const b = map.toSource(region.end);
+      useEditStore.getState().setSelectionRange(Math.min(a, b), Math.max(a, b));
+    });
+    return () => {
+      offCreated();
+      offUpdated();
+    };
+  }, [regions]);
 }

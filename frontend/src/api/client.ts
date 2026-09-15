@@ -55,3 +55,72 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   }
   return (await res.json()) as T;
 }
+
+export interface UploadOptions {
+  /** Called with the send fraction (0..1) as the browser uploads the body. */
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Multipart file upload with progress. `fetch` cannot report upload progress, so this uses
+ * `XMLHttpRequest` and mirrors `request`'s error envelope (`{ error, detail }`) so callers
+ * get the same typed `ApiError`. Resolves the parsed JSON body (or `undefined` if empty).
+ */
+export function upload<T>(path: string, file: File, opts: UploadOptions = {}): Promise<T> {
+  const { onProgress, signal } = opts;
+  return new Promise<T>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new ApiError("Upload aborted", 0));
+      return;
+    }
+    const form = new FormData();
+    form.append("file", file, file.name);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", path);
+
+    const onAbort = () => xhr.abort();
+    signal?.addEventListener("abort", onAbort);
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+
+    const parseBody = (): Partial<ApiErrorBody> | null => {
+      try {
+        return JSON.parse(xhr.responseText) as Partial<ApiErrorBody>;
+      } catch {
+        return null;
+      }
+    };
+
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+      };
+    }
+    xhr.onload = () => {
+      cleanup();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve((parseBody() ?? undefined) as T);
+      } else {
+        const body = parseBody();
+        reject(
+          new ApiError(
+            body?.detail ?? xhr.statusText ?? "Upload failed",
+            xhr.status,
+            body?.error ?? null,
+          ),
+        );
+      }
+    };
+    xhr.onerror = () => {
+      cleanup();
+      reject(new ApiError("Network error during upload", 0));
+    };
+    xhr.onabort = () => {
+      cleanup();
+      reject(new ApiError("Upload aborted", 0));
+    };
+
+    xhr.send(form);
+  });
+}

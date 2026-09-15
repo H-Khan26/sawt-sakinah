@@ -56,6 +56,8 @@ class ExtractionConfig(_Section):
     create_working_copy: bool
     normalize_loudness: bool
     use_cache: bool
+    max_upload_mb: int
+    allowed_upload_extensions: tuple[str, ...]
 
 
 class SilenceConfig(_Section):

@@ -22,7 +22,7 @@ ffmpeg:
 audio:
   working_sample_rate: 16000
 
-# Audio extraction (yt-dlp + ffmpeg) defaults.
+# Audio acquisition (yt-dlp download + file upload, both via ffmpeg) defaults.
 extraction:
   audio_format: mp3       # ffmpeg target format/extension
   audio_quality: "0"      # ffmpeg quality: "0" = best VBR, or a bitrate like "192K"
@@ -30,6 +30,18 @@ extraction:
   create_working_copy: true   # also emit the 16 kHz mono WAV detection feeds on
   normalize_loudness: false   # apply EBU R128 loudnorm to the working copy
   use_cache: true             # reuse/persist extractions keyed by url+format+quality
+  max_upload_mb: 500          # reject uploads larger than this (streamed, not trusted from headers)
+  allowed_upload_extensions:  # file types the upload endpoint accepts (transcoded to audio_format)
+    - .mp3
+    - .wav
+    - .m4a
+    - .aac
+    - .flac
+    - .opus
+    - .ogg
+    - .mov
+    - .mp4
+    - .m4v
 
 # Silence detection AND removal share these knobs (one concept, one source). The
 # ffmpeg energy-gate path uses threshold_db/min_silence_duration; the "vad" detector

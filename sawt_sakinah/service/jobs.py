@@ -44,6 +44,7 @@ class JobKind(str, Enum):
     detect_silence = "detect_silence"
     detect_phrases = "detect_phrases"
     export = "export"
+    split = "split"
 
 
 class JobRecord(BaseModel):

@@ -11,8 +11,15 @@ import { exportDownloadUrl } from "@/api/endpoints";
 import { useExport, useJob } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { Alert, Button, Input, Modal } from "@/components/ui";
+import { formatClock } from "@/lib/time";
 import type { ProjectView } from "@/types/api";
 import { useEffect, useState } from "react";
+
+/** A source-time range to scope the export to (from a waveform selection). */
+export interface ExportRange {
+  start: number;
+  end: number;
+}
 
 /** Output containers offered in v1. mp3 / m4a carry chapters; wav is raw (no chapters). */
 const FORMATS = ["mp3", "m4a", "wav"] as const;
@@ -23,10 +30,20 @@ const SELECT_CLASS =
 const DOWNLOAD_LINK_CLASS =
   "inline-flex h-10 items-center justify-center gap-2 rounded bg-accent px-4 text-base font-medium text-white transition-colors duration-fast hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
-export function ExportModal({ project, onClose }: { project: ProjectView; onClose: () => void }) {
+export function ExportModal({
+  project,
+  range,
+  onClose,
+}: {
+  project: ProjectView;
+  /** When set, export only this source-time range (edits inside it still applied). */
+  range?: ExportRange;
+  onClose: () => void;
+}) {
+  const rangeLabel = range ? `${formatClock(range.start)}–${formatClock(range.end)}` : null;
   const [format, setFormat] = useState<string>("mp3");
   const [embedMarkers, setEmbedMarkers] = useState(false);
-  const [name, setName] = useState(project.name);
+  const [name, setName] = useState(range ? `${project.name} (${rangeLabel})` : project.name);
   const [jobId, setJobId] = useState<string | undefined>(undefined);
   const [artifactId, setArtifactId] = useState<string | null>(null);
 
@@ -52,6 +69,8 @@ export function ExportModal({ project, onClose }: { project: ProjectView; onClos
         bitrate: null,
         embed_markers: embedMarkers,
         name: trimmedName || null,
+        range_start: range?.start ?? null,
+        range_end: range?.end ?? null,
       },
       { onSuccess: (r) => setJobId(r.job_id) },
     );
@@ -65,9 +84,20 @@ export function ExportModal({ project, onClose }: { project: ProjectView; onClos
 
   return (
     <Modal open onClose={onClose} ariaLabel="Export audio">
-      <div className="border-b border-border px-5 py-3 font-serif text-lg">Export audio</div>
+      <div className="border-b border-border px-5 py-3 font-serif text-lg">
+        {range ? "Export selection" : "Export audio"}
+      </div>
 
       <div className="flex flex-col gap-4 px-5 py-4">
+        {range && rangeLabel && (
+          <div className="rounded border border-border bg-background-secondary/40 px-3 py-2 text-sm text-text-secondary">
+            Exporting selection <span className="tabular-nums text-text">{rangeLabel}</span>{" "}
+            <span className="text-text-tertiary">
+              ({(range.end - range.start).toFixed(1)}s, edits inside applied)
+            </span>
+          </div>
+        )}
+
         <Input
           label="Name"
           placeholder={project.name}

@@ -43,6 +43,26 @@ export function removeCutsByKey(ops: EditOperation[], keys: Set<string>): EditOp
 }
 
 /**
+ * Trim everything outside `[start, end]` — "keep only this range". Expressed as up to two `cut`
+ * ops (head `[0, start]` + tail `[end, duration]`) rather than a `keep` op, so the whole live
+ * pipeline (collapse map, playback skip, silence clipping) — which reasons over `cut` spans —
+ * reflects it without change. The render engine treats these cuts identically to a keep span.
+ */
+export function keepOnly(
+  ops: EditOperation[],
+  start: number,
+  end: number,
+  duration: number,
+): EditOperation[] {
+  const a = Math.max(0, Math.min(start, end));
+  const b = Math.min(duration, Math.max(start, end));
+  let next = ops;
+  if (a > 0) next = addCut(next, 0, a);
+  if (b < duration) next = addCut(next, b, duration);
+  return next;
+}
+
+/**
  * All `cut` spans (silence + manual) merged into sorted, non-overlapping `[start, end]`
  * intervals — what playback must skip over to preview the edited result. Mirrors the
  * server-side merge in `editing/render.py` so what you hear matches what you export.

@@ -9,6 +9,7 @@ import type {
   ProjectSummary,
   ProjectView,
   SilenceParams,
+  SplitRequest,
 } from "@/types/api";
 /** React Query hooks over the typed endpoints. Server state lives here, not in stores. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,7 +28,9 @@ import {
   putEdl,
   queryKeys,
   renameProject,
+  splitProject,
   updateMarkers,
+  uploadProject,
 } from "./endpoints";
 
 const DEFAULT_POLL_MS = 1000;
@@ -162,6 +165,18 @@ export function useCreateProject() {
   });
 }
 
+/**
+ * Upload a local media file: `POST /projects/upload` -> `{ project_id, job_id }`. `onProgress`
+ * (0..1) reports the browser->server send; server-side transcoding is then tracked via the
+ * returned job id (same `useJob` poll as extraction). Mirrors `useCreateProject`.
+ */
+export function useUploadProject() {
+  return useMutation({
+    mutationFn: ({ file, onProgress }: { file: File; onProgress?: (f: number) => void }) =>
+      uploadProject(file, { onProgress }),
+  });
+}
+
 export function useDetectSilence(projectId: string) {
   return useMutation({
     mutationFn: (params: SilenceParams) => detectSilence(projectId, params),
@@ -219,5 +234,16 @@ export function useUpdateMarkers(projectId: string) {
 export function useExport(projectId: string) {
   return useMutation({
     mutationFn: (body: ExportRequest) => exportAudio(projectId, body),
+  });
+}
+
+/**
+ * Carve a source-time range into a new project: `POST /projects/{id}/split` -> `{ project_id,
+ * job_id }`. The caller navigates to the new project carrying `job_id`, so the editor's normal
+ * `useJob` poll tracks the render+import (same as extraction/upload).
+ */
+export function useSplitProject(projectId: string) {
+  return useMutation({
+    mutationFn: (body: SplitRequest) => splitProject(projectId, body),
   });
 }

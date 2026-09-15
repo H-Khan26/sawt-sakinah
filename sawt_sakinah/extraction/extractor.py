@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -25,16 +24,9 @@ from ..models.errors import (
     VideoUnavailableError,
 )
 from . import cache as _cache
-from .hashing import content_hash
-from .normalize import make_working_copy
-from .probe import probe
+from .finalize import emit as _emit
+from .finalize import finalize_source
 from .validate import normalize_url
-
-
-def _emit(callback: Optional[Callable[[dict], None]], **payload) -> None:
-    """Invoke a progress callback with a normalized payload, if one was supplied."""
-    if callback is not None:
-        callback(payload)
 
 
 def _make_download_hook(callback: Callable[[dict], None]) -> Callable[[dict], None]:
@@ -169,35 +161,18 @@ def extract_audio(
 
     # After post-processing the file has the requested audio extension.
     result = Path(base).with_suffix(f".{audio_format}")
-    if not result.exists():
-        raise FileNotFoundError(
-            f"Expected extracted audio at {result}, but it was not found."
-        )
 
-    _emit(progress_callback, stage="probe", status="start")
-    meta = probe(result)
-
-    working_copy = None
-    if create_working_copy:
-        _emit(progress_callback, stage="normalize", status="start")
-        working_copy = make_working_copy(result, normalize_loudness=normalize_loudness)
-
-    source = AudioSource(
-        source_url=source_url,
-        local_path=result,
+    # Probe + working copy + AudioSource + cache-save are shared with the upload
+    # importer; only acquisition (the yt-dlp download above) is YouTube-specific.
+    return finalize_source(
+        result,
+        source_id=source_id,
         title=info.get("title") or result.stem,
-        duration_sec=meta["duration_sec"],
-        sample_rate=meta["sample_rate"],
-        channels=meta["channels"],
-        codec=meta["codec"],
-        content_hash=content_hash(result),
-        id=source_id,
-        created_at=datetime.now(timezone.utc),
-        working_copy=working_copy,
+        source_kind="youtube",
+        source_url=source_url,
+        create_working_copy=create_working_copy,
+        normalize_loudness=normalize_loudness,
+        use_cache=use_cache,
+        cache_dir=resolved_cache_dir,
+        progress_callback=progress_callback,
     )
-
-    if use_cache:
-        _cache.save(resolved_cache_dir, source)
-
-    _emit(progress_callback, stage="done", status="finished", percent=100.0)
-    return source

@@ -205,7 +205,8 @@ class ProjectStore:
                     ProjectSummary(
                         id=raw["id"],
                         name=raw.get("name") or src.get("title") or "",
-                        source_url=src.get("source_url", ""),
+                        source_kind=src.get("source_kind") or "youtube",
+                        source_url=src.get("source_url"),
                         duration_sec=src.get("duration_sec", 0.0),
                         created_at=raw["created_at"],
                         updated_at=raw["updated_at"],

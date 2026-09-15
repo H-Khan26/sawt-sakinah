@@ -18,6 +18,9 @@ from .errors import (
     RegionLockedError,
     LiveStreamError,
     VideoUnavailableError,
+    UnsupportedMediaError,
+    NoAudioStreamError,
+    FileTooLargeError,
 )
 
 __all__ = [
@@ -38,4 +41,7 @@ __all__ = [
     "RegionLockedError",
     "LiveStreamError",
     "VideoUnavailableError",
+    "UnsupportedMediaError",
+    "NoAudioStreamError",
+    "FileTooLargeError",
 ]

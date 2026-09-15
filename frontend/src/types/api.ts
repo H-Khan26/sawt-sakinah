@@ -69,7 +69,12 @@ export interface EditDecisionList {
 
 export interface AudioSourceView {
   id: string;
-  source_url: string;
+  /** Provenance: `"youtube"` (downloaded) or `"upload"` (user file). */
+  source_kind: "youtube" | "upload" | string;
+  /** Canonical source URL; `null` for uploads. */
+  source_url: string | null;
+  /** The uploaded file's original name; `null` for YouTube sources. */
+  original_filename: string | null;
   title: string;
   duration_sec: number;
   sample_rate: number;
@@ -119,7 +124,10 @@ export interface ProjectView {
 export interface ProjectSummary {
   id: string;
   name: string;
-  source_url: string;
+  /** Provenance: `"youtube"` (downloaded) or `"upload"` (user file). */
+  source_kind: "youtube" | "upload" | string;
+  /** Canonical source URL; `null` for uploads. */
+  source_url: string | null;
   duration_sec: number;
   created_at: string;
   updated_at: string;
@@ -135,7 +143,7 @@ export interface ProjectListResponse {
 // --- jobs (service/jobs.py) -------------------------------------------------
 
 export type JobState = "pending" | "running" | "succeeded" | "failed";
-export type JobKind = "extract" | "detect_silence" | "detect_phrases" | "export";
+export type JobKind = "extract" | "detect_silence" | "detect_phrases" | "export" | "split";
 
 /**
  * `GET /jobs/{id}`. `progress` is an arbitrary, per-kind dict: detection/export jobs
@@ -214,6 +222,18 @@ export interface ExportRequest {
   bitrate?: string | null;
   embed_markers?: boolean;
   /** Download-filename label; defaults to the project name. */
+  name?: string | null;
+  /** Optional source-time range: render only `[range_start, range_end]` (edits inside it
+   * still applied), leaving the saved EDL untouched. Both must be set together. */
+  range_start?: number | null;
+  range_end?: number | null;
+}
+
+/** Body of `POST /projects/{id}/split` — carve a source-time range into a new project. */
+export interface SplitRequest {
+  range_start: number;
+  range_end: number;
+  /** Library label for the new project; defaults to a derived name. */
   name?: string | null;
 }
 

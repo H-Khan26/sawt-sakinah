@@ -82,7 +82,11 @@ export function ProjectCard({
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
-          <span className="truncate">{formatSourceHost(project.source_url)}</span>
+          <span className="truncate">
+            {project.source_kind === "upload"
+              ? "Uploaded file"
+              : formatSourceHost(project.source_url ?? "")}
+          </span>
           <span className="text-text-tertiary">·</span>
           <span>{formatClock(project.duration_sec)}</span>
         </div>

@@ -76,12 +76,14 @@ export function reconcileEditRegions(regions: RegionsPlugin, state: EditRegionsS
     const a = timeMap.toEdited(Math.min(selectionStart, selectionEnd));
     const b = timeMap.toEdited(Math.max(selectionStart, selectionEnd));
     if (b > a) {
+      // The selection is the one interactive region: drag its body to move it, its edges to
+      // fine-tune. `region-updated` writes the new bounds back to the store (see useEditRegions).
       regions.addRegion({
         id: SELECTION_REGION_ID,
         start: a,
         end: b,
-        drag: false,
-        resize: false,
+        drag: true,
+        resize: true,
         color: selectionColors.fill,
       });
     }

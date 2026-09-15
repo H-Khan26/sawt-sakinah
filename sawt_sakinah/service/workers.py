@@ -11,17 +11,20 @@ endpoints never produce files.
 from __future__ import annotations
 
 import shutil
+import tempfile
 from pathlib import Path
 from uuid import uuid4
 
+from ..config import CONFIG
 from ..detection import detect_phrases, detect_silence
 from ..editing import render
-from ..extraction import extract_audio
+from ..extraction import extract_audio, import_file
 from ..extraction.probe import ffprobe_for
 from ..extraction.probe import probe
 from ..models import (
     AudioSource,
     EditDecisionList,
+    EditOperation,
     ExportArtifact,
     Project,
     ProjectStatus,
@@ -34,8 +37,34 @@ from .schemas import (
     ExportRequest,
     PhraseRequest,
     SilenceParams,
+    SplitRequest,
 )
 from .settings import ServiceSettings
+
+
+def _edl_for_range(
+    edl: EditDecisionList, range_start: float, range_end: float, duration: float
+) -> EditDecisionList:
+    """Return ``edl`` with an added ``keep`` op restricting output to ``[range_start, range_end]``.
+
+    The render engine intersects the keep span with the existing ``cut`` ops, so edits *inside*
+    the range are still applied while everything outside it is trimmed. The source EDL is not
+    mutated; a copy with the extra op is returned.
+    """
+    a = max(0.0, min(range_start, range_end))
+    b = min(duration, max(range_start, range_end))
+    keep = EditOperation(type="keep", start=a, end=b)
+    return edl.model_copy(update={"operations": list(edl.operations) + [keep]})
+
+
+def _range_label(range_start: float, range_end: float) -> str:
+    """A compact ``m:ss-m:ss`` label for a source-time range (used in derived names)."""
+
+    def clock(t: float) -> str:
+        t = max(0.0, t)
+        return f"{int(t // 60)}:{int(t % 60):02d}"
+
+    return f"{clock(range_start)}-{clock(range_end)}"
 
 
 def _localize(source: AudioSource, audio_dir: Path) -> AudioSource:
@@ -65,6 +94,31 @@ def _localize(source: AudioSource, audio_dir: Path) -> AudioSource:
     return source.model_copy(update=updates) if updates else source
 
 
+def _persist_source(
+    store: ProjectStore,
+    project_id: str,
+    source: AudioSource,
+    name: str | None = None,
+) -> dict:
+    """Localize an acquired source into the project and create ``project.json``.
+
+    The tail shared by both acquisition workers (download / upload) and the split worker: copy
+    the source's files into the project (a no-op unless a cache hit points elsewhere), assemble
+    a fresh ``Project``, persist it, and return the job's summary. Source-kind-agnostic.
+    ``name`` overrides the library label (defaults to the source title).
+    """
+    source = _localize(source, store.audio_dir(project_id))
+    project = Project(
+        id=project_id,
+        audio_source=source,
+        name=name or source.title,
+        edl=EditDecisionList(source_id=source.id),
+        status=ProjectStatus(extracted=True),
+    )
+    store.create(project)
+    return {"project_id": project_id, "duration_sec": source.duration_sec}
+
+
 def extract_worker(
     store: ProjectStore,
     settings: ServiceSettings,
@@ -80,16 +134,41 @@ def extract_worker(
             cache_dir=settings.cache_dir,
             progress_callback=progress,
         )
-        source = _localize(source, store.audio_dir(project_id))
-        project = Project(
-            id=project_id,
-            audio_source=source,
-            name=source.title,
-            edl=EditDecisionList(source_id=source.id),
-            status=ProjectStatus(extracted=True),
-        )
-        store.create(project)
-        return {"project_id": project_id, "duration_sec": source.duration_sec}
+        return _persist_source(store, project_id, source)
+
+    return run
+
+
+def import_worker(
+    store: ProjectStore,
+    settings: ServiceSettings,
+    project_id: str,
+    upload_path: Path,
+    original_filename: str,
+) -> TaskFn:
+    """Ingest a staged upload: transcode -> AudioSource -> project. Mirrors ``extract_worker``.
+
+    ``upload_path`` is the raw file the route streamed to disk; it is removed once the
+    canonical artifact has been transcoded (or on failure) since the project keeps only the
+    transcoded mp3 + working copy.
+    """
+
+    def run(progress):
+        try:
+            source = import_file(
+                upload_path,
+                output_dir=store.audio_dir(project_id),
+                original_filename=original_filename,
+                ffmpeg_bin=settings.ffmpeg_bin,
+                cache_dir=settings.cache_dir,
+                progress_callback=progress,
+            )
+            return _persist_source(store, project_id, source)
+        finally:
+            try:
+                Path(upload_path).unlink(missing_ok=True)
+            except OSError:
+                pass  # best-effort staging cleanup; never mask the real result/error
 
     return run
 
@@ -189,6 +268,19 @@ def export_worker(
             raise KeyError(project_id)
         artifact_id = uuid4().hex
         out_path = store.exports_dir(project_id) / f"{artifact_id}.{req.format}"
+        # Scope to a selected range when requested: render the saved EDL plus a keep op for the
+        # range (edits inside it stay applied), leaving the project's saved EDL untouched.
+        scoped = req.range_start is not None and req.range_end is not None
+        edl = (
+            _edl_for_range(
+                project.edl,
+                req.range_start,
+                req.range_end,
+                project.audio_source.duration_sec,
+            )
+            if scoped
+            else project.edl
+        )
         # Embed the project's markers (detected + user edits) as labeled chapters. Falls
         # back to the EDL's marker ops when there are none (chapter_markers=None).
         chapter_markers = (
@@ -198,7 +290,7 @@ def export_worker(
         )
         render(
             project.audio_source,
-            project.edl,
+            edl,
             out_format=req.format,
             out_path=out_path,
             ffmpeg_bin=settings.ffmpeg_bin,
@@ -207,6 +299,10 @@ def export_worker(
             chapter_markers=chapter_markers,
         )
         meta = probe(out_path, ffprobe_bin=ffprobe_for(settings.ffmpeg_bin))
+        default_name = project.name or None
+        if scoped and not req.name:
+            base = project.name or project.audio_source.title
+            default_name = f"{base} ({_range_label(req.range_start, req.range_end)})"
         artifact = ExportArtifact(
             id=artifact_id,
             format=req.format,
@@ -214,7 +310,7 @@ def export_worker(
             duration_sec=meta["duration_sec"],
             bitrate=req.bitrate,
             edl_ref=project.edl.source_id,
-            name=req.name or project.name or None,
+            name=req.name or default_name,
         )
         store.update(
             project_id,
@@ -227,5 +323,56 @@ def export_worker(
         )
         progress({"stage": "export", "status": "done"})
         return {"artifact_id": artifact_id}
+
+    return run
+
+
+def split_worker(
+    store: ProjectStore,
+    settings: ServiceSettings,
+    src_project_id: str,
+    new_project_id: str,
+    req: SplitRequest,
+) -> TaskFn:
+    """Carve a source-time range out of a project into a new, independent project.
+
+    Renders ``[range_start, range_end]`` of the source (with the source project's edits inside
+    the range applied), then imports that rendered segment through the normal upload path so the
+    new project gets its own audio, working copy, and empty EDL -- ready for its own detection.
+    """
+
+    def run(progress):
+        progress({"stage": "render", "status": "start"})
+        src = store.load(src_project_id)
+        if src is None:
+            raise KeyError(src_project_id)
+        edl = _edl_for_range(
+            src.edl, req.range_start, req.range_end, src.audio_source.duration_sec
+        )
+        label = _range_label(req.range_start, req.range_end)
+        name = req.name or f"{src.name or src.audio_source.title} ({label})"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fmt = CONFIG.editing.out_format
+            segment = Path(tmp) / f"segment.{fmt}"
+            render(
+                src.audio_source,
+                edl,
+                out_format=fmt,
+                out_path=segment,
+                ffmpeg_bin=settings.ffmpeg_bin,
+            )
+            progress({"stage": "import", "status": "start"})
+            source = import_file(
+                segment,
+                output_dir=store.audio_dir(new_project_id),
+                original_filename=f"{name}.{fmt}",
+                ffmpeg_bin=settings.ffmpeg_bin,
+                cache_dir=settings.cache_dir,
+                progress_callback=progress,
+            )
+        summary = _persist_source(store, new_project_id, source, name=name)
+        progress({"stage": "done", "status": "finished"})
+        return summary
 
     return run

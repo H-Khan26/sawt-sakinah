@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..config import CONFIG
 from ..models import (
@@ -98,6 +98,38 @@ class ExportRequest(BaseModel):
     bitrate: Optional[str] = None
     embed_markers: bool = CONFIG.editing.embed_markers
     name: Optional[str] = None  # download-filename label; defaults to the project name
+    # Optional source-time range: when set, render only ``[range_start, range_end]`` (with the
+    # project's existing edits inside it still applied) instead of the whole saved EDL. Leaves
+    # the saved EDL untouched -- purely a scoped export of a selection.
+    range_start: Optional[float] = None
+    range_end: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _check_range(self) -> "ExportRequest":
+        a, b = self.range_start, self.range_end
+        if (a is None) != (b is None):
+            raise ValueError("range_start and range_end must be provided together")
+        if a is not None and b is not None and a >= b:
+            raise ValueError("range_start must be less than range_end")
+        return self
+
+
+class SplitRequest(BaseModel):
+    """Body of ``POST /projects/{id}/split`` -- carve a source-time range into a new project.
+
+    The range is rendered (with the source project's edits inside it applied) and imported as
+    a fresh, independent project with its own audio and empty EDL.
+    """
+
+    range_start: float
+    range_end: float
+    name: Optional[str] = None  # library label for the new project; defaults to a derived name
+
+    @model_validator(mode="after")
+    def _check_range(self) -> "SplitRequest":
+        if self.range_start >= self.range_end:
+            raise ValueError("range_start must be less than range_end")
+        return self
 
 
 class PatchProjectRequest(BaseModel):
@@ -119,7 +151,9 @@ class PatchProjectRequest(BaseModel):
 
 class AudioSourceView(BaseModel):
     id: str
-    source_url: str
+    source_kind: str                    # "youtube" | "upload"
+    source_url: Optional[str] = None    # None for uploads
+    original_filename: Optional[str] = None  # set for uploads
     title: str
     duration_sec: float
     sample_rate: int
@@ -167,7 +201,9 @@ def to_project_view(project: Project) -> ProjectView:
     s = project.audio_source
     audio = AudioSourceView(
         id=s.id,
+        source_kind=s.source_kind,
         source_url=s.source_url,
+        original_filename=s.original_filename,
         title=s.title,
         duration_sec=s.duration_sec,
         sample_rate=s.sample_rate,

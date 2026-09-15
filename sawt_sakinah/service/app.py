@@ -22,10 +22,13 @@ from fastapi.staticfiles import StaticFiles
 from ..models import (
     AgeRestrictedError,
     ExtractionError,
+    FileTooLargeError,
     InvalidInputError,
     LiveStreamError,
+    NoAudioStreamError,
     PrivateVideoError,
     RegionLockedError,
+    UnsupportedMediaError,
     VideoUnavailableError,
 )
 from .jobs import JobRegistry
@@ -41,6 +44,9 @@ _ERROR_STATUS: list[tuple[type[Exception], int]] = [
     (RegionLockedError, 451),
     (LiveStreamError, 422),
     (VideoUnavailableError, 404),
+    (UnsupportedMediaError, 415),
+    (NoAudioStreamError, 422),
+    (FileTooLargeError, 413),
     (ExtractionError, 502),
 ]
 

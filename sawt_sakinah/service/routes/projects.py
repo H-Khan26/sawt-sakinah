@@ -4,10 +4,12 @@ EDL / marker updates."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 
+from ...config import CONFIG
 from ..deps import get_jobs, get_settings, get_store
 from ..jobs import JobKind
 from ..schemas import (
@@ -18,12 +20,17 @@ from ..schemas import (
     PatchProjectRequest,
     ProjectListResponse,
     ProjectView,
+    SplitRequest,
     to_project_view,
 )
-from ..workers import extract_worker
+from ..workers import extract_worker, import_worker, split_worker
 from ...models import EditDecisionList
+from ...models.errors import FileTooLargeError, UnsupportedMediaError
 from ...prayer import derive_structure
 from .common import validate_id
+
+# Read uploads in 1 MiB chunks so a large file never loads wholesale into memory.
+_UPLOAD_CHUNK = 1024 * 1024
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -46,6 +53,82 @@ def create_project(
         project_id=project_id,
     )
     return CreateProjectResponse(project_id=project_id, job_id=job.id)
+
+
+@router.post("/upload", response_model=CreateProjectResponse, status_code=202)
+async def upload_project(
+    file: UploadFile = File(...),
+    store=Depends(get_store),
+    jobs=Depends(get_jobs),
+    settings=Depends(get_settings),
+) -> CreateProjectResponse:
+    """Ingest an uploaded media file: stream it to disk (size-capped), then kick off the
+    transcode job. Symmetric with ``POST /projects`` (URL) -- both return a project + job id
+    and write ``project.json`` from the worker once the ``AudioSource`` exists.
+
+    The extension is checked here at the edge; ffmpeg-decodability and the audio-stream
+    check happen in the worker (surfacing via ``JobRecord.error_type``).
+    """
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in CONFIG.extraction.allowed_upload_extensions:
+        allowed = ", ".join(CONFIG.extraction.allowed_upload_extensions)
+        raise UnsupportedMediaError(
+            f"'{file.filename or 'file'}' is not a supported file type. Accepted: {allowed}."
+        )
+
+    project_id = uuid4().hex
+    store.prepare(project_id)
+    staging = store.audio_dir(project_id) / f"upload{ext}"
+    max_bytes = CONFIG.extraction.max_upload_mb * 1024 * 1024
+
+    try:
+        written = 0
+        with open(staging, "wb") as fh:
+            while chunk := await file.read(_UPLOAD_CHUNK):
+                written += len(chunk)
+                if written > max_bytes:
+                    raise FileTooLargeError(
+                        f"Upload exceeds the {CONFIG.extraction.max_upload_mb} MB limit."
+                    )
+                fh.write(chunk)
+    except FileTooLargeError:
+        store.delete(project_id)  # drops the whole skeleton, including the partial staging file
+        raise
+    finally:
+        await file.close()
+
+    job = jobs.submit(
+        JobKind.extract,
+        import_worker(store, settings, project_id, staging, file.filename or staging.name),
+        project_id=project_id,
+    )
+    return CreateProjectResponse(project_id=project_id, job_id=job.id)
+
+
+@router.post("/{project_id}/split", response_model=CreateProjectResponse, status_code=202)
+def split_project(
+    project_id: str,
+    req: SplitRequest,
+    store=Depends(get_store),
+    jobs=Depends(get_jobs),
+    settings=Depends(get_settings),
+) -> CreateProjectResponse:
+    """Carve a source-time range out of a project into a new, independent project.
+
+    Renders the range (edits inside it applied) and imports it as a fresh project, mirroring
+    ``POST /projects``: returns the new project + job id, and ``project.json`` is written by
+    the job once the segment has been rendered and imported."""
+    validate_id(project_id, "project_id")
+    if not store.exists(project_id):
+        raise HTTPException(status_code=404, detail="project not found")
+    new_id = uuid4().hex
+    store.prepare(new_id)
+    job = jobs.submit(
+        JobKind.split,
+        split_worker(store, settings, project_id, new_id, req),
+        project_id=new_id,
+    )
+    return CreateProjectResponse(project_id=new_id, job_id=job.id)
 
 
 @router.get("", response_model=ProjectListResponse)
