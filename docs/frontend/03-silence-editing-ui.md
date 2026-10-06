@@ -24,8 +24,8 @@ The UI never trims audio itself — it manipulates the EDL and asks the backend 
 
 - Draw each `SilenceSegment` as a region overlay (wavesurfer Regions). Fill with a
   low-alpha purple overlay; selected regions get higher alpha + a solid
-  left accent bar (mirror the base theme's table-row selection treatment).
-- Hover a region → tooltip with start/end/duration (the base theme `Tooltip`).
+  left accent bar.
+- Hover a region → tooltip with start/end/duration (`Tooltip`).
 - Click a region → toggle selection; selection state lives in app state and reflects in
   both the waveform and the list.
 
@@ -39,7 +39,7 @@ A `Card` beside/below the waveform:
   - Re-run detection on change (debounced) → updates regions live. Show the count
     ("12 silent regions, 38s total").
 - **Region list**: each row shows index, start–end, duration; click to seek + select;
-  checkbox to include in a cut. Use the base theme list/table styling.
+  checkbox to include in a cut.
 - **Actions**:
   - "Select all" / "Select none".
   - "Remove selected" → adds `cut` ops to the EDL.

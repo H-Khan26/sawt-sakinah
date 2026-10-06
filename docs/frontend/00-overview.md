@@ -1,7 +1,7 @@
 # Frontend — Architecture Overview
 
-> Status: implemented. Defines the vision, the stack as built, the design tokens
-> inherited from `the base theme`, and how the UI talks to the audio engine.
+> Status: implemented. Defines the vision, the stack as built, the design tokens, and
+> how the UI talks to the audio engine.
 
 ## Vision
 
@@ -21,9 +21,8 @@ and [../audio/05-data-model-and-api.md](../audio/05-data-model-and-api.md) for t
 
 ## Stack
 
-The app borrows `the base theme`'s **aesthetic** (palette, type, spacing, shape) but not its
-tech stack — that is purely CSS and is portable to any web frontend. The app is a
-**locally run interactive editor** over a Python audio engine, which drives these choices:
+The app is a **locally run interactive editor** over a Python audio engine, which drives
+these choices:
 
 - **Framework:** React 18 + **TypeScript**.
 - **Build:** Vite. The frontend builds to static assets.
@@ -40,19 +39,14 @@ tech stack — that is purely CSS and is portable to any web frontend. The app i
 - **Waveform:** wavesurfer.js v7, wrapped in `src/features/waveform/`.
 - **Components:** a **custom UI library** in `src/components/ui/` (no shadcn/Radix/MUI).
   The primitives — `Button`, `Card`, `Input`, `Modal`, `Badge`, `Progress`, `Slider`,
-  `Tooltip`, `LoadingSpinner` — are React components styled to the base theme's tokens.
-- **Lint/format:** Biome (as in the base theme).
-
-> the base theme's `index.css`, `tailwind.config.js`, and `/public/fonts/` assets were copied
-> verbatim to lock in theme parity; the UI primitives were rebuilt in React on top of those
-> tokens, and the waveform editor sits on top of the primitives. Only the design tokens and
-> Tailwind config carry over from the base theme — none of its component code does.
+  `Tooltip`, `LoadingSpinner` — are React components styled to the design tokens, and the
+  waveform editor sits on top of the primitives.
+- **Lint/format:** Biome.
 
 ## Design tokens (`frontend/src/index.css`, mapped 1:1 into Tailwind)
 
 Light mode only. Warm cream paper tiled with an ogee lattice, deep purple accent, slate
-text. The token structure is inherited from the base theme; the accent was remapped from
-burgundy to purple.
+text.
 
 ```
 Background     --color-background            #fcfbf8
@@ -71,7 +65,7 @@ Semantic       error #ef4444  success #22c55e  warning #f59e0b  info #3b82f6
 Glass          rgba(252,251,248,0.92), blur(20px)
 ```
 
-Typography: **Ibarra Real Nova** (serif) for H1 and main headings; **Futura** for body;
+Typography: **Ibarra Real Nova** (serif) for H1 and main headings; **Jost** for body;
 **Amiri** and **IBM Plex Sans Arabic** for Arabic (applied via `:lang(ar)`). All faces
 are self-hosted `@font-face` declarations with system fallbacks, because the desktop
 shell's content policy blocks CDN fetches.

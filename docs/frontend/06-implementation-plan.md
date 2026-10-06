@@ -43,10 +43,10 @@ Override the API target with `SAWT_API_URL`. Quality gates before any commit:
 
 ## Confirmed decisions
 
-- **Theme:** purple, not the base theme's burgundy. Primary `#450377`, hover `#38025f`,
+- **Theme:** purple. Primary `#450377`, hover `#38025f`,
   accent `#9667ba`. See [Theme tokens](#theme-tokens).
 - **Arabic type:** Amiri (logo + headings, echoes Ibarra Real Nova) + IBM Plex Sans
-  Arabic (UI labels + marker chips, echoes Futura).
+  Arabic (UI labels + marker chips, echoes Jost).
 - **Shell:** minimal slim header over a full-bleed editor. No sidebar.
 - **Scope:** a single in-flight project (`/` link input -> `/p/:projectId` editor ->
   export). No recent-projects list, so no project-list backend endpoint is needed in v1.
@@ -193,7 +193,8 @@ in [tailwind.config.js](../../frontend/tailwind.config.js) (`bg-accent`, `text-a
 `border-focus`, etc.). `#450377` carries AA contrast for white text and on the cream
 background; `#9667ba` is mid-tone — use it for accent bars / hovers / selection, never
 for small body text on cream. Backgrounds (cream), text (slate), and semantic colors
-(error/success/warning/info) are inherited from the base theme unchanged.
+(error/success/warning/info) are listed in [00-overview.md](00-overview.md); the accent
+tokens are:
 
 ```
 --color-accent            #450377   primary; played waveform; markers; focus ring
@@ -207,7 +208,7 @@ for small body text on cream. Backgrounds (cream), text (slate), and semantic co
 
 Self-hosted under [frontend/public/fonts/](../../frontend/public/fonts/) (the
 static-served / pywebview build runs under a CSP that forbids CDN fetches). Tailwind
-families: `serif`->Ibarra Real Nova, `sans`->Futura, `arabic-display`->Amiri,
+families: `serif`->Ibarra Real Nova, `sans`->Jost, `arabic-display`->Amiri,
 `arabic`->IBM Plex Sans Arabic. Until the `.woff2` files (listed in the fonts README) are
 added, the fallback stacks render and `vite build` logs benign "didn't resolve" warnings.
 Render Arabic with `lang="ar" dir="rtl"` so the right face + direction apply.
