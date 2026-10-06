@@ -1,0 +1,85 @@
+# Lint, type-check and build on every push and pull request.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[service,phrases,vad]" ruff
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Compile
+        run: python -m compileall -q sawt_sakinah scripts packaging
+
+      - name: Import smoke test
+        run: python -c "import sawt_sakinah.service.app"
+
+      - name: Tests
+        run: |
+          if [ -d tests ]; then
+            python -m pip install pytest
+            python -m pytest -q
+          else
+            echo "No tests directory; skipping."
+          fi
+
+      - name: Audit the release lock (pip-audit, warn only)
+        continue-on-error: true
+        run: |
+          python -m pip install pip-audit
+          pip-audit --disable-pip --no-deps -r packaging/requirements-windows.txt
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+
+      - name: npm audit (warn only)
+        continue-on-error: true
+        run: npm audit --omit=dev

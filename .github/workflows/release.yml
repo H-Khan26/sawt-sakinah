@@ -1,0 +1,262 @@
+# Build, self-test, attest and draft-release the desktop bundle.
+#
+# A pushed tag vX.Y.Z (matching sawt_sakinah.__version__) produces a DRAFT release with
+# the zips and SHA256SUMS; a maintainer reviews and publishes it. Running the workflow by
+# hand is a dry run: same build and self-test, the zip is kept as a workflow artifact and
+# nothing is attested or released.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Build the SPA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      dry_run: ${{ steps.meta.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve the version
+        id: meta
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          app_version=$(python3 -c "import sys; sys.path.insert(0, 'packaging'); import package; print(package.app_version())")
+          if [ "$EVENT" = "push" ]; then
+            version="${REF_NAME#v}"
+            if [ "$version" != "$app_version" ]; then
+              echo "::error::tag $REF_NAME does not match sawt_sakinah.__version__ ($app_version)"
+              exit 1
+            fi
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          else
+            version="${app_version}-dev.${GITHUB_SHA::7}"
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Build the SPA
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Collect the SPA and its package notices
+        run: |
+          mkdir -p spa-artifact
+          cp -R frontend/dist spa-artifact/dist
+          python3 packaging/third_party.py frontend frontend -o spa-artifact/frontend-licenses.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: spa
+          path: spa-artifact
+          if-no-files-found: error
+          retention-days: 3
+
+  build:
+    name: Bundle (${{ matrix.platform }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            platform: windows-x64
+            lock: packaging/requirements-windows.txt
+          # Phase 2:
+          # - os: macos-15
+          #   platform: macos-arm64
+          #   lock: packaging/requirements-macos.txt
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write # Sigstore signing certificate for the attestation
+      attestations: write # store the build-provenance attestation
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PLATFORM: ${{ matrix.platform }}
+      LOCK: ${{ matrix.lock }}
+      SAWT_SPA_DIR: ${{ github.workspace }}/spa-artifact/dist
+      SAWT_VENDOR_DIR: ${{ github.workspace }}/packaging/build/vendor
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: spa
+          path: spa-artifact
+
+      - name: Fetch ffmpeg, ffprobe and Deno (SHA-256 pinned)
+        run: python packaging/fetch_binaries.py $env:PLATFORM $env:SAWT_VENDOR_DIR
+
+      - name: Install the hash-pinned dependencies
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r packaging/requirements-build.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip install --require-hashes --no-build-isolation -r $env:LOCK
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip list
+
+      - name: PyInstaller
+        run: python -m PyInstaller --noconfirm --clean --distpath packaging/dist --workpath packaging/build/pyinstaller packaging/sawt_sakinah.spec
+
+      - name: Self-test the frozen app
+        timeout-minutes: 10
+        run: |
+          $exe = Resolve-Path packaging/dist/SawtSakinah/SawtSakinah.exe
+          $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
+          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"" -Wait -PassThru
+          if (Test-Path $report) { Get-Content $report -Raw } else { Write-Host 'No self-test report was written.' }
+          if ($p.ExitCode -ne 0) {
+            Write-Host "::error::self-test failed with exit code $($p.ExitCode)"
+            $logs = Join-Path $env:LOCALAPPDATA 'SawtSakinah\logs'
+            Get-ChildItem $logs -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "----- $($_.FullName)"
+              Get-Content $_.FullName -Tail 200
+            }
+            exit 1
+          }
+
+      - name: Third-party notices and zip
+        run: |
+          python packaging/third_party.py bundle --lock $env:LOCK --vendor $env:SAWT_VENDOR_DIR --spa $env:SAWT_SPA_DIR --frontend-notices spa-artifact/frontend-licenses.txt -o packaging/build/THIRD_PARTY_LICENSES.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python packaging/package.py --dist packaging/dist/SawtSakinah --version $env:VERSION --platform $env:PLATFORM --notices packaging/build/THIRD_PARTY_LICENSES.txt --out packaging/release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-ChildItem packaging/release | Format-Table Name, Length
+
+      - name: Attest build provenance
+        if: needs.prepare.outputs.dry_run != 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: packaging/release/*.zip
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bundle-${{ matrix.platform }}
+          path: |
+            packaging/release/*.zip
+            packaging/release/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 14 || 3 }}
+
+      - name: Upload the self-test logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: self-test-logs-${{ matrix.platform }}
+          path: |
+            ${{ runner.temp }}/self-test.json
+            ~/AppData/Local/SawtSakinah/logs
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Draft the GitHub release
+    needs: [prepare, build]
+    if: github.event_name == 'push' && needs.prepare.outputs.dry_run == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write # create the draft release and upload its assets
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: bundle-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          rm -f SHA256SUMS
+          sha256sum SawtSakinah-*.zip > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Release notes
+        run: |
+          ytdlp=$(sed -n 's/^yt-dlp==\([^ ]*\).*/\1/p' packaging/requirements-windows.txt)
+          ejs=$(sed -n 's/^yt-dlp-ejs==\([^ ]*\).*/\1/p' packaging/requirements-windows.txt)
+          ffmpeg=$(jq -r '.platforms["windows-x64"].ffmpeg.version' packaging/binaries.json)
+          deno=$(jq -r '.platforms["windows-x64"].deno.version' packaging/binaries.json)
+          cat > notes.md <<EOF
+          ## Download
+
+          Windows 10 22H2 / 11 (x64): \`SawtSakinah-${VERSION}-windows-x64.zip\`. Unzip it and run
+          \`SawtSakinah.exe\`. The app is not code-signed yet, so SmartScreen asks first: choose
+          **More info**, then **Run anyway**. See the README for requirements.
+
+          Verify the download:
+
+          \`\`\`
+          gh attestation verify SawtSakinah-${VERSION}-windows-x64.zip -R ${GH_REPO}
+          \`\`\`
+
+          or compare its SHA-256 with \`SHA256SUMS\`.
+
+          ## Bundled components
+
+          - yt-dlp ${ytdlp} (with yt-dlp-ejs ${ejs})
+          - FFmpeg ${ffmpeg} (LGPL build) and Deno ${deno}
+
+          ## Network use
+
+          The app talks to the network only for:
+          - **YouTube**, when you import a video by URL.
+          - **Hugging Face**, to download the speech model once, the first time phrase detection runs.
+          - **GitHub API**, to check for a newer release (can be turned off in the app).
+
+          There is no telemetry.
+
+          EOF
+          cat notes.md
+
+      - name: Create the draft release
+        run: |
+          gh release create "$TAG" dist/SawtSakinah-*.zip dist/SHA256SUMS \
+            --draft --verify-tag \
+            --title "Sawt Sakinah $VERSION" \
+            --notes-file notes.md --generate-notes

@@ -12,10 +12,18 @@ license-files = ["LICENSE"]
 requires-python = ">=3.10"
 
 # Core runtime: extraction (yt-dlp + ffmpeg), the shared pydantic contracts, and the
-# YAML config loader. ffmpeg/ffprobe are a separate standalone binary, not a pip dep.
+# YAML config loader. ffmpeg/ffprobe (and Deno, which yt-dlp uses to solve YouTube's
+# JavaScript challenges) are standalone binaries, not pip deps. yt-dlp-ejs holds the
+# challenge-solver scripts Deno runs; keep it at the version yt-dlp's `default` extra pins.
+# requests/brotli/certifi are the networking companions from that extra; mutagen (GPL,
+# only used for embedding thumbnails) is left out so the bundle stays GPL-free.
 # platformdirs places user data in the desktop bundle (see runtime.py).
 dependencies = [
     "yt-dlp>=2026.6.9",
+    "yt-dlp-ejs>=0.8.0",
+    "requests>=2.32.2",
+    "brotli>=1.1",
+    "certifi",
     "pydantic>=2",
     "PyYAML>=6",
     "platformdirs>=4",
@@ -27,18 +35,20 @@ dependencies = [
 # FastAPI service layer (sawt_sakinah.service). numpy backs the waveform peaks;
 # python-multipart parses the file-upload form on POST /projects/upload.
 service = [
-    "fastapi>=0.110",
-    "uvicorn[standard]>=0.27",
-    "python-multipart>=0.0.9",
+    "fastapi>=0.116",
+    "uvicorn[standard]>=0.35",
+    "python-multipart>=0.0.20",
     "pydantic-settings>=2",
     "numpy>=1.24",
 ]
 # Whisper phrase detector (detection/phrases.py, detector="whisper"). faster-whisper
 # runs Whisper through CTranslate2, so torch is not required for this backend; rapidfuzz
-# powers the diacritic-insensitive phrase matching.
+# powers the diacritic-insensitive phrase matching. huggingface_hub downloads the model;
+# the app's model manager uses its 1.x API (httpx session). tokenizers caps it below 2.0.
 phrases = [
     "faster-whisper>=1.0",
     "rapidfuzz>=3.0",
+    "huggingface_hub>=1.0",
 ]
 # Silero VAD speech segmentation (detection/segmentation.py; the "vad" silence detector
 # and speech-scoped phrase detection build on it). The network ships as a vendored ONNX
@@ -56,6 +66,12 @@ desktop = [
 # Everything (self-referencing extra; requires a recent pip).
 all = [
     "sawt-sakinah[service,phrases,vad]",
+]
+# Development tools: the linter CI runs and the bundler `make bundle` uses. Release
+# builds install PyInstaller from the hash-pinned packaging/requirements-build.txt.
+dev = [
+    "ruff>=0.12",
+    "pyinstaller>=6.10",
 ]
 
 [project.scripts]
@@ -75,3 +91,12 @@ include = ["sawt_sakinah*"]
 "sawt_sakinah.config" = ["*.yaml"]
 # Vendored Silero VAD network (ONNX) and its license.
 "sawt_sakinah.detection" = ["assets/*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["frontend", "packaging/build", "packaging/dist"]
+
+[tool.ruff.lint]
+# Pyflakes plus the syntax and statement checks: real errors, no style churn.
+select = ["E4", "E7", "E9", "F"]

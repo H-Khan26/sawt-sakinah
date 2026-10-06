@@ -1,0 +1,38 @@
+# Weekly dependency updates. Merging a yt-dlp bump of packaging/requirements-windows.txt
+# is the cue for a patch release (bump __version__, tag vX.Y.Z); the weekly rebuild
+# workflow tests the newest yt-dlp ahead of that.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directories:
+      - /
+      - /packaging
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    # New releases wait a week before a PR, except yt-dlp: YouTube breaks old versions.
+    cooldown:
+      default-days: 7
+      exclude: ["yt-dlp", "yt-dlp-ejs"]
+    groups:
+      # yt-dlp checks the solver-script version, so the two move together.
+      yt-dlp:
+        patterns: ["yt-dlp", "yt-dlp-ejs"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10

@@ -1,0 +1,77 @@
+"""Zip a PyInstaller one-folder build into the release archive.
+
+Copies LICENSE.txt and THIRD_PARTY_LICENSES.txt into the app folder, zips it as
+``SawtSakinah-<version>-<platform>.zip`` with a single top-level ``SawtSakinah/`` folder,
+and rewrites ``SHA256SUMS`` in the output directory for every zip there.
+
+Usage:
+    python packaging/package.py --dist packaging/dist/SawtSakinah [--version 0.1.0] \\
+        --platform windows-x64 --notices packaging/build/THIRD_PARTY_LICENSES.txt \\
+        --out packaging/dist
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import re
+import shutil
+import zipfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+TOP = "SawtSakinah"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def app_version() -> str:
+    text = (REPO / "sawt_sakinah" / "__init__.py").read_text(encoding="utf-8")
+    return re.search(r'^__version__\s*=\s*"([^"]+)"', text, re.M).group(1)
+
+
+def package(dist: Path, version: str, platform: str, notices: Path, out: Path) -> Path:
+    if not (dist / "_internal").is_dir():
+        raise SystemExit(f"{dist} is not a PyInstaller one-folder build (no _internal/)")
+    shutil.copyfile(REPO / "LICENSE", dist / "LICENSE.txt")
+    shutil.copyfile(notices, dist / "THIRD_PARTY_LICENSES.txt")
+
+    out.mkdir(parents=True, exist_ok=True)
+    archive = out / f"{TOP}-{version}-{platform}.zip"
+    archive.unlink(missing_ok=True)
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for root, dirs, files in os.walk(dist):
+            dirs.sort()
+            for name in sorted(files):
+                path = Path(root) / name
+                zf.write(path, f"{TOP}/{path.relative_to(dist).as_posix()}")
+
+    sums = [f"{_sha256(z)}  {z.name}" for z in sorted(out.glob(f"{TOP}-*.zip"))]
+    (out / "SHA256SUMS").write_text("\n".join(sums) + "\n", encoding="utf-8", newline="\n")
+    size_mb = archive.stat().st_size / 1e6
+    print(f"wrote {archive} ({size_mb:.0f} MB) and {out / 'SHA256SUMS'}")
+    return archive
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--dist", type=Path, required=True, help="the COLLECT folder")
+    parser.add_argument("--version", help="default: sawt_sakinah.__version__ (leading v dropped)")
+    parser.add_argument("--platform", required=True, help="e.g. windows-x64")
+    parser.add_argument("--notices", type=Path, required=True, help="THIRD_PARTY_LICENSES.txt")
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    version = (args.version or app_version()).removeprefix("v")
+    package(args.dist, version, args.platform, args.notices, args.out)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
