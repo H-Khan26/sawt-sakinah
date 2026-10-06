@@ -169,5 +169,10 @@ class JobRegistry:
             record.updated_at = _now()
 
     def shutdown(self) -> None:
-        self._pool.shutdown(wait=False)
-        self._phrase_pool.shutdown(wait=False)
+        """Drop queued jobs and return without waiting for running ones.
+
+        The interpreter still joins the worker threads at exit, so without
+        ``cancel_futures`` every queued job would run first.
+        """
+        self._pool.shutdown(wait=False, cancel_futures=True)
+        self._phrase_pool.shutdown(wait=False, cancel_futures=True)

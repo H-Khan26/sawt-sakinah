@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -24,6 +23,7 @@ from pydantic import BaseModel
 
 from .. import __version__, runtime
 from ..config import CONFIG
+from ..fileio import replace_file
 from .preferences import load_preferences
 
 _log = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ def _write_cache(path: Path, data: dict) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(data), encoding="utf-8")
-        os.replace(tmp, path)
+        replace_file(tmp, path)
     except OSError as exc:
         _log.warning("could not save the update check result: %s", exc)
 
@@ -121,7 +121,8 @@ def _refresh(path: Path, cache: dict, repo: str, now: float) -> dict:
         latest, url = fetch_latest_release(repo, CONFIG.app.update_check_timeout_sec)
     except Exception as exc:  # noqa: BLE001 - an update check must never break the app
         _log.info("update check failed: %s", exc)
-        cache = {**cache, "failed_at": now}
+        # Keep the repo so the next call sees this failure and backs off.
+        cache = {**cache, "repo": repo, "failed_at": now}
     else:
         cache = {"repo": repo, "checked_at": now, "latest": latest, "url": url}
     _write_cache(path, cache)

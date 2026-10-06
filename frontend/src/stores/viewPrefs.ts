@@ -4,7 +4,7 @@
  * The desktop window's port, and so its origin, changes every launch, so browser storage would
  * forget these. The store holds the live values for synchronous reads; {@link useSyncViewPrefs}
  * hydrates it once from `GET /app/preferences`, and each setter applies its change locally first
- * and then PATCHes it. A failed load or save leaves the local value in place, so the UI keeps
+ * and then PATCHes it, one request at a time. A failed load or save leaves the local value in place, so the UI keeps
  * working on defaults.
  *
  * `showDeleted` controls whether cut ("deleted") audio is visible on the waveform. The default is
@@ -33,11 +33,17 @@ interface ViewPrefsState {
 const touched = new Set<keyof PreferencesPatch>();
 let hydrated = false;
 
+/** The latest queued save; each save waits for it, so the server applies them in order. */
+let saving: Promise<void> = Promise.resolve();
+
 /** PATCH a change and mirror the stored result into the preferences query cache. */
 function save(patch: PreferencesPatch) {
   for (const key of Object.keys(patch) as (keyof PreferencesPatch)[]) touched.add(key);
-  patchPreferences(patch)
-    .then((prefs) => queryClient.setQueryData(queryKeys.preferences, prefs))
+  saving = saving
+    .then(() => patchPreferences(patch))
+    .then((prefs) => {
+      queryClient.setQueryData(queryKeys.preferences, prefs);
+    })
     .catch(() => {
       // Keep the local value; the preference just won't survive a restart.
     });

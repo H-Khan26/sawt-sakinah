@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import IO, Optional
 
 from . import runtime
+from .fileio import replace_file
 
 _log = logging.getLogger(__name__)
 
@@ -79,7 +80,8 @@ class InstanceLock:
         data = {"host": host, "port": port, "token": token, "pid": os.getpid()}
         tmp = self.info_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(data), encoding="utf-8")
-        os.replace(tmp, self.info_path)
+        # A second launch may be reading the file at this moment.
+        replace_file(tmp, self.info_path)
 
     def release(self) -> None:
         if self._fh is None:

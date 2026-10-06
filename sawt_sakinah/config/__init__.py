@@ -182,9 +182,11 @@ def config_path() -> Path:
 
 def _read_yaml(path: Path) -> dict:
     try:
-        with path.open("r", encoding="utf-8") as fh:
+        # Bytes let PyYAML detect the encoding (UTF-8 with or without a BOM, UTF-16); any
+        # other encoding, such as an ANSI code page, fails to decode.
+        with path.open("rb") as fh:
             data = yaml.safe_load(fh)
-    except (OSError, yaml.YAMLError) as exc:
+    except (OSError, ValueError, yaml.YAMLError) as exc:
         raise ConfigError(f"Could not read the settings file {path}: {exc}") from exc
     if data is None:
         return {}

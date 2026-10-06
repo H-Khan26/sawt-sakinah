@@ -11,7 +11,7 @@
 4. starts the service on a free localhost port with a per-launch secret token, waits for
    ``/health`` to answer with that token, then opens a pywebview window that receives the
    token through ``/_session`` (see ``service/security.py``). Closing the window stops the
-   server and returns.
+   server and ends the process, even while a job is still running.
 
 A fatal startup error is logged and, in the bundle, shown in a message box instead of the
 app silently vanishing. ``--self-test`` runs the headless end-to-end check in
@@ -41,7 +41,8 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Optional, Sequence
+from pathlib import Path
+from typing import Any, NoReturn, Optional, Sequence
 
 from . import runtime
 
@@ -377,8 +378,30 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _exit_process(code: int) -> NoReturn:
+    """End the process now with ``code``, after flushing stdio and the log.
+
+    A job still running when the window closes (a Whisper transcription can't be
+    interrupted) would otherwise keep a windowless process alive, running beside the next
+    launch. Helper subprocesses end on their own timeouts.
+    """
+    _log.info("Sawt Sakinah exiting (code %s)", code)
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None:
+                stream.flush()
+        except (OSError, ValueError):
+            pass
+    logging.shutdown()
+    os._exit(code)
+
+
 def launch(args: argparse.Namespace) -> int:
-    """Set up logging, then run the app (or the self-test) with user-facing error handling."""
+    """Set up logging, then run the app (or the self-test) with user-facing error handling.
+
+    The window path ends the process when the app is done instead of returning; the
+    self-test returns its exit code.
+    """
     from .applog import LOG_FILE, setup_logging
 
     self_test = bool(getattr(args, "self_test", False))
@@ -391,6 +414,13 @@ def launch(args: argparse.Namespace) -> int:
         sys.version.split()[0],
         log_file,
     )
+    code = _launch(args, self_test, show_boxes, log_file)
+    if not self_test:
+        _exit_process(code)
+    return code
+
+
+def _launch(args: argparse.Namespace, self_test: bool, show_boxes: bool, log_file: Path) -> int:
     try:
         _report_user_config(show_boxes)
         if self_test:

@@ -9,7 +9,6 @@ single value that is no longer valid; writes are atomic.
 from __future__ import annotations
 
 import json
-import os
 import threading
 from pathlib import Path
 from typing import Optional
@@ -18,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 
 from .. import runtime
 from ..config import CONFIG
+from ..fileio import replace_file
 from .schemas import SILENCE_DETECTORS, WHISPER_MODELS
 
 _LOCK = threading.Lock()
@@ -115,7 +115,12 @@ def preferences_path() -> Path:
 
 
 def load_preferences(path: Optional[Path] = None) -> Preferences:
-    src = path or preferences_path()
+    # Under the lock: on Windows an open reader would make a concurrent write's replace fail.
+    with _LOCK:
+        return _load(path or preferences_path())
+
+
+def _load(src: Path) -> Preferences:
     try:
         raw = json.loads(src.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -140,12 +145,12 @@ def update_preferences(changes: dict, path: Optional[Path] = None) -> Preference
     """
     dst = path or preferences_path()
     with _LOCK:
-        current = load_preferences(dst).model_dump()
+        current = _load(dst).model_dump()
         prefs = Preferences.model_validate({**current, **changes})
         dst.parent.mkdir(parents=True, exist_ok=True)
         tmp = dst.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(prefs.model_dump(), indent=2), encoding="utf-8")
-        os.replace(tmp, dst)
+        replace_file(tmp, dst)
         return prefs
 
 

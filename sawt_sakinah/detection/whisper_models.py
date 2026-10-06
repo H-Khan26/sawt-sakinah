@@ -49,7 +49,7 @@ PART_SUFFIX = ".part"
 _CHUNK_SIZE = 1 << 20
 _PROGRESS_INTERVAL = 0.5  # seconds between progress callbacks
 _ATTEMPTS = 5  # per file, resuming from the bytes already written
-_TIMEOUT = 30.0
+_TIMEOUT = 30.0  # connect and per-read limit: a stalled stream raises and is retried
 
 ProgressFn = Callable[[dict], None]
 
@@ -209,7 +209,8 @@ def delete(
 
 
 def cancel_downloads() -> None:
-    """Ask every running download to stop at its next chunk (partial files are kept)."""
+    """Ask every running download to stop at its next chunk or retry (partial files are
+    kept)."""
     with _STATE_LOCK:
         for event in _DOWNLOADING.values():
             event.set()
@@ -345,8 +346,9 @@ def _fetch(
     for attempt in range(_ATTEMPTS):
         if offset >= f.size:
             break
-        if attempt:
-            time.sleep(min(2**attempt, 10))
+        # The backoff wait ends early when the download is cancelled.
+        if cancel.is_set() or (attempt and cancel.wait(min(2**attempt, 10))):
+            raise DownloadCancelledError("The download was cancelled.")
         headers = build_hf_headers(token=False)
         if offset:
             headers["Range"] = f"bytes={offset}-"

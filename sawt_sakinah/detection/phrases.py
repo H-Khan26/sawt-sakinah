@@ -58,11 +58,11 @@ def _default_initial_prompt() -> str:
     return "الله أكبر. سمع الله لمن حمده. ربنا ولك الحمد. السلام عليكم ورحمة الله."
 
 
-def _resolve_model(model_size: str, models_dir: str | os.PathLike | None) -> Path:
-    """Local directory for ``model_size``: a catalog id (must be installed) or a directory
-    holding a CTranslate2 Whisper model."""
+def _model_dir(model_size: str, models_dir: str | os.PathLike | None) -> Path:
+    """Local directory for ``model_size``: a catalog id's directory (installed or not) or a
+    directory holding a CTranslate2 Whisper model."""
     if model_size in whisper_models.catalog():
-        return whisper_models.installed_path(model_size, models_dir)
+        return whisper_models.model_dir(model_size, models_dir)
     path = Path(model_size)
     if path.is_dir():
         return path
@@ -435,8 +435,11 @@ def detect_phrases(
         if not clips:
             return []
 
-    model_path = _resolve_model(model_size, models_dir)
+    model_path = _model_dir(model_size, models_dir)
+    # Marked in use before the install check, so a delete can't slip in between.
     with whisper_models.in_use(model_path):
+        if model_size in whisper_models.catalog():
+            whisper_models.installed_path(model_size, models_dir)
         model = _get_model(model_path, device, compute_type)
         words = _transcribe_words(
             model,
