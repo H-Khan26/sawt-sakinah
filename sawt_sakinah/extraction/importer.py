@@ -23,7 +23,7 @@ from . import cache as _cache
 from .finalize import emit as _emit
 from .finalize import finalize_source
 from .hashing import content_hash
-from .probe import ffprobe_for, probe
+from .probe import probe
 from .transcode import transcode_audio
 
 
@@ -33,7 +33,7 @@ def _source_id(content_hash_hex: str, audio_format: str, audio_quality: str) -> 
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
 
-def _validate_decodable(src: Path, ffmpeg_bin: str) -> None:
+def _validate_decodable(src: Path, ffprobe_bin: str) -> None:
     """Ensure ffprobe can read ``src`` and it has an audio stream, else raise typed errors.
 
     ffprobe failing means the file is not decodable media (wrong type despite its
@@ -41,7 +41,7 @@ def _validate_decodable(src: Path, ffmpeg_bin: str) -> None:
     audio stream (e.g. a silent video) -> :class:`NoAudioStreamError`.
     """
     try:
-        probe(src, ffprobe_bin=ffprobe_for(ffmpeg_bin))
+        probe(src, ffprobe_bin=ffprobe_bin)
     except RuntimeError as err:
         if "no audio stream" in str(err).lower():
             raise NoAudioStreamError(
@@ -60,6 +60,7 @@ def import_file(
     audio_format: str = CONFIG.extraction.audio_format,
     audio_quality: str = CONFIG.extraction.audio_quality,
     ffmpeg_bin: str = CONFIG.ffmpeg.bin,
+    ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin,
     create_working_copy: bool = CONFIG.extraction.create_working_copy,
     normalize_loudness: bool = CONFIG.extraction.normalize_loudness,
     use_cache: bool = CONFIG.extraction.use_cache,
@@ -76,6 +77,7 @@ def import_file(
         audio_format: Target artifact format/extension (default ``mp3``).
         audio_quality: FFmpeg audio quality (``"0"`` best VBR, or a bitrate like ``"192K"``).
         ffmpeg_bin: Name/path of the ffmpeg executable.
+        ffprobe_bin: Name/path of the ffprobe executable.
         create_working_copy: Also emit the 16 kHz mono WAV detection feeds on.
         normalize_loudness: Apply EBU R128 loudnorm to the working copy.
         use_cache: Reuse/persist by content hash so re-uploading the same file is cheap.
@@ -103,7 +105,7 @@ def import_file(
             f"'{name}' is not a supported file type. Accepted: {allowed}."
         )
 
-    _validate_decodable(src, ffmpeg_bin)
+    _validate_decodable(src, ffprobe_bin)
 
     source_id = _source_id(content_hash(src), audio_format, audio_quality)
     resolved_cache_dir = (
@@ -131,5 +133,6 @@ def import_file(
         use_cache=use_cache,
         cache_dir=resolved_cache_dir,
         ffmpeg_bin=ffmpeg_bin,
+        ffprobe_bin=ffprobe_bin,
         progress_callback=progress_callback,
     )

@@ -7,8 +7,9 @@ C-extensions) release the GIL during their heavy work, so threads -- not a proce
 typically single-worker pool because concurrent Whisper on one device OOMs; quick
 extraction/silence jobs run on the general pool so a long transcription never starves
 them. State/progress is queried via :meth:`JobRegistry.get`, which returns a copy under
-the lock. No Celery/Redis yet -- this is deliberately the simplest thing that gives
-handles, state, and progress.
+the lock. At most ``service.max_pending_jobs`` jobs may be pending or running at once;
+further submissions raise :class:`JobQueueFullError`. No Celery/Redis yet -- this is
+deliberately the simplest thing that gives handles, state, and progress.
 """
 
 from __future__ import annotations
@@ -32,6 +33,10 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class JobQueueFullError(RuntimeError):
+    """Too many jobs are already pending or running; the caller should retry later."""
+
+
 class JobState(str, Enum):
     pending = "pending"
     running = "running"
@@ -45,6 +50,7 @@ class JobKind(str, Enum):
     detect_phrases = "detect_phrases"
     export = "export"
     split = "split"
+    download_model = "download_model"
 
 
 class JobRecord(BaseModel):
@@ -69,14 +75,33 @@ class JobRegistry:
         self,
         max_workers: int = CONFIG.service.max_workers,
         phrase_workers: int = CONFIG.service.phrase_workers,
+        max_pending_jobs: int = CONFIG.service.max_pending_jobs,
     ) -> None:
         self._jobs: dict[str, JobRecord] = {}
+        self._max_pending = max_pending_jobs
+        self._active = 0  # jobs submitted and not yet finished
         self._lock = threading.Lock()
         self._pool = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix="sawt-job"
         )
         self._phrase_pool = ThreadPoolExecutor(
             max_workers=phrase_workers, thread_name_prefix="sawt-phrase"
+        )
+
+    def ensure_capacity(self) -> None:
+        """Raise :class:`JobQueueFullError` now if a submission would be refused.
+
+        Lets a route fail before doing expensive setup (e.g. staging an upload); ``submit``
+        still enforces the limit itself.
+        """
+        with self._lock:
+            if self._active >= self._max_pending:
+                raise self._full_error()
+
+    def _full_error(self) -> JobQueueFullError:
+        return JobQueueFullError(
+            f"{self._active} jobs are already queued or running. "
+            "Wait for some to finish and try again."
         )
 
     def submit(
@@ -87,27 +112,44 @@ class JobRegistry:
         project_id: Optional[str] = None,
         pool: str = "default",
     ) -> JobRecord:
-        """Register a job and schedule ``fn`` on the chosen pool; return its record."""
+        """Register a job and schedule ``fn`` on the chosen pool; return its record.
+
+        Raises:
+            JobQueueFullError: If ``max_pending_jobs`` jobs are already pending or running.
+        """
         job_id = uuid4().hex
         record = JobRecord(id=job_id, kind=kind, project_id=project_id)
         with self._lock:
+            if self._active >= self._max_pending:
+                raise self._full_error()
+            self._active += 1
             self._jobs[job_id] = record
         executor = self._phrase_pool if pool == "phrase" else self._pool
-        executor.submit(self._run, job_id, fn)
+        try:
+            executor.submit(self._run, job_id, fn)
+        except BaseException:
+            with self._lock:
+                self._active -= 1
+                self._jobs.pop(job_id, None)
+            raise
         return record.model_copy(deep=True)
 
     def _run(self, job_id: str, fn: TaskFn) -> None:
-        self._patch(job_id, state=JobState.running)
         try:
-            result = fn(lambda payload: self.update_progress(job_id, payload))
-            self._patch(job_id, state=JobState.succeeded, result=result or None)
-        except Exception as exc:  # noqa: BLE001 - record any failure for the client
-            self._patch(
-                job_id,
-                state=JobState.failed,
-                error=str(exc),
-                error_type=type(exc).__name__,
-            )
+            self._patch(job_id, state=JobState.running)
+            try:
+                result = fn(lambda payload: self.update_progress(job_id, payload))
+                self._patch(job_id, state=JobState.succeeded, result=result or None)
+            except Exception as exc:  # noqa: BLE001 - record any failure for the client
+                self._patch(
+                    job_id,
+                    state=JobState.failed,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+        finally:
+            with self._lock:
+                self._active -= 1
 
     def update_progress(self, job_id: str, payload: dict) -> None:
         self._patch(job_id, progress=payload)

@@ -23,7 +23,7 @@ from ..models.sources import AudioSource, SourceKind
 from . import cache as _cache
 from .hashing import content_hash
 from .normalize import make_working_copy
-from .probe import ffprobe_for, probe
+from .probe import probe
 from .segment import write_speech_map
 
 
@@ -47,6 +47,7 @@ def finalize_source(
     use_cache: bool = CONFIG.extraction.use_cache,
     cache_dir: str | os.PathLike | None = None,
     ffmpeg_bin: str = CONFIG.ffmpeg.bin,
+    ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin,
     progress_callback: Optional[Callable[[dict], None]] = None,
 ) -> AudioSource:
     """Probe ``result_path``, build its working copy, and return a cached ``AudioSource``.
@@ -65,7 +66,8 @@ def finalize_source(
         normalize_loudness: Apply EBU R128 loudnorm to the working copy.
         use_cache: Persist the resulting source as a cache sidecar.
         cache_dir: Cache root (resolved to the default when ``None``).
-        ffmpeg_bin: ffmpeg executable; the matching ffprobe is derived from it.
+        ffmpeg_bin: Name/path of the ffmpeg executable.
+        ffprobe_bin: Name/path of the ffprobe executable.
         progress_callback: Normalized ``{stage, ...}`` progress sink; stages are
             ``"probe"``, ``"normalize"``, ``"segment"``, ``"done"``.
 
@@ -80,7 +82,7 @@ def finalize_source(
         )
 
     emit(progress_callback, stage="probe", status="start")
-    meta = probe(result, ffprobe_bin=ffprobe_for(ffmpeg_bin))
+    meta = probe(result, ffprobe_bin=ffprobe_bin)
 
     working_copy = None
     if create_working_copy:

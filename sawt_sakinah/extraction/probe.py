@@ -1,29 +1,16 @@
-"""Read authoritative audio metadata from a file using ffprobe (ships with FFmpeg).
-
-Also exposes :func:`ffprobe_for` so callers in other layers can derive the correct
-``ffprobe`` path from a custom ``ffmpeg`` binary without duplicating the logic.
-"""
+"""Read authoritative audio metadata from a file using ffprobe (ships with FFmpeg)."""
 
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 from pathlib import Path
 
-
-def ffprobe_for(ffmpeg_bin: str) -> str:
-    """Return the ``ffprobe`` path that corresponds to a given ``ffmpeg`` binary.
-
-    For a bare ``"ffmpeg"`` (or empty string), returns ``"ffprobe"``. For a full path
-    (e.g. ``"/usr/local/bin/ffmpeg"``), returns ``"/usr/local/bin/ffprobe"``.
-    """
-    if ffmpeg_bin in ("ffmpeg", ""):
-        return "ffprobe"
-    return str(Path(ffmpeg_bin).with_name("ffprobe"))
+from ..config import CONFIG
+from ..ffmpeg import run_ffmpeg
+from ..proc import INPUT_PROTOCOLS
 
 
-def probe(input_path: str | Path, ffprobe_bin: str = "ffprobe") -> dict:
+def probe(input_path: str | Path, ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin) -> dict:
     """Return stream-accurate metadata for ``input_path``.
 
     Reads the first audio stream and the container with ffprobe and returns a dict
@@ -36,25 +23,22 @@ def probe(input_path: str | Path, ffprobe_bin: str = "ffprobe") -> dict:
 
     Raises:
         FileNotFoundError: If ffprobe or the input file is missing.
-        RuntimeError: If ffprobe fails or returns no audio stream.
+        RuntimeError: If ffprobe fails, times out or returns no audio stream.
     """
     src = Path(input_path)
     if not src.exists():
         raise FileNotFoundError(f"Input audio not found: {src}")
-    if shutil.which(ffprobe_bin) is None:
-        raise FileNotFoundError(
-            f"'{ffprobe_bin}' not found on PATH. Install FFmpeg (ffprobe ships with it)."
-        )
 
     cmd = [
         ffprobe_bin,
         "-v", "error",
+        *INPUT_PROTOCOLS,
         "-select_streams", "a:0",
         "-show_entries", "stream=sample_rate,channels,codec_name:format=duration",
         "-of", "json",
-        str(src),
+        "-i", str(src),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = run_ffmpeg(cmd)
     if proc.returncode != 0:
         raise RuntimeError(
             f"ffprobe failed (exit {proc.returncode}):\n{proc.stderr.strip()}"

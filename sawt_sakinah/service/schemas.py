@@ -43,20 +43,13 @@ EXTRACT_FORMATS = frozenset({"mp3", "m4a", "wav", "flac", "opus"}) | {
     CONFIG.extraction.audio_format
 }
 SILENCE_DETECTORS = frozenset({"vad", "ffmpeg"})
-WHISPER_MODELS = frozenset(
-    {
-        "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en",
-        "large-v1", "large-v2", "large-v3", "large", "large-v3-turbo", "turbo",
-        "distil-small.en", "distil-medium.en", "distil-large-v2", "distil-large-v3",
-    }
-) | {CONFIG.phrases.model_size}
-WHISPER_DEVICES = frozenset({"cpu", "cuda", "auto"})
+# Only the models in the downloadable catalog (the config guarantees the default is one).
+WHISPER_MODELS = frozenset(CONFIG.whisper_models)
+# The desktop bundle ships CPU-only CTranslate2, so GPU devices and GPU compute types are refused.
+WHISPER_DEVICES = frozenset({"cpu"})
 WHISPER_COMPUTE_TYPES = frozenset(
-    {
-        "default", "auto", "int8", "int8_float16", "int8_float32", "int8_bfloat16",
-        "int16", "float16", "float32", "bfloat16",
-    }
-)
+    {"default", "auto", "int8", "int8_float32", "int16", "float32"}
+) | {CONFIG.phrases.compute_type}
 # ffmpeg bitrate ("192k") and VBR quality ("0".."9") forms.
 _BITRATE = re.compile(r"[0-9]{2,3}[kK]")
 _VBR_QUALITY = re.compile(r"[0-9]")
@@ -120,7 +113,8 @@ class PhraseParams(BaseModel):
     """Inputs for ``POST /detect/phrases`` (mapped to ``detect_phrases`` kwargs)."""
 
     phrases: Optional[list[str]] = None
-    model_size: str = CONFIG.phrases.model_size
+    # None uses the model the user selected (preferences), resolved when the job is submitted.
+    model_size: Optional[str] = None
     device: str = CONFIG.phrases.device
     compute_type: str = CONFIG.phrases.compute_type
     language: str = CONFIG.phrases.language
@@ -134,9 +128,9 @@ class PhraseParams(BaseModel):
 
     @field_validator("model_size")
     @classmethod
-    def _check_model(cls, v: str) -> str:
+    def _check_model(cls, v: Optional[str]) -> Optional[str]:
         # Never an arbitrary Hugging Face repo id or local path.
-        return _one_of(v, WHISPER_MODELS, "model_size")
+        return v if v is None else _one_of(v, WHISPER_MODELS, "model_size")
 
     @field_validator("device")
     @classmethod
@@ -283,6 +277,18 @@ class ProjectView(BaseModel):
     exports: list[ExportArtifactView]
     created_at: datetime
     updated_at: datetime
+
+
+class WhisperModelView(BaseModel):
+    """One entry of ``GET /models``."""
+
+    id: str
+    label: str
+    description: str
+    size_mb: int
+    installed: bool
+    selected: bool  # the user's chosen model (preferences.whisper_model)
+    download_job_id: Optional[str] = None  # pending/running download job, if any
 
 
 class ProjectListResponse(BaseModel):

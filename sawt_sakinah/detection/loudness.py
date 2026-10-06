@@ -8,10 +8,11 @@ its mean level in dB. Analysis only -- never writes audio.
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
 from ..config import CONFIG
+from ..ffmpeg import run_ffmpeg
+from ..proc import ffmpeg_input
 
 _MEAN_VOL_RE = re.compile(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB")
 
@@ -41,12 +42,12 @@ def measure_mean_db(
         ffmpeg_bin,
         "-ss", f"{start}",
         "-to", f"{end}",
-        "-i", str(input_path),
+        *ffmpeg_input(input_path),
         "-af", "volumedetect",
         "-f", "null",
         "-",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = run_ffmpeg(cmd)
     if proc.returncode != 0:
         return None
 

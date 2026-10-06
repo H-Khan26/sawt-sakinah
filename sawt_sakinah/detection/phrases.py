@@ -30,17 +30,20 @@ lazily so the rest of the package never needs them.
 
 from __future__ import annotations
 
+import os
 from bisect import bisect_left, bisect_right
 from pathlib import Path
 
 from ..config import CONFIG
 from ..models import Marker
+from . import whisper_models
 from ._arabic import PHRASE_REGISTRY, PhraseSpec, normalize_arabic
 from ._pcm import SAMPLE_RATE, decode_pcm
 from ._spans import Span, merge_within_gap, pad_spans
 
-# Cache loaded Whisper models across calls, keyed by (model_size, device, compute_type).
-# Loading large-v3 is expensive; detect_phrases stays read-only otherwise.
+# Cache the loaded Whisper model across calls, keyed by (model directory, device,
+# compute_type). Loading is expensive; only the most recent model is kept, so switching
+# models doesn't hold two multi-GB models in memory. detect_phrases stays read-only otherwise.
 _MODEL_CACHE: dict[tuple[str, str, str], object] = {}
 
 # Confidence blend and gating thresholds (0..100 for RapidFuzz scores), sourced from the
@@ -55,10 +58,25 @@ def _default_initial_prompt() -> str:
     return "الله أكبر. سمع الله لمن حمده. ربنا ولك الحمد. السلام عليكم ورحمة الله."
 
 
-def _get_model(model_size: str, device: str, compute_type: str):
-    key = (model_size, device, compute_type)
+def _resolve_model(model_size: str, models_dir: str | os.PathLike | None) -> Path:
+    """Local directory for ``model_size``: a catalog id (must be installed) or a directory
+    holding a CTranslate2 Whisper model."""
+    if model_size in whisper_models.catalog():
+        return whisper_models.installed_path(model_size, models_dir)
+    path = Path(model_size)
+    if path.is_dir():
+        return path
+    raise whisper_models.UnknownModelError(
+        f"Unknown Whisper model {model_size!r}; expected one of: "
+        f"{', '.join(whisper_models.catalog())}"
+    )
+
+
+def _get_model(model_path: Path, device: str, compute_type: str):
+    key = (os.path.normcase(os.path.abspath(model_path)), device, compute_type)
     model = _MODEL_CACHE.get(key)
     if model is None:
+        whisper_models.configure_hf_env()
         try:
             from faster_whisper import WhisperModel
         except ImportError as err:  # pragma: no cover - exercised only without the extra
@@ -66,9 +84,20 @@ def _get_model(model_size: str, device: str, compute_type: str):
                 "Phrase detection requires the optional 'phrases' extra "
                 '(pip install -e ".[phrases]": faster-whisper + rapidfuzz).'
             ) from err
-        model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        _MODEL_CACHE.clear()
+        # A directory plus local_files_only: faster-whisper never contacts the Hub.
+        model = WhisperModel(
+            str(model_path), device=device, compute_type=compute_type, local_files_only=True
+        )
         _MODEL_CACHE[key] = model
     return model
+
+
+def evict_model(model_path: str | os.PathLike) -> None:
+    """Drop any cached model loaded from ``model_path`` (before deleting its files)."""
+    prefix = os.path.normcase(os.path.abspath(model_path))
+    for key in [k for k in _MODEL_CACHE if k[0] == prefix]:
+        _MODEL_CACHE.pop(key, None)
 
 
 # One entry per concatenated clip: (start in the packed stream, source start, source end).
@@ -329,6 +358,7 @@ def detect_phrases(
     clip_pad: float = CONFIG.phrases.clip_pad,
     total_duration: float | None = None,
     ffmpeg_bin: str = CONFIG.ffmpeg.bin,
+    models_dir: str | os.PathLike | None = None,
 ) -> list[Marker]:
     """Detect known spoken phrases in ``input_path`` and return timestamped markers.
 
@@ -342,9 +372,11 @@ def detect_phrases(
             query-by-example backend (detector="embeddings"); ignored by the Whisper backend.
         detector: Detection backend. "whisper" (default) is implemented; "embeddings"
             raises NotImplementedError (planned).
-        model_size: Whisper model id or size. Default "large-v3" (best general Arabic).
-        device: Inference device, e.g. "cpu" or "cuda".
-        compute_type: CTranslate2 compute type, e.g. "int8" (CPU) or "float16" (GPU).
+        model_size: A ``whisper_models`` catalog id (loaded from its installed directory
+            under ``models_dir``) or the path of a directory holding a CTranslate2
+            Whisper model. Never downloaded here; see ``whisper_models.download``.
+        device: Inference device, e.g. "cpu".
+        compute_type: CTranslate2 compute type, e.g. "int8".
         language: Transcription language code; "ar" for Arabic.
         initial_prompt: Decoder bias prompt; defaults to the canonical target phrases.
         min_confidence: Drop markers below this confidence (0..1).
@@ -364,6 +396,8 @@ def detect_phrases(
         total_duration: File duration used to clamp padded clips; when unknown only
             the lower bound is clamped.
         ffmpeg_bin: ffmpeg executable used to decode the clip audio.
+        models_dir: Root holding the installed catalog models; defaults to
+            ``runtime.models_dir()``.
 
     Returns:
         Markers ordered by onset time. Empty when ``speech_spans`` is given but empty
@@ -374,6 +408,9 @@ def detect_phrases(
         ValueError: If an unknown phrase type is requested.
         NotImplementedError: If ``detector="embeddings"`` (not yet built).
         RuntimeError: If the optional phrase-detection dependencies are not installed.
+        whisper_models.UnknownModelError: If ``model_size`` is neither a catalog id nor a
+            model directory.
+        whisper_models.ModelNotInstalledError: If the catalog model isn't downloaded.
     """
     if detector == "embeddings":
         raise NotImplementedError(
@@ -398,16 +435,18 @@ def detect_phrases(
         if not clips:
             return []
 
-    model = _get_model(model_size, device, compute_type)
-    words = _transcribe_words(
-        model,
-        src,
-        language=language,
-        initial_prompt=initial_prompt or _default_initial_prompt(),
-        vad_filter=vad_filter,
-        clips=clips,
-        ffmpeg_bin=ffmpeg_bin,
-    )
+    model_path = _resolve_model(model_size, models_dir)
+    with whisper_models.in_use(model_path):
+        model = _get_model(model_path, device, compute_type)
+        words = _transcribe_words(
+            model,
+            src,
+            language=language,
+            initial_prompt=initial_prompt or _default_initial_prompt(),
+            vad_filter=vad_filter,
+            clips=clips,
+            ffmpeg_bin=ffmpeg_bin,
+        )
 
     cands: list[tuple[str, str, float, float, float]] = []
     for ptype in types:

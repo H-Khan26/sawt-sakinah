@@ -20,10 +20,9 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from ..config import CONFIG
-from ..detection import detect_phrases, detect_silence
+from ..detection import detect_phrases, detect_silence, whisper_models
 from ..editing import render
 from ..extraction import extract_audio, import_file
-from ..extraction.probe import ffprobe_for
 from ..extraction.probe import probe
 from ..extraction.segment import write_speech_map
 from ..models import (
@@ -227,6 +226,8 @@ def extract_worker(
             audio_format=req.audio_format,
             audio_quality=req.audio_quality,
             cache_dir=settings.cache_dir,
+            ffmpeg_bin=settings.ffmpeg_bin,
+            ffprobe_bin=settings.ffprobe_bin,
             progress_callback=progress,
         )
         return _persist_source(store, project_id, source)
@@ -255,6 +256,7 @@ def import_worker(
                 output_dir=store.audio_dir(project_id),
                 original_filename=original_filename,
                 ffmpeg_bin=settings.ffmpeg_bin,
+                ffprobe_bin=settings.ffprobe_bin,
                 cache_dir=settings.cache_dir,
                 progress_callback=progress,
             )
@@ -305,6 +307,7 @@ def silence_worker(
             min_speech_duration=params.min_speech_duration,
             speech_map=speech_map,
             ffmpeg_bin=settings.ffmpeg_bin,
+            ffprobe_bin=settings.ffprobe_bin,
         )
         store.update(
             project_id,
@@ -344,7 +347,9 @@ def phrases_worker(
             src,
             phrases=params.phrases,
             references=request.references,
-            model_size=params.model_size,
+            # The detect route resolves the user's selected model at submit time.
+            model_size=params.model_size or CONFIG.phrases.model_size,
+            models_dir=settings.models_dir,
             device=params.device,
             compute_type=params.compute_type,
             language=params.language,
@@ -372,6 +377,19 @@ def phrases_worker(
         )
         progress({"stage": "detect", "status": "done"})
         return {"markers": len(markers), "positions": len(structure)}
+
+    return run
+
+
+def model_download_worker(settings: ServiceSettings, model_id: str) -> TaskFn:
+    """Download a catalog Whisper model into ``settings.models_dir`` (resumes a partial one).
+
+    Progress payloads are ``{"stage": "downloading", "bytes_done", "bytes_total"}``.
+    """
+
+    def run(progress):
+        whisper_models.download(model_id, settings.models_dir, progress=progress)
+        return {"model_id": model_id}
 
     return run
 
@@ -420,11 +438,12 @@ def export_worker(
             out_format=req.format,
             out_path=out_path,
             ffmpeg_bin=settings.ffmpeg_bin,
+            ffprobe_bin=settings.ffprobe_bin,
             bitrate=req.bitrate,
             embed_markers=req.embed_markers,
             chapter_markers=chapter_markers,
         )
-        meta = probe(out_path, ffprobe_bin=ffprobe_for(settings.ffmpeg_bin))
+        meta = probe(out_path, ffprobe_bin=settings.ffprobe_bin)
         default_name = project.name or None
         if scoped and not req.name:
             base = project.name or project.audio_source.title
@@ -487,6 +506,7 @@ def split_worker(
                 out_format=fmt,
                 out_path=segment,
                 ffmpeg_bin=settings.ffmpeg_bin,
+                ffprobe_bin=settings.ffprobe_bin,
             )
             progress({"stage": "import", "status": "start"})
             source = import_file(
@@ -494,6 +514,7 @@ def split_worker(
                 output_dir=store.audio_dir(new_project_id),
                 original_filename=f"{name}.{fmt}",
                 ffmpeg_bin=settings.ffmpeg_bin,
+                ffprobe_bin=settings.ffprobe_bin,
                 cache_dir=settings.cache_dir,
                 progress_callback=progress,
             )

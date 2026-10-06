@@ -19,6 +19,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .. import __version__
+from ..detection.whisper_models import ModelError, UnknownModelError, cancel_downloads
 from ..models import (
     AgeRestrictedError,
     ExtractionError,
@@ -31,9 +33,9 @@ from ..models import (
     UnsupportedMediaError,
     VideoUnavailableError,
 )
-from .jobs import JobRegistry
+from .jobs import JobQueueFullError, JobRegistry
 from .projects import ProjectStore
-from .routes import detect, export, jobs, media, projects
+from .routes import detect, export, jobs, media, models, projects, system
 from .security import install_guards
 from .settings import ServiceSettings
 
@@ -49,6 +51,9 @@ _ERROR_STATUS: list[tuple[type[Exception], int]] = [
     (NoAudioStreamError, 422),
     (FileTooLargeError, 413),
     (ExtractionError, 502),
+    (JobQueueFullError, 429),
+    (UnknownModelError, 404),
+    (ModelError, 409),  # not installed, already installed, busy
 ]
 
 
@@ -60,6 +65,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        cancel_downloads()  # model download threads would otherwise hold up process exit
         app.state.jobs.shutdown()
 
 
@@ -117,7 +123,7 @@ def create_app(settings: Optional[ServiceSettings] = None) -> FastAPI:
     # instance and not another program on the same port.
     @app.get("/health", include_in_schema=False)
     def health() -> dict:
-        return {"status": "ok"}
+        return {"status": "ok", "version": __version__}
 
     for router in (
         projects.router,
@@ -125,6 +131,8 @@ def create_app(settings: Optional[ServiceSettings] = None) -> FastAPI:
         detect.router,
         media.router,
         export.router,
+        system.router,
+        models.router,
     ):
         app.include_router(router)
 

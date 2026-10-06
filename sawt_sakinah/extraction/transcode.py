@@ -9,11 +9,11 @@ default artifact. Side-effecting (subprocess + filesystem); performs no analysis
 
 from __future__ import annotations
 
-import shutil
-import subprocess
 from pathlib import Path
 
 from ..config import CONFIG
+from ..ffmpeg import run_ffmpeg
+from ..proc import ffmpeg_input
 
 
 def _is_bitrate(quality: str) -> bool:
@@ -51,24 +51,20 @@ def transcode_audio(
 
     Raises:
         FileNotFoundError: If ffmpeg or the input file is missing.
-        RuntimeError: If FFmpeg exits with an error (e.g. an undecodable file).
+        RuntimeError: If FFmpeg exits with an error (e.g. an undecodable file) or times out.
     """
     src = Path(src_path)
     if not src.exists():
         raise FileNotFoundError(f"Input media not found: {src}")
-    if shutil.which(ffmpeg_bin) is None:
-        raise FileNotFoundError(
-            f"'{ffmpeg_bin}' not found on PATH. Install FFmpeg (standalone binary)."
-        )
 
     dst = Path(dst_path)
     dst.parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = [ffmpeg_bin, "-y" if overwrite else "-n", "-i", str(src), "-vn"]
+    cmd = [ffmpeg_bin, "-y" if overwrite else "-n", *ffmpeg_input(src), "-vn"]
     cmd += ["-b:a", audio_quality] if _is_bitrate(audio_quality) else ["-q:a", audio_quality]
     cmd += [str(dst)]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = run_ffmpeg(cmd)
     if proc.returncode != 0:
         raise RuntimeError(
             f"FFmpeg transcode failed (exit {proc.returncode}):\n{proc.stderr.strip()}"

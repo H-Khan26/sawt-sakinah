@@ -155,7 +155,7 @@ def resolve_executable(program: str | os.PathLike) -> str:
     if os.path.isabs(text):
         if Path(text).is_file():
             return text
-        raise _not_found(text)
+        raise ToolNotFoundError(f"'{text}' does not exist.")
     if text != name:
         raise ToolNotFoundError(f"'{text}' must be an absolute path or a bare program name.")
     if not FROZEN:

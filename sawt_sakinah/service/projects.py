@@ -32,11 +32,10 @@ def _now() -> datetime:
 
 
 def default_projects_dir() -> Path:
-    """Return the default projects root (``%LOCALAPPDATA%`` on Windows, else XDG-ish)."""
-    base = os.environ.get("LOCALAPPDATA")
-    if base:
-        return Path(base) / "sawt_sakinah" / "projects"
-    return Path.home() / ".local" / "share" / "sawt_sakinah" / "projects"
+    """Return the default projects root (see :func:`sawt_sakinah.runtime.projects_dir`)."""
+    from .. import runtime
+
+    return runtime.projects_dir()
 
 
 class ProjectStore:

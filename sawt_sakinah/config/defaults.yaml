@@ -9,13 +9,17 @@
 # with the code. Nullable knobs (e.g. ``merge_gap``) are written explicitly as
 # ``null`` so even "no value" is set in one visible place.
 #
-# Deployments may point SAWT_CONFIG_FILE at an alternate copy of this file to swap
-# the whole set of defaults; service-only operational settings additionally accept
-# SAWT_* environment overrides (see service/settings.py).
+# Users may override any subset of keys in a per-user config.yaml (merged onto this
+# file). In a source checkout SAWT_CONFIG_FILE may point at an alternate copy of this
+# file to swap the whole set of defaults; service-only operational settings
+# additionally accept SAWT_* environment overrides (see service/settings.py).
 
-# ffmpeg/ffprobe executable used by every subprocess call.
+# ffmpeg/ffprobe executables used by every subprocess call. A bare name resolves to the
+# bundled copy (or PATH in a source checkout); an absolute path is used as given.
 ffmpeg:
   bin: ffmpeg
+  ffprobe_bin: ffprobe
+  timeout_sec: 3600            # stop any single ffmpeg/ffprobe run after this many seconds
 
 # Standardized signal the detection layer is fed (energy gate + Silero/WebRTC VAD
 # both expect this). Used for the PCM decode and the normalized working copy.
@@ -32,6 +36,8 @@ extraction:
   normalize_loudness: false   # apply EBU R128 loudnorm to the working copy
   use_cache: true             # reuse/persist extractions keyed by url+format+quality
   max_upload_mb: 500          # reject uploads larger than this (streamed, not trusted from headers)
+  max_download_mb: 1024       # reject YouTube audio streams larger than this
+  max_duration_sec: 21600     # reject YouTube videos longer than this (6 hours), before downloading
   allowed_upload_extensions:  # file types the upload endpoint accepts (transcoded to audio_format)
     - .mp3
     - .wav
@@ -69,9 +75,9 @@ silence:
 # Spoken-phrase (Whisper) detection.
 phrases:
   detector: whisper            # "whisper" (implemented) or "embeddings" (planned)
-  model_size: large-v3         # Whisper model id/size (a Quran-tuned id is a drop-in)
-  device: cpu                  # inference device: "cpu" or "cuda"
-  compute_type: int8           # CTranslate2 compute type: "int8" (CPU) / "float16" (GPU)
+  model_size: large-v3-turbo   # default Whisper model; must be an id under whisper_models (users pick another in the app)
+  device: cpu                  # inference device; the desktop bundle is CPU-only
+  compute_type: int8           # CTranslate2 compute type ("int8" is the fast CPU choice)
   language: ar                 # transcription language code
   min_confidence: 0.4          # drop markers below this confidence (0..1)
   min_gap_between_markers: 1.0  # de-dup same-type hits closer than this (seconds)
@@ -83,6 +89,23 @@ phrases:
   keyword_gate: 78.0           # each required keyword must partial-match >= this (0..100)
   fuzzy_floor: 60.0            # whole-phrase token_sort_ratio floor before scoring (0..100)
   fuzzy_weight: 0.6            # confidence = fuzzy_weight*fuzzy + (1-fuzzy_weight)*prob
+
+# Whisper models the app can download and run (CTranslate2 conversions, CPU). Only these
+# ids are accepted anywhere. Each is pinned to a Hugging Face commit so a re-upload can't
+# change it silently; size_mb is the download size of the files faster-whisper loads.
+whisper_models:
+  large-v3-turbo:
+    label: Large v3 Turbo
+    description: Fast and accurate. Recommended for most recordings.
+    repo: mobiuslabsgmbh/faster-whisper-large-v3-turbo
+    revision: 0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf
+    size_mb: 1622
+  large-v3:
+    label: Large v3
+    description: Higher accuracy, slower. Needs about twice the memory and disk space.
+    repo: Systran/faster-whisper-large-v3
+    revision: edaa852ec7e145841d8ffdb056a99866b5f0a478
+    size_mb: 3091
 
 # EDL render / export.
 editing:
@@ -96,5 +119,12 @@ editing:
 service:
   max_workers: 4               # general job pool threads (extraction/silence/export)
   phrase_workers: 1            # dedicated Whisper pool threads (keep 1 unless device allows)
+  max_pending_jobs: 32         # pending + running jobs accepted before new submissions get HTTP 429
   waveform_buckets: 2000       # downsample resolution for the waveform peaks endpoint
   stream_chunk_size: 65536     # byte chunk size for ranged media streaming responses
+
+# Desktop app: the update check against the project's GitHub releases.
+app:
+  release_repo: H-Khan26/sawt-sakinah   # <owner>/<repo> whose latest release is checked
+  update_check_interval_hours: 24       # at most one check per interval
+  update_check_timeout_sec: 5           # network timeout for one check

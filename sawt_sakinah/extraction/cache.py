@@ -14,11 +14,10 @@ from ..models.sources import AudioSource
 
 
 def default_cache_dir() -> Path:
-    """Return the default cache root (``%LOCALAPPDATA%`` on Windows, else ``~/.cache``)."""
-    base = os.environ.get("LOCALAPPDATA")
-    if base:
-        return Path(base) / "sawt_sakinah" / "cache"
-    return Path.home() / ".cache" / "sawt_sakinah"
+    """Return the default cache root (see :func:`sawt_sakinah.runtime.cache_dir`)."""
+    from .. import runtime
+
+    return runtime.cache_dir()
 
 
 def _sources_dir(cache_dir: Path) -> Path:

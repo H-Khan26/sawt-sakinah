@@ -7,10 +7,11 @@ lazily so importing this module is cheap for callers that never decode.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from ..config import CONFIG
+from ..ffmpeg import run_ffmpeg
+from ..proc import ffmpeg_input
 
 SAMPLE_RATE = CONFIG.audio.working_sample_rate
 
@@ -21,13 +22,13 @@ def decode_pcm(input_path: str | Path, ffmpeg_bin: str = CONFIG.ffmpeg.bin):
 
     cmd = [
         ffmpeg_bin,
-        "-i", str(input_path),
+        *ffmpeg_input(input_path),
         "-ac", "1",
         "-ar", str(SAMPLE_RATE),
         "-f", "s16le",
         "-",
     ]
-    proc = subprocess.run(cmd, capture_output=True)
+    proc = run_ffmpeg(cmd, text=False)
     if proc.returncode != 0:
         raise RuntimeError(
             f"FFmpeg PCM decode failed (exit {proc.returncode}):\n"
