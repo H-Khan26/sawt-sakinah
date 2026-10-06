@@ -11,6 +11,7 @@ import { MarkersPanel } from "@/features/markers/MarkersPanel";
 import { SilencePanel } from "@/features/silence/SilencePanel";
 import { TransportBar } from "@/features/transport/TransportBar";
 import { useTransportHotkeys } from "@/features/transport/useTransportHotkeys";
+import { CheckForUpdatesLink, mentionsUpdate } from "@/features/updates/UpdateBanner";
 import { WaveformProvider } from "@/features/waveform/WaveformContext";
 import { WaveformView } from "@/features/waveform/WaveformView";
 import type { JobRecord, ProjectView } from "@/types/api";
@@ -93,6 +94,11 @@ export function EditorPage() {
           }}
         >
           {job.data?.error ?? "Something went wrong while extracting the audio."}
+          {mentionsUpdate(job.data?.error) && (
+            <p className="mt-2">
+              <CheckForUpdatesLink />
+            </p>
+          )}
         </Alert>
       </div>
     );

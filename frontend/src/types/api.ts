@@ -146,12 +146,19 @@ export interface ProjectListResponse {
 // --- jobs (service/jobs.py) -------------------------------------------------
 
 export type JobState = "pending" | "running" | "succeeded" | "failed";
-export type JobKind = "extract" | "detect_silence" | "detect_phrases" | "export" | "split";
+export type JobKind =
+  | "extract"
+  | "detect_silence"
+  | "detect_phrases"
+  | "export"
+  | "split"
+  | "download_model";
 
 /**
  * `GET /jobs/{id}`. `progress` is an arbitrary, per-kind dict: detection/export jobs
  * emit `{ stage, status }`; extraction emits the yt-dlp progress hook payload
- * (`status`, `downloaded_bytes`, `total_bytes`, ...). `result` is the job's summary
+ * (`status`, `downloaded_bytes`, `total_bytes`, ...); a model download emits
+ * {@link ModelDownloadProgress}. `result` is the job's summary
  * (e.g. `{ project_id, duration_sec }`, `{ detector, fallback?, silences }`,
  * `{ artifact_id }`). A silence job reports the detector that actually ran; when the
  * requested VAD could not run it still succeeds with `detector: "ffmpeg"` and a
@@ -219,8 +226,10 @@ export interface SilenceParams {
 
 export interface PhraseParams {
   phrases?: string[] | null;
+  /** Whisper model id; omitted, the backend uses the `whisper_model` preference. */
   model_size?: string;
-  device?: string;
+  /** Inference device; the desktop build runs on the CPU only. */
+  device?: "cpu";
   compute_type?: string;
   language?: string;
   min_confidence?: number;
@@ -282,6 +291,62 @@ export interface WaveformPeaks {
   duration_sec: number;
   min: number[];
   max: number[];
+}
+
+// --- app preferences, info and updates (/app) -------------------------------
+
+/** `GET/PATCH /app/preferences` — per-user choices stored by the backend, not the browser. */
+export interface AppPreferences {
+  /** Check GitHub for a newer release once a day on launch. */
+  update_check: boolean;
+  /** The release version the user dismissed the update banner for. */
+  dismissed_update: string | null;
+  /** Id of the speech model phrase detection uses. */
+  whisper_model: string;
+  /** Show cut audio on the waveform instead of collapsing it out. */
+  show_deleted: boolean;
+  /** Silence detector last chosen in the silence panel. */
+  silence_detector: SilenceDetector;
+}
+
+/** Body of `PATCH /app/preferences`; any subset of the fields. */
+export type PreferencesPatch = Partial<AppPreferences>;
+
+/** `GET /app/info`. `frozen` is true in the packaged desktop build. */
+export interface AppInfo {
+  version: string;
+  frozen: boolean;
+}
+
+/** `GET /app/update` — the backend's cached release check (honours the preferences). */
+export interface UpdateStatus {
+  current: string;
+  latest: string | null;
+  /** Release page for `latest`. */
+  url: string | null;
+  update_available: boolean;
+}
+
+// --- speech models (/models) ------------------------------------------------
+
+/** `GET /models` item — one entry of the speech-model catalog. */
+export interface SpeechModel {
+  id: string;
+  label: string;
+  description: string;
+  size_mb: number;
+  installed: boolean;
+  /** True for the model the `whisper_model` preference names. */
+  selected: boolean;
+  /** The in-flight `download_model` job, so progress resumes after a reload. */
+  download_job_id: string | null;
+}
+
+/** `progress` of a `download_model` job. */
+export interface ModelDownloadProgress {
+  stage: "downloading" | string;
+  bytes_done: number;
+  bytes_total: number;
 }
 
 // --- error envelope (service/app.py) ----------------------------------------

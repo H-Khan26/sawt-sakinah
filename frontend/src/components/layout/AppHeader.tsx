@@ -3,6 +3,7 @@ import wordmark from "@/assets/logo-wordmark-cream.png";
 import { SaveStatus } from "@/components/SaveStatus";
 import { Button, Tooltip } from "@/components/ui";
 import { ProjectSwitcher } from "@/features/projects/ProjectSwitcher";
+import { SettingsButton } from "@/features/settings/SettingsButton";
 import { Plus } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -17,7 +18,7 @@ function editorProjectId(pathname: string): string | undefined {
  * - Library / new-project routes: centered wordmark (the "go home" affordance).
  * - Editor route: wordmark pinned left as home, a collapsible {@link ProjectSwitcher} in the
  *   middle, and a {@link SaveStatus} indicator on the right.
- * The "New" (+) action is always present and navigates to `/new`.
+ * The settings gear and the "New" (+) action, which navigates to `/new`, are always present.
  */
 export function AppHeader() {
   const navigate = useNavigate();
@@ -54,6 +55,7 @@ export function AppHeader() {
             <span className="hidden sm:block">
               <SaveStatus projectId={projectId as string} />
             </span>
+            <SettingsButton />
             <Tooltip content="New project" side="bottom">
               <Button
                 size="sm"
@@ -70,7 +72,8 @@ export function AppHeader() {
       ) : (
         <>
           {wordmarkButton("[&_img]:h-14")}
-          <span className="absolute right-4">
+          <span className="absolute right-4 flex items-center gap-3">
+            <SettingsButton />
             <Tooltip content="New project" side="bottom">
               <Button
                 size="sm"

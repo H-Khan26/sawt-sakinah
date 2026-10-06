@@ -16,7 +16,7 @@
  * Once an initial detection exists, changing a slider debounces (~400 ms) a re-detect; the job
  * poll invalidates the project so the new silences refetch and the regions re-reconcile.
  * Switching mode alone never auto-detects: it changes what the sliders mean, so the user confirms
- * with the button. The chosen mode persists per browser via `useViewPrefs`.
+ * with the button. The chosen mode is stored with the app preferences via `useViewPrefs`.
  *
  * The server may silently substitute the energy gate for a VAD request (no onnxruntime, no
  * working copy). The job still succeeds, so the substitution is surfaced from the job result
