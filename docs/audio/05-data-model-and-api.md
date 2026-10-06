@@ -102,7 +102,9 @@ The service listens on localhost, so any web page the user opens can try to reac
 
 - **Host allow-list** (`SAWT_ALLOWED_HOSTS`, default `127.0.0.1` and `localhost`) blocks
   DNS rebinding.
-- **Origin check**: a `POST`/`PUT`/`PATCH`/`DELETE` with a non-local `Origin` gets a 403.
+- **Origin check**: a `POST`/`PUT`/`PATCH`/`DELETE` whose `Origin` is not the service's
+  own (or listed in `SAWT_ALLOWED_ORIGINS`, which `make dev` sets for the Vite server)
+  gets a 403, as does any request marked `Sec-Fetch-Site: cross-site`.
 - **Launch token**: when `auth_token` is set (the desktop shell always sets one), every
   request needs the `X-Sawt-Token` header or the session cookie. The window loads
   `/_session?token=…`, which sets the cookie and redirects to `/`. `GET /health` answers

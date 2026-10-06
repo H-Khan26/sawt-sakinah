@@ -58,9 +58,9 @@ WHISPER_COMPUTE_TYPES = frozenset(
     }
 )
 # ffmpeg bitrate ("192k") and VBR quality ("0".."9") forms.
-_BITRATE = re.compile(r"^[0-9]{2,3}[kK]$")
-_VBR_QUALITY = re.compile(r"^[0-9]$")
-_LANGUAGE = re.compile(r"^[a-z]{2,3}$")
+_BITRATE = re.compile(r"[0-9]{2,3}[kK]")
+_VBR_QUALITY = re.compile(r"[0-9]")
+_LANGUAGE = re.compile(r"[a-z]{2,3}")
 
 
 def _one_of(value: str, allowed: Iterable[str], field: str) -> str:
@@ -85,7 +85,7 @@ class CreateProjectRequest(BaseModel):
     @field_validator("audio_quality")
     @classmethod
     def _check_quality(cls, v: str) -> str:
-        if not (_VBR_QUALITY.match(v) or _BITRATE.match(v)):
+        if not (_VBR_QUALITY.fullmatch(v) or _BITRATE.fullmatch(v)):
             raise ValueError('audio_quality must be a VBR level "0"-"9" or a bitrate like "192k"')
         return v
 
@@ -151,7 +151,7 @@ class PhraseParams(BaseModel):
     @field_validator("language")
     @classmethod
     def _check_language(cls, v: str) -> str:
-        if not _LANGUAGE.match(v):
+        if not _LANGUAGE.fullmatch(v):
             raise ValueError("language must be a 2-3 letter language code")
         return v
 
@@ -195,7 +195,7 @@ class ExportRequest(BaseModel):
     @field_validator("bitrate")
     @classmethod
     def _check_bitrate(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and not _BITRATE.match(v):
+        if v is not None and not _BITRATE.fullmatch(v):
             raise ValueError('bitrate must look like "192k"')
         return v
 

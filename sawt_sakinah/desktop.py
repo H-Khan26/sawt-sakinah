@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import secrets
 import socket
 import threading
@@ -33,6 +34,10 @@ from typing import Optional, Sequence
 
 def _port_free(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        # Match uvicorn's bind on POSIX so a previous run's TIME_WAIT sockets don't count
+        # as busy. On Windows SO_REUSEADDR would allow binding over a live listener.
+        if os.name != "nt":
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind((host, port))
         except OSError:
@@ -58,9 +63,11 @@ def _wait_until_up(base_url: str, headers: dict[str, str], timeout: float = 20.0
     """
     deadline = time.monotonic() + timeout
     req = urllib.request.Request(f"{base_url}/health", headers=headers)
+    # Bypass any configured HTTP proxy: the probe (and its token) must stay on loopback.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(req, timeout=1.0) as res:  # noqa: S310 (local URL)
+            with opener.open(req, timeout=1.0) as res:  # noqa: S310 (local URL)
                 if res.status == 200:
                     return True
         except urllib.error.HTTPError:
@@ -94,6 +101,8 @@ def run(host: str = "127.0.0.1", port: int = 38427) -> int:
 
     token = secrets.token_urlsafe(32)
     settings = ServiceSettings(auth_token=token)
+    if host not in settings.allowed_hosts:
+        settings.allowed_hosts.append(host)
     if settings.static_dir is None or not settings.static_dir.is_dir():
         raise SystemExit(
             "The SPA isn't built, so there is nothing to show. Build it first:\n"

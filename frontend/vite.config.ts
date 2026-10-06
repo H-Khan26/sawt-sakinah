@@ -18,6 +18,8 @@ export default defineConfig({
   server: {
     port: DEV_PORT,
     strictPort: true,
+    // Same-origin through the proxy; no other local page should get CORS access.
+    cors: false,
     proxy: {
       "/projects": { target: API_TARGET, changeOrigin: true },
       "/jobs": { target: API_TARGET, changeOrigin: true },

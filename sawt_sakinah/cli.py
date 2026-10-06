@@ -14,6 +14,8 @@ Makefile invokes it so it never depends on the console script being on PATH.
 from __future__ import annotations
 
 import argparse
+import json
+import os
 from typing import Optional, Sequence
 
 from .config import CONFIG
@@ -28,6 +30,10 @@ def _serve(args: argparse.Namespace) -> int:
             "The service requires the 'service' extra. Install it with:\n"
             '  pip install -e ".[service]"   (or: make requirements)'
         )
+    # A non-loopback bind host must also pass the service's Host check. Set through the
+    # environment so the --reload child process inherits it.
+    if args.host not in ("127.0.0.1", "localhost") and "SAWT_ALLOWED_HOSTS" not in os.environ:
+        os.environ["SAWT_ALLOWED_HOSTS"] = json.dumps(["127.0.0.1", "localhost", args.host])
     # Import string (not the app object) so --reload can re-import on change.
     uvicorn.run(
         "sawt_sakinah.service.app:app",

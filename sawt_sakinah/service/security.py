@@ -5,9 +5,11 @@ The service listens on localhost, so any web page the user visits can try to rea
 
 * **DNS rebinding** -- ``TrustedHostMiddleware`` rejects any ``Host`` header that is not a
   local name, so a hostile domain re-pointed at ``127.0.0.1`` gets a 400.
-* **Cross-site requests** -- ``LocalGuard`` rejects state-changing requests whose
-  ``Origin`` is not local, requires the per-launch token when one is configured, and
-  refuses oversized uploads from ``Content-Length`` before Starlette spools the body.
+* **Cross-site requests** -- ``LocalGuard`` rejects any request the browser marks
+  ``Sec-Fetch-Site: cross-site`` and any state-changing request whose ``Origin`` is not
+  this service (or an explicitly allowed dev origin), requires the per-launch token when
+  one is configured, and refuses oversized uploads from ``Content-Length`` before
+  Starlette spools the body.
 
 The token is presented as the ``X-Sawt-Token`` header or as an HttpOnly, SameSite=Strict
 session cookie. The desktop window gets the cookie by first loading
@@ -18,6 +20,7 @@ session cookie. The desktop window gets the cookie by first loading
 from __future__ import annotations
 
 import json
+import re
 import secrets
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
@@ -34,6 +37,7 @@ TOKEN_HEADER = "x-sawt-token"
 SESSION_PATH = "/_session"
 UPLOAD_PATH = "/projects/upload"
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_DIGITS = re.compile(r"[0-9]+")
 # Headroom over the file cap for the multipart envelope (boundaries, part headers).
 _MULTIPART_OVERHEAD = 1024 * 1024
 
@@ -53,11 +57,13 @@ class LocalGuard:
         app: ASGIApp,
         *,
         allowed_hosts: list[str],
+        allowed_origins: list[str],
         token: Optional[str],
         max_upload_bytes: int,
     ) -> None:
         self.app = app
         self.allowed_hosts = {h.lower() for h in allowed_hosts}
+        self.allowed_origins = {o.lower().rstrip("/") for o in allowed_origins}
         self.token = token
         self.max_body = max_upload_bytes + _MULTIPART_OVERHEAD
 
@@ -70,7 +76,10 @@ class LocalGuard:
         method = scope["method"]
         path = scope["path"]
 
-        if method not in _SAFE_METHODS and not self._origin_ok(headers.get("origin")):
+        cross_site = headers.get("sec-fetch-site") == "cross-site"
+        if cross_site or (
+            method not in _SAFE_METHODS and not self._origin_ok(scope, headers.get("origin"))
+        ):
             await _reject(send, 403, "ForbiddenOrigin", "cross-site request refused")
             return
 
@@ -84,7 +93,7 @@ class LocalGuard:
 
         if method == "POST" and path == UPLOAD_PATH:
             length = headers.get("content-length")
-            if length is None or not length.isdigit():
+            if length is None or not _DIGITS.fullmatch(length):
                 await _reject(send, 411, "LengthRequired", "upload needs a Content-Length")
                 return
             if int(length) > self.max_body:
@@ -96,13 +105,28 @@ class LocalGuard:
 
         await self.app(scope, receive, send)
 
-    def _origin_ok(self, origin: Optional[str]) -> bool:
+    def _origin_ok(self, scope: Scope, origin: Optional[str]) -> bool:
+        """The origin must be this service itself (local host name, same port) or listed
+        in ``allowed_origins``. Another local port is a different origin."""
         # Browsers always send Origin on cross-origin writes; its absence means a
         # same-origin navigation or a non-browser client, which the token still covers.
         if origin is None:
             return True
+        origin = origin.lower().rstrip("/")
+        if origin in self.allowed_origins:
+            return True
         parts = urlsplit(origin)
-        return parts.scheme == "http" and (parts.hostname or "") in self.allowed_hosts
+        server = scope.get("server")
+        try:
+            port = parts.port or 80
+        except ValueError:
+            return False
+        return (
+            parts.scheme == "http"
+            and (parts.hostname or "") in self.allowed_hosts
+            and server is not None
+            and port == server[1]
+        )
 
     def _token_ok(self, scope: Scope, headers: Headers) -> bool:
         presented = headers.get(TOKEN_HEADER)
@@ -153,11 +177,17 @@ async def _reject(send: Send, status: int, error: str, detail: str) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
-def install_guards(app: FastAPI, allowed_hosts: list[str], token: Optional[str]) -> None:
+def install_guards(
+    app: FastAPI,
+    allowed_hosts: list[str],
+    allowed_origins: list[str],
+    token: Optional[str],
+) -> None:
     """Add the guards; the Host check is added last so it runs first."""
     app.add_middleware(
         LocalGuard,
         allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
         token=token,
         max_upload_bytes=CONFIG.extraction.max_upload_mb * 1024 * 1024,
     )
