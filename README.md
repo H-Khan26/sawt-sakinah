@@ -7,10 +7,6 @@
   Paste a YouTube link or drop in a file, find the silences and the takbirs, cut what you do not need, export.
 </p>
 
-<p align="center">
-  <img src="docs/assets/editor.png" alt="The editor: waveform with detected silences, markers and the prayer-structure panel" width="900">
-</p>
-
 ## What it does
 
 - **Acquires** audio from a YouTube URL or an uploaded file and keeps a 16 kHz working copy per project.
@@ -80,18 +76,18 @@ sawt_sakinah/
   editing/      EDL render and export (the only layer that writes audio)
   service/      FastAPI app, job pools, project store, routes
 frontend/       React 18 + TypeScript + Vite + Tailwind + TanStack Query, wavesurfer.js
-docs/           architecture (audio/, frontend/), design records (plans/), screenshots
+docs/           architecture (audio/, frontend/), design records (plans/), README assets
 scripts/dev.py  runs backend and frontend together
 ```
-
-## Screens
-
-| Library | New project | Export |
-|---|---|---|
-| ![Project library](docs/assets/library.png) | ![New project](docs/assets/new-project.png) | ![Export modal](docs/assets/export.png) |
 
 ## Documentation
 
 Start at [docs/README.md](docs/README.md) for the architecture map, then the audio-engine
 and frontend documents it links. Design records for larger changes are kept in
 [docs/plans/](docs/plans/).
+
+## License
+
+[MIT](LICENSE). Bundled third-party assets keep their own licenses: the Silero VAD model
+(MIT, `sawt_sakinah/detection/assets/SILERO_LICENSE`) and the webfonts (SIL OFL,
+`frontend/public/fonts/`).
