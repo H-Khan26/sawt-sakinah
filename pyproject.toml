@@ -20,10 +20,12 @@ dependencies = [
 # Optional feature sets. The library imports each lazily, so the core install never
 # needs them. Install a feature with e.g. `pip install -e ".[service]"`.
 [project.optional-dependencies]
-# FastAPI service layer (sawt_sakinah.service). numpy backs the waveform peaks.
+# FastAPI service layer (sawt_sakinah.service). numpy backs the waveform peaks;
+# python-multipart parses the file-upload form on POST /projects/upload.
 service = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
     "pydantic-settings>=2",
     "numpy>=1.24",
 ]
