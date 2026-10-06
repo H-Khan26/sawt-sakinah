@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sawt-sakinah"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Extract Quran recitation audio from YouTube, detect silence/takbirs, and edit non-destructively."
 readme = "README.md"
 license = "MIT"
@@ -13,10 +13,12 @@ requires-python = ">=3.10"
 
 # Core runtime: extraction (yt-dlp + ffmpeg), the shared pydantic contracts, and the
 # YAML config loader. ffmpeg/ffprobe are a separate standalone binary, not a pip dep.
+# platformdirs places user data in the desktop bundle (see runtime.py).
 dependencies = [
     "yt-dlp>=2026.6.9",
     "pydantic>=2",
     "PyYAML>=6",
+    "platformdirs>=4",
 ]
 
 # Optional feature sets. The library imports each lazily, so the core install never
@@ -59,6 +61,9 @@ all = [
 [project.scripts]
 # Console entry point. Equivalent to `python -m sawt_sakinah`.
 sawt = "sawt_sakinah.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "sawt_sakinah.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["sawt_sakinah*"]
