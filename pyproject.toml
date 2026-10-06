@@ -20,10 +20,12 @@ dependencies = [
 # Optional feature sets. The library imports each lazily, so the core install never
 # needs them. Install a feature with e.g. `pip install -e ".[service]"`.
 [project.optional-dependencies]
-# FastAPI service layer (sawt_sakinah.service). numpy backs the waveform peaks.
+# FastAPI service layer (sawt_sakinah.service). numpy backs the waveform peaks;
+# python-multipart parses the file-upload form on POST /projects/upload.
 service = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
     "pydantic-settings>=2",
     "numpy>=1.24",
 ]
@@ -34,15 +36,12 @@ phrases = [
     "faster-whisper>=1.0",
     "rapidfuzz>=3.0",
 ]
-# Silero VAD silence detector (detector="vad"). Inference runs through onnxruntime, but
-# silero-vad declares torch/torchaudio as hard deps, so they are pinned for a
-# reproducible install.
+# Silero VAD speech segmentation (detection/segmentation.py; the "vad" silence detector
+# and speech-scoped phrase detection build on it). The network ships as a vendored ONNX
+# file under sawt_sakinah/detection/assets and runs on onnxruntime + numpy; no torch.
 vad = [
     "numpy>=1.24",
     "onnxruntime>=1.17",
-    "silero-vad>=5.1",
-    "torch>=1.12.0",
-    "torchaudio>=0.12.0",
 ]
 # Desktop shell (sawt_sakinah.desktop): a native window over the local service via
 # pywebview. Requires the built SPA (frontend/dist) and the `service` extra. Kept out of
@@ -63,5 +62,9 @@ sawt = "sawt_sakinah.cli:main"
 include = ["sawt_sakinah*"]
 
 [tool.setuptools.package-data]
+# PEP 561 marker: the package is fully annotated, so type checkers may use it inline.
+"sawt_sakinah" = ["py.typed"]
 # Ship the single-source-of-truth config alongside the code.
 "sawt_sakinah.config" = ["*.yaml"]
+# Vendored Silero VAD network (ONNX) and its license.
+"sawt_sakinah.detection" = ["assets/*"]

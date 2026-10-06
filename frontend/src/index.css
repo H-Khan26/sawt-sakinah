@@ -16,9 +16,9 @@
   font-display: swap;
 }
 @font-face {
-  font-family: "Futura";
-  src: url("/fonts/Futura-Regular.woff2") format("woff2");
-  font-weight: 400 500;
+  font-family: "Jost";
+  src: url("/fonts/Jost-Variable.woff2") format("woff2");
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
@@ -52,8 +52,7 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Design tokens. Inherited from the base theme (light mode, warm cream surfaces,
- * slate text) EXCEPT the accent, which is remapped from burgundy to purple:
+ * Design tokens. Light mode, warm cream surfaces, slate text, purple accent:
  * primary #450377, hover #38025f, accent #9667ba.
  * ------------------------------------------------------------------------- */
 :root {
@@ -129,13 +128,12 @@
      * Body never scrolls (main handles overflow), so it reads as a fixed backdrop
      * behind the UI. */
     background-color: var(--color-background);
-    background-image:
-      linear-gradient(rgba(252, 251, 248, 0.74), rgba(252, 251, 248, 0.74)),
+    background-image: linear-gradient(rgba(252, 251, 248, 0.74), rgba(252, 251, 248, 0.74)),
       url("/ogee-bg.svg");
     background-repeat: repeat;
     background-size: 300px 400px;
     color: var(--color-text);
-    font-family: "Futura", system-ui, sans-serif;
+    font-family: "Jost", system-ui, sans-serif;
     font-size: 16px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;

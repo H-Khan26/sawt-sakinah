@@ -26,6 +26,9 @@ class AudioSource(BaseModel):
     ``local_path`` is the user-facing artifact (always the transcoded mp3). ``working_copy``
     is an optional normalized PCM copy (16 kHz mono) that detection prefers for stable
     thresholds; it is populated by the normalization step and is ``None`` until then.
+    ``speech_map`` is the optional Silero speech-probability sidecar derived from the
+    working copy; every speech-aware detector re-thresholds it instead of re-running
+    the network.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -43,6 +46,7 @@ class AudioSource(BaseModel):
     source_url: Optional[str] = None     # normalized canonical URL; None for uploads
     original_filename: Optional[str] = None  # uploaded file's name; None for YouTube
     working_copy: Optional[Path] = None  # 16 kHz mono WAV for detection
+    speech_map: Optional[Path] = None    # Silero speech-probability sidecar (.npz); None until computed or when the vad extra is missing
 
     def to_dict(self) -> dict:
         """JSON-safe dict (paths as strings, datetimes as ISO) for cache sidecars."""

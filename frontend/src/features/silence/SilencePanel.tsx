@@ -80,7 +80,11 @@ export function SilencePanel({ project }: { project: ProjectView }) {
   return (
     <PanelSection id="silence" title="Silence">
       <div className="flex flex-col gap-4">
-        <SilenceControls projectId={projectId} hasDetected={silences.length > 0} />
+        <SilenceControls
+          projectId={projectId}
+          hasDetected={silences.length > 0}
+          hasSpeechMap={project.audio_source.has_speech_map}
+        />
 
         <div className="flex items-center justify-between text-sm text-text-secondary">
           <span>

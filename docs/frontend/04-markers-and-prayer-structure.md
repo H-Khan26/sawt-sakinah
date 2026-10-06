@@ -1,6 +1,6 @@
 # Markers & Prayer Structure
 
-> Status: planning. Surfaces detected phrases (takbirs) as timeline markers and turns
+> Status: implemented. Surfaces detected phrases (takbirs) as timeline markers and turns
 > them into a navigable rak'ah / position outline.
 
 ## Goal
@@ -34,7 +34,7 @@ edit that interpretation. See [../audio/03-phrase-detection.md](../audio/03-phra
 ## Timeline markers
 
 - Render each `Marker` as a vertical line on the waveform with a small label chip
-  (`Badge`-styled). Color by type (takbir = burgundy; tasmi'/tahmid/tasleem = variants).
+  (`Badge`-styled). Color by type (takbir = purple accent; tasmi'/tahmid/tasleem = variants).
 - Show confidence visually (e.g. lower opacity / dashed for low-confidence auto markers)
   so the user knows which to verify.
 - Click marker → seek to it; drag → adjust time (updates state + backend); right-click /

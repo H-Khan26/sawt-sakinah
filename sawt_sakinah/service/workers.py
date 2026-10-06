@@ -10,9 +10,13 @@ endpoints never produce files.
 
 from __future__ import annotations
 
+import logging
 import shutil
 import tempfile
+import threading
+import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from ..config import CONFIG
@@ -21,6 +25,7 @@ from ..editing import render
 from ..extraction import extract_audio, import_file
 from ..extraction.probe import ffprobe_for
 from ..extraction.probe import probe
+from ..extraction.segment import write_speech_map
 from ..models import (
     AudioSource,
     EditDecisionList,
@@ -40,6 +45,28 @@ from .schemas import (
     SplitRequest,
 )
 from .settings import ServiceSettings
+
+if TYPE_CHECKING:  # pragma: no cover - typing only; segmentation needs numpy/onnxruntime
+    from ..detection.segmentation import SpeechMap
+
+_log = logging.getLogger(__name__)
+
+# Serializes the lazy speech-map compute per project. Silence and phrase jobs for the
+# same project run on different pools, so without this both could pay for the Silero
+# pass and race to write the same sidecar. Distinct from ``ProjectStore``'s lock, which
+# only guards the short project.json read-modify-write and must not be held for seconds.
+_SPEECH_MAP_LOCKS: dict[str, threading.Lock] = {}
+_SPEECH_MAP_LOCKS_GUARD = threading.Lock()
+
+
+def _speech_map_lock(project_id: str) -> threading.Lock:
+    """Return the per-project lock guarding speech-map load/compute."""
+    with _SPEECH_MAP_LOCKS_GUARD:
+        lock = _SPEECH_MAP_LOCKS.get(project_id)
+        if lock is None:
+            lock = threading.Lock()
+            _SPEECH_MAP_LOCKS[project_id] = lock
+        return lock
 
 
 def _edl_for_range(
@@ -67,31 +94,98 @@ def _range_label(range_start: float, range_end: float) -> str:
     return f"{clock(range_start)}-{clock(range_end)}"
 
 
+def _copy_into(path: Path | None, audio_dir: Path) -> Path | None:
+    """Copy ``path`` into ``audio_dir`` unless it already lives there.
+
+    Returns the new location when a move is needed, else ``None`` (nothing to update).
+    An existing file of the same name is reused rather than overwritten.
+    """
+    if path is None:
+        return None
+    src = Path(path)
+    if src.parent.resolve() == audio_dir.resolve():
+        return None
+    dst = audio_dir / src.name
+    if not dst.exists():
+        shutil.copy2(src, dst)
+    return dst
+
+
 def _localize(source: AudioSource, audio_dir: Path) -> AudioSource:
     """Copy ``source``'s files into ``audio_dir`` if they live elsewhere (e.g. a cache hit).
 
     Keeps each project self-contained: a cache hit dedupes the expensive download/transcode
     but the project still owns its own copy, so deleting another project never strands it.
+    The mp3, the working copy and the speech-map sidecar all travel together.
     """
     audio_dir.mkdir(parents=True, exist_ok=True)
     updates: dict = {}
-
-    local = Path(source.local_path)
-    if local.parent.resolve() != audio_dir.resolve():
-        dst = audio_dir / local.name
-        if not dst.exists():
-            shutil.copy2(local, dst)
-        updates["local_path"] = dst
-
-    if source.working_copy is not None:
-        work = Path(source.working_copy)
-        if work.parent.resolve() != audio_dir.resolve():
-            dst = audio_dir / work.name
-            if not dst.exists():
-                shutil.copy2(work, dst)
-            updates["working_copy"] = dst
-
+    for field in ("local_path", "working_copy", "speech_map"):
+        moved = _copy_into(getattr(source, field), audio_dir)
+        if moved is not None:
+            updates[field] = moved
     return source.model_copy(update=updates) if updates else source
+
+
+def _ensure_speech_map(
+    store: ProjectStore, project: Project, ffmpeg_bin: str = CONFIG.ffmpeg.bin
+) -> "SpeechMap | None":
+    """Return the project's speech map, computing and persisting it when absent or unusable.
+
+    Sources created before the sidecar existed (or whose sidecar was healed away) get it
+    on first speech-aware detect; the new path is written back through ``store.update``
+    so later jobs load it directly. A sidecar that cannot be read (corrupt, truncated,
+    missing keys) or that was produced by a different model version is recomputed in
+    place rather than failing the job. Returns ``None`` when there is no working copy to
+    derive it from or the ``vad`` extra (onnxruntime) is not installed, in which case the
+    callers fall back to speech-unaware behaviour.
+
+    The whole body runs under the project's speech-map lock, and the project is
+    re-loaded inside it: a concurrent job for the same project may have just finished
+    the compute, in which case its sidecar is loaded instead of being redone. The store
+    already heals a missing file to ``None`` on load, so no existence check is needed.
+    ``store.update`` is only entered for the path write, never around the compute.
+    """
+    from ..detection import segmentation
+    from ..detection.segmentation import SpeechMap
+
+    with _speech_map_lock(project.id):
+        current = store.load(project.id)
+        if current is not None:
+            project = current
+        src = project.audio_source
+        if src.speech_map is not None:
+            try:
+                speech_map = SpeechMap.load(src.speech_map)
+            except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile) as err:
+                _log.warning(
+                    "speech map for project %s is unreadable (%s); recomputing", project.id, err
+                )
+            else:
+                if speech_map.model_version == segmentation.MODEL_VERSION:
+                    return speech_map
+                _log.warning(
+                    "speech map for project %s was produced by %s, current model is %s; recomputing",
+                    project.id,
+                    speech_map.model_version,
+                    segmentation.MODEL_VERSION,
+                )
+        if src.working_copy is None:
+            return None
+        try:
+            path = write_speech_map(
+                src.working_copy, output_path=src.speech_map, ffmpeg_bin=ffmpeg_bin
+            )
+        except ImportError as err:
+            _log.warning("speech map unavailable for project %s: %s", project.id, err)
+            return None
+        store.update(
+            project.id,
+            lambda p: p.model_copy(
+                update={"audio_source": p.audio_source.model_copy(update={"speech_map": path})}
+            ),
+        )
+        return SpeechMap.load(path)
 
 
 def _persist_source(
@@ -185,6 +279,19 @@ def silence_worker(
         if project is None:
             raise KeyError(project_id)
         src = project.audio_source.working_copy or project.audio_source.local_path
+        # Only the speech-aware detector needs the map, so the energy gate never pays for
+        # (or waits on) a Silero pass. Without a map (no onnxruntime, or no working copy)
+        # degrade to the energy gate instead of failing the job, and say so.
+        detector = params.detector
+        speech_map = (
+            _ensure_speech_map(store, project, settings.ffmpeg_bin)
+            if detector == "vad"
+            else None
+        )
+        result: dict = {}
+        if detector == "vad" and speech_map is None:
+            detector = "ffmpeg"
+            result.update({"detector": "ffmpeg", "fallback": "vad unavailable"})
         segments = detect_silence(
             src,
             threshold_db=params.threshold_db,
@@ -192,8 +299,10 @@ def silence_worker(
             merge_gap=params.merge_gap,
             measure_loudness=params.measure_loudness,
             total_duration=project.audio_source.duration_sec,
-            detector=params.detector,
+            detector=detector,
             speech_threshold=params.speech_threshold,
+            min_speech_duration=params.min_speech_duration,
+            speech_map=speech_map,
             ffmpeg_bin=settings.ffmpeg_bin,
         )
         store.update(
@@ -206,7 +315,8 @@ def silence_worker(
             ),
         )
         progress({"stage": "detect", "status": "done"})
-        return {"silences": len(segments)}
+        result["silences"] = len(segments)
+        return result
 
     return run
 
@@ -225,6 +335,10 @@ def phrases_worker(
         if project is None:
             raise KeyError(project_id)
         src = project.audio_source.working_copy or project.audio_source.local_path
+        # With a speech map, only the speech clips are transcribed and onsets snap to span
+        # edges; without one the full file is transcribed with Whisper's own VAD filter.
+        speech_map = _ensure_speech_map(store, project, settings.ffmpeg_bin)
+        spans = speech_map.spans() if speech_map is not None else None
         markers = detect_phrases(
             src,
             phrases=params.phrases,
@@ -237,6 +351,12 @@ def phrases_worker(
             min_gap_between_markers=params.min_gap_between_markers,
             max_word_gap=params.max_word_gap,
             vad_filter=params.vad_filter,
+            speech_spans=spans,
+            snap_window=params.snap_window,
+            clip_merge_gap=params.clip_merge_gap,
+            clip_pad=params.clip_pad,
+            total_duration=project.audio_source.duration_sec,
+            ffmpeg_bin=settings.ffmpeg_bin,
         )
         structure = derive_structure(markers, total_duration=project.audio_source.duration_sec)
         store.update(

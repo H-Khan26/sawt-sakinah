@@ -19,11 +19,17 @@ env/
 .env
 .env.*
 
-# Local runtime data (projects + cache dirs)
+# Local runtime data (projects + cache dirs), anchored to the repo root so that
+# source folders with the same names (frontend/src/features/projects) stay tracked.
 # The actual paths are under %LOCALAPPDATA% or ~/.local/share by default,
 # but if someone points SAWT_PROJECTS_DIR / SAWT_CACHE_DIR at a local folder:
-projects/
-cache/
+/projects/
+/cache/
+
+# Test / build caches
+.pytest_cache/
+node_modules/
+*.tsbuildinfo
 
 # Editor / OS
 .vscode/

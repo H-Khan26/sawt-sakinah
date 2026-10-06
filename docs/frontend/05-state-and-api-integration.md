@@ -1,6 +1,6 @@
 # State & API Integration
 
-> Status: planning. How the frontend holds state and talks to the audio engine's API.
+> Status: implemented. How the frontend holds state and talks to the audio engine's API.
 > Uses TanStack React Query for server state and React state/stores for local state.
 
 ## Goal
@@ -72,6 +72,6 @@ stores — avoid duplicating server state into local stores (a common source of 
 
 ## Error handling
 
-- Surface typed backend errors (extraction failures, detection errors) via the base theme
+- Surface typed backend errors (extraction failures, detection errors) via
   `Alert` / `Toast`. Provide retry actions tied to the originating job.
 - Guard destructive/irreversible actions (export, "remove all silence") with confirms.

@@ -54,10 +54,18 @@ class ExtractionConfig(_Section):
     audio_quality: str
     quiet: bool
     create_working_copy: bool
+    create_speech_map: bool
     normalize_loudness: bool
     use_cache: bool
     max_upload_mb: int
     allowed_upload_extensions: tuple[str, ...]
+
+
+class SegmentationConfig(_Section):
+    speech_threshold: float
+    min_speech_duration: float
+    bridge_gap: float
+    speech_pad: float
 
 
 class SilenceConfig(_Section):
@@ -67,8 +75,6 @@ class SilenceConfig(_Section):
     merge_gap: Optional[float]
     measure_loudness: bool
     detector: str
-    speech_threshold: float
-    min_speech_duration: float
 
 
 class PhraseConfig(_Section):
@@ -81,6 +87,9 @@ class PhraseConfig(_Section):
     min_gap_between_markers: float
     max_word_gap: float
     vad_filter: bool
+    snap_window: float
+    clip_merge_gap: float
+    clip_pad: float
     keyword_gate: float
     fuzzy_floor: float
     fuzzy_weight: float
@@ -107,6 +116,7 @@ class Config(_Section):
     ffmpeg: FfmpegConfig
     audio: AudioConfig
     extraction: ExtractionConfig
+    segmentation: SegmentationConfig
     silence: SilenceConfig
     phrases: PhraseConfig
     editing: EditingConfig

@@ -1,7 +1,7 @@
 # Waveform & Playback
 
-> Status: planning / library-selection needed. The waveform is the net-new, central
-> component. This doc frames requirements and candidate libraries for React.
+> Status: implemented with wavesurfer.js v7 (`src/features/waveform/`). The waveform is
+> the central component. This doc records the requirements and the React integration.
 
 ## Goal
 
@@ -11,7 +11,7 @@ markers are drawn onto. Press-and-play must feel immediate.
 
 ## Requirements
 
-- Waveform rendering of the full track, themed to the base theme (burgundy played / grey
+- Waveform rendering of the full track, themed to the app tokens (purple played / grey
   unplayed, see [00-overview.md](00-overview.md)).
 - Transport: play, pause, seek by click/drag, current-time + duration display,
   optional zoom and playback-rate.
@@ -22,27 +22,27 @@ markers are drawn onto. Press-and-play must feel immediate.
 - Performance on long recordings (a full prayer can be many minutes): prefer
   precomputed peak data over decoding the entire file in the browser.
 
-## Candidate libraries (framework-agnostic; usable from React)
+## Library choice
 
-1. **wavesurfer.js v7** *(recommended starting point)*
-   - Vanilla-JS, framework-agnostic — wrap in a React component (init in a `useEffect`,
-     destroy in its cleanup; store the instance in a `useRef`, never in state). A
-     `@wavesurfer/react` hook also exists if you prefer it over a hand-rolled wrapper.
-   - First-class **Regions** plugin (silence highlights, draggable/selectable) and
-     **Markers/Timeline** support — maps directly onto our silence regions and takbir
-     markers. Exposes play/pause/seek/zoom and time events.
-   - Accepts **precomputed peaks** so we can render instantly from backend peak data.
+1. **wavesurfer.js v7** *(adopted)*
+   - Vanilla-JS, framework-agnostic — wrapped in a hand-rolled React hook
+     (`useWavesurfer.ts`: init in a `useEffect`, destroy in its cleanup; the instance
+     lives in a `useRef`, never in state).
+   - First-class **Regions** plugin (silence highlights, selectable) and
+     **Timeline/Hover** plugins — these map directly onto the silence regions and the
+     takbir marker overlay. Exposes play/pause/seek/zoom and time events.
+   - Accepts **precomputed peaks**, so the track renders instantly from backend peak data.
 
-2. **Peaks.js (BBC)**
+2. **Peaks.js (BBC)** *(considered, not adopted)*
    - Built for long-form audio with a zoomable overview + detail view and points/
-     segments (markers/regions). Heavier, opinionated; strong for long recordings.
+     segments (markers/regions). Heavier and more opinionated than needed here.
 
-3. **WaveSurfer alternatives / custom canvas**
-   - Roll a custom `<canvas>` renderer from backend peaks if libraries don't fit the
-     interaction model. Most work; only if needed.
+3. **Custom canvas** *(considered, not adopted)*
+   - A hand-rolled `<canvas>` renderer over backend peaks was the fallback if no library
+     fit the interaction model; wavesurfer's plugins covered the overlay needs.
 
-> Evaluate wavesurfer.js v7 first — its Regions + Markers plugins cover both of our
-> overlay needs out of the box and it integrates cleanly with React's lifecycle.
+> wavesurfer.js v7 was chosen because its Regions and Timeline plugins cover both overlay
+> needs out of the box and it integrates cleanly with React's lifecycle.
 
 ## React integration notes
 

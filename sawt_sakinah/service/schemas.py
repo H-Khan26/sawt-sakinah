@@ -8,8 +8,9 @@ module adds two things on top:
   ``SilenceParams``, ``PhraseRequest``, ``EdlUpdate``, ``ExportRequest``). The worker maps
   these onto the many internal detection/export kwargs.
 * **Wire views** -- ``ProjectView`` / ``AudioSourceView`` / ``ExportArtifactView`` strip
-  server filesystem paths (``local_path``, ``working_copy``, artifact ``path``) and expose
-  endpoint URLs instead, so Windows/server paths never leak to the client.
+  server filesystem paths (``local_path``, ``working_copy``, ``speech_map``, artifact
+  ``path``) and expose endpoint URLs (or a presence flag) instead, so Windows/server
+  paths never leak to the client.
 """
 
 from __future__ import annotations
@@ -57,7 +58,8 @@ class SilenceParams(BaseModel):
     merge_gap: Optional[float] = CONFIG.silence.merge_gap
     measure_loudness: bool = CONFIG.silence.measure_loudness
     detector: str = CONFIG.silence.detector
-    speech_threshold: float = CONFIG.silence.speech_threshold
+    speech_threshold: float = CONFIG.segmentation.speech_threshold
+    min_speech_duration: float = CONFIG.segmentation.min_speech_duration
 
 
 class PhraseParams(BaseModel):
@@ -72,6 +74,9 @@ class PhraseParams(BaseModel):
     min_gap_between_markers: float = CONFIG.phrases.min_gap_between_markers
     max_word_gap: float = CONFIG.phrases.max_word_gap
     vad_filter: bool = CONFIG.phrases.vad_filter
+    snap_window: float = CONFIG.phrases.snap_window
+    clip_merge_gap: float = CONFIG.phrases.clip_merge_gap
+    clip_pad: float = CONFIG.phrases.clip_pad
 
 
 class PhraseRequest(BaseModel):
@@ -162,6 +167,7 @@ class AudioSourceView(BaseModel):
     content_hash: str
     created_at: datetime
     audio_url: str
+    has_speech_map: bool  # speech-aware controls (VAD silence, snapping) are available
 
 
 class ExportArtifactView(BaseModel):
@@ -212,6 +218,7 @@ def to_project_view(project: Project) -> ProjectView:
         content_hash=s.content_hash,
         created_at=s.created_at,
         audio_url=f"/projects/{project.id}/audio",
+        has_speech_map=s.speech_map is not None,
     )
     exports = [
         ExportArtifactView(

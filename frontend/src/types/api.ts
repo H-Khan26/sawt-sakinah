@@ -84,6 +84,9 @@ export interface AudioSourceView {
   created_at: string;
   /** Relative URL of the streamable audio (range requests supported). */
   audio_url: string;
+  /** True once the speech-probability map for the source is persisted server-side; VAD
+   * re-detects then reuse it instead of re-running the model over the audio. */
+  has_speech_map: boolean;
 }
 
 export interface ExportArtifactView {
@@ -149,7 +152,10 @@ export type JobKind = "extract" | "detect_silence" | "detect_phrases" | "export"
  * `GET /jobs/{id}`. `progress` is an arbitrary, per-kind dict: detection/export jobs
  * emit `{ stage, status }`; extraction emits the yt-dlp progress hook payload
  * (`status`, `downloaded_bytes`, `total_bytes`, ...). `result` is the job's summary
- * (e.g. `{ project_id, duration_sec }`, `{ silences }`, `{ artifact_id }`).
+ * (e.g. `{ project_id, duration_sec }`, `{ detector, fallback?, silences }`,
+ * `{ artifact_id }`). A silence job reports the detector that actually ran; when the
+ * requested VAD could not run it still succeeds with `detector: "ffmpeg"` and a
+ * `fallback` reason, so callers must read `result` rather than infer from the request.
  */
 export interface JobRecord {
   id: string;
@@ -162,6 +168,17 @@ export interface JobRecord {
   error_type: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * `result` of a `detect_silence` job. `detector` is the backend that actually ran, which
+ * differs from the request when the VAD is unavailable; `fallback` then carries the reason
+ * and is absent otherwise.
+ */
+export interface SilenceJobResult {
+  detector: SilenceDetector;
+  fallback?: string;
+  silences: number;
 }
 
 // --- request DTOs (service/schemas.py) --------------------------------------
@@ -181,13 +198,23 @@ export interface JobAccepted {
   job_id: string;
 }
 
+/** Silence detector backend: Silero speech-probability VAD (server default) or ffmpeg energy gate. */
+export type SilenceDetector = "ffmpeg" | "vad";
+
+/**
+ * Body of `POST /projects/{id}/detect/silence`. `threshold_db` applies to the energy gate only;
+ * `speech_threshold` / `min_speech_duration` to the VAD only; `min_silence_duration` to both.
+ */
 export interface SilenceParams {
   threshold_db?: number;
   min_silence_duration?: number;
   merge_gap?: number | null;
   measure_loudness?: boolean;
-  detector?: string;
+  detector?: SilenceDetector;
+  /** Speech-probability cutoff, 0..1 (VAD only). */
   speech_threshold?: number;
+  /** Shortest speech burst kept as speech, seconds (VAD only). */
+  min_speech_duration?: number;
 }
 
 export interface PhraseParams {
@@ -200,6 +227,9 @@ export interface PhraseParams {
   min_gap_between_markers?: number;
   max_word_gap?: number;
   vad_filter?: boolean;
+  snap_window?: number;
+  clip_merge_gap?: number;
+  clip_pad?: number;
 }
 
 export interface PhraseRequest {

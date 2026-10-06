@@ -4,8 +4,8 @@ export default {
   theme: {
     extend: {
       // All values bind to the CSS custom properties defined in src/index.css so the
-      // tokens stay single-source. Purple theme (#450377 / #9667ba) replaces the base theme's
-      // burgundy; cream backgrounds and slate text are inherited unchanged.
+      // tokens stay single-source. Purple theme (#450377 / #9667ba) over cream
+      // backgrounds and slate text.
       colors: {
         background: {
           DEFAULT: "var(--color-background)",
@@ -34,7 +34,7 @@ export default {
       },
       fontFamily: {
         serif: ["Ibarra Real Nova", "Georgia", "serif"],
-        sans: ["Futura", "system-ui", "sans-serif"],
+        sans: ["Jost", "system-ui", "sans-serif"],
         "arabic-display": ["Amiri", "Scheherazade New", "serif"],
         arabic: ["IBM Plex Sans Arabic", "Noto Naskh Arabic", "sans-serif"],
       },
