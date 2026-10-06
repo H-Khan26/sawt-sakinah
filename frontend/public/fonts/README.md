@@ -8,11 +8,11 @@ exact names:
 | File | Source / license |
 |---|---|
 | `Jost-Variable.woff2` | Jost, Latin subset, variable weight (OFL, `Jost-OFL.txt`) — https://github.com/indestructible-type/Jost / Google Fonts. Committed. |
-| `IbarraRealNova-Regular.woff2` | Ibarra Real Nova (OFL) — https://github.com/googlefonts/ibarrareal / Google Fonts |
-| `Amiri-Regular.woff2`, `Amiri-Bold.woff2` | Amiri (OFL) — https://github.com/aliftype/amiri / Google Fonts |
-| `IBMPlexSansArabic-Regular.woff2`, `IBMPlexSansArabic-SemiBold.woff2` | IBM Plex Sans Arabic (OFL) — https://github.com/IBM/plex / Google Fonts |
+| `IbarraRealNova-Regular.woff2` | Ibarra Real Nova, variable weight 400–700 (OFL, `IbarraRealNova-OFL.txt`) — https://github.com/googlefonts/ibarrareal / Google Fonts. Committed. |
+| `Amiri-Regular.woff2`, `Amiri-Bold.woff2` | Amiri, full Arabic + Latin (OFL, `Amiri-OFL.txt`) — https://github.com/aliftype/amiri / Google Fonts. Committed. |
+| `IBMPlexSansArabic-Regular.woff2`, `IBMPlexSansArabic-SemiBold.woff2` | IBM Plex Sans Arabic, full Arabic + Latin (OFL, `IBMPlexSansArabic-OFL.txt`) — https://github.com/IBM/plex / Google Fonts. Committed. |
 
-Until a file is present the app renders the fallback stacks defined in
-`tailwind.config.js` (`serif`/`sans`/`arabic-display`/`arabic`). Use `.woff2`; if you only
-have `.ttf`/`.otf`, convert (e.g. `woff2_compress`) or update the `src` URLs. Ship each
-font's `OFL.txt` alongside it.
+The woff2 files are unsubsetted conversions (fontTools) of the TTFs in
+https://github.com/google/fonts/tree/main/ofl, except Jost. Arabic faces keep all glyphs and
+OpenType layout features, which Quranic text with diacritics needs. If a file fails to load,
+the fallback stacks in `tailwind.config.js` (`serif`/`sans`/`arabic-display`/`arabic`) render.

@@ -31,6 +31,7 @@ from ..models import (
     EditDecisionList,
     EditOperation,
     ExportArtifact,
+    InvalidInputError,
     Project,
     ProjectStatus,
 )
@@ -387,7 +388,12 @@ def export_worker(
         if project is None:
             raise KeyError(project_id)
         artifact_id = uuid4().hex
-        out_path = store.exports_dir(project_id) / f"{artifact_id}.{req.format}"
+        exports_root = store.exports_dir(project_id).resolve()
+        out_path = (exports_root / f"{artifact_id}.{req.format}").resolve()
+        # Defence in depth behind the schema's format allow-list: never write outside the
+        # project's exports folder.
+        if out_path.parent != exports_root:
+            raise InvalidInputError(f"invalid export format: {req.format!r}")
         # Scope to a selected range when requested: render the saved EDL plus a keep op for the
         # range (edits inside it stay applied), leaving the project's saved EDL untouched.
         scoped = req.range_start is not None and req.range_end is not None

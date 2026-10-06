@@ -15,8 +15,9 @@ module adds two things on top:
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
-from typing import Optional
+from typing import Iterable, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -32,6 +33,42 @@ from ..models import (
     SilenceSegment,
 )
 
+# --- allowed values ----------------------------------------------------------
+# Request strings reach file names, ffmpeg arguments and model loading, so each is checked
+# against a closed set. The configured default is always allowed, so an operator's
+# defaults.yaml choice keeps working even when it is outside the built-in list.
+
+EXPORT_FORMATS = frozenset({"mp3", "m4a", "wav", "flac"}) | {CONFIG.editing.out_format}
+EXTRACT_FORMATS = frozenset({"mp3", "m4a", "wav", "flac", "opus"}) | {
+    CONFIG.extraction.audio_format
+}
+SILENCE_DETECTORS = frozenset({"vad", "ffmpeg"})
+WHISPER_MODELS = frozenset(
+    {
+        "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en",
+        "large-v1", "large-v2", "large-v3", "large", "large-v3-turbo", "turbo",
+        "distil-small.en", "distil-medium.en", "distil-large-v2", "distil-large-v3",
+    }
+) | {CONFIG.phrases.model_size}
+WHISPER_DEVICES = frozenset({"cpu", "cuda", "auto"})
+WHISPER_COMPUTE_TYPES = frozenset(
+    {
+        "default", "auto", "int8", "int8_float16", "int8_float32", "int8_bfloat16",
+        "int16", "float16", "float32", "bfloat16",
+    }
+)
+# ffmpeg bitrate ("192k") and VBR quality ("0".."9") forms.
+_BITRATE = re.compile(r"[0-9]{2,3}[kK]")
+_VBR_QUALITY = re.compile(r"[0-9]")
+_LANGUAGE = re.compile(r"[a-z]{2,3}")
+
+
+def _one_of(value: str, allowed: Iterable[str], field: str) -> str:
+    if value not in allowed:
+        raise ValueError(f"{field} must be one of: {', '.join(sorted(allowed))}")
+    return value
+
+
 # --- request DTOs ------------------------------------------------------------
 
 
@@ -39,6 +76,18 @@ class CreateProjectRequest(BaseModel):
     url: str
     audio_format: str = CONFIG.extraction.audio_format
     audio_quality: str = CONFIG.extraction.audio_quality
+
+    @field_validator("audio_format")
+    @classmethod
+    def _check_format(cls, v: str) -> str:
+        return _one_of(v, EXTRACT_FORMATS, "audio_format")
+
+    @field_validator("audio_quality")
+    @classmethod
+    def _check_quality(cls, v: str) -> str:
+        if not (_VBR_QUALITY.fullmatch(v) or _BITRATE.fullmatch(v)):
+            raise ValueError('audio_quality must be a VBR level "0"-"9" or a bitrate like "192k"')
+        return v
 
 
 class CreateProjectResponse(BaseModel):
@@ -61,6 +110,11 @@ class SilenceParams(BaseModel):
     speech_threshold: float = CONFIG.segmentation.speech_threshold
     min_speech_duration: float = CONFIG.segmentation.min_speech_duration
 
+    @field_validator("detector")
+    @classmethod
+    def _check_detector(cls, v: str) -> str:
+        return _one_of(v, SILENCE_DETECTORS, "detector")
+
 
 class PhraseParams(BaseModel):
     """Inputs for ``POST /detect/phrases`` (mapped to ``detect_phrases`` kwargs)."""
@@ -77,6 +131,29 @@ class PhraseParams(BaseModel):
     snap_window: float = CONFIG.phrases.snap_window
     clip_merge_gap: float = CONFIG.phrases.clip_merge_gap
     clip_pad: float = CONFIG.phrases.clip_pad
+
+    @field_validator("model_size")
+    @classmethod
+    def _check_model(cls, v: str) -> str:
+        # Never an arbitrary Hugging Face repo id or local path.
+        return _one_of(v, WHISPER_MODELS, "model_size")
+
+    @field_validator("device")
+    @classmethod
+    def _check_device(cls, v: str) -> str:
+        return _one_of(v, WHISPER_DEVICES, "device")
+
+    @field_validator("compute_type")
+    @classmethod
+    def _check_compute_type(cls, v: str) -> str:
+        return _one_of(v, WHISPER_COMPUTE_TYPES, "compute_type")
+
+    @field_validator("language")
+    @classmethod
+    def _check_language(cls, v: str) -> str:
+        if not _LANGUAGE.fullmatch(v):
+            raise ValueError("language must be a 2-3 letter language code")
+        return v
 
 
 class PhraseRequest(BaseModel):
@@ -108,6 +185,19 @@ class ExportRequest(BaseModel):
     # the saved EDL untouched -- purely a scoped export of a selection.
     range_start: Optional[float] = None
     range_end: Optional[float] = None
+
+    @field_validator("format")
+    @classmethod
+    def _check_format(cls, v: str) -> str:
+        # The format becomes the output file's extension and ffmpeg's muxer choice.
+        return _one_of(v, EXPORT_FORMATS, "format")
+
+    @field_validator("bitrate")
+    @classmethod
+    def _check_bitrate(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not _BITRATE.fullmatch(v):
+            raise ValueError('bitrate must look like "192k"')
+        return v
 
     @model_validator(mode="after")
     def _check_range(self) -> "ExportRequest":

@@ -61,4 +61,4 @@ detection output. Every tuning knob lives in one strict config file,
 - [frontend-project-library-plan.md](plans/frontend-project-library-plan.md): library page and in-editor switcher.
 - [resilient-processing.md](plans/resilient-processing.md): checkpoint and resume for long jobs (proposed).
 
-Screenshots used by the root README live in [assets/](assets/).
+Images used by the root README live in [assets/](assets/).

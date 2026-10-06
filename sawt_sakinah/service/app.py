@@ -12,7 +12,7 @@ the rare synchronous failure; async failures surface in ``JobRecord.error``/``er
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional
 
 from fastapi import FastAPI, Request
@@ -34,6 +34,7 @@ from ..models import (
 from .jobs import JobRegistry
 from .projects import ProjectStore
 from .routes import detect, export, jobs, media, projects
+from .security import install_guards
 from .settings import ServiceSettings
 
 # Most specific first; Starlette resolves by the closest match in the exception's MRO.
@@ -89,15 +90,34 @@ def _mount_spa(app: FastAPI, dist: Path) -> None:
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_catch_all(full_path: str) -> FileResponse:
-        candidate = (dist / full_path).resolve()
-        if full_path and candidate.is_file() and candidate.is_relative_to(dist):
-            return FileResponse(candidate)
+        # Only plain relative paths touch the filesystem: an absolute, drive or UNC path
+        # (``//host/share``) would make Windows contact a network share during resolve(),
+        # before the containment check runs.
+        rel = PurePosixPath(full_path)
+        if (
+            full_path
+            and "\\" not in full_path
+            and ":" not in full_path
+            and not full_path.startswith("/")
+            and ".." not in rel.parts
+        ):
+            candidate = (dist / rel).resolve()
+            if candidate.is_relative_to(dist) and candidate.is_file():
+                return FileResponse(candidate)
         return FileResponse(index)
 
 
 def create_app(settings: Optional[ServiceSettings] = None) -> FastAPI:
     app = FastAPI(title="sawt-sakinah service", lifespan=lifespan)
     app.state.settings = settings or ServiceSettings()
+    s = app.state.settings
+    install_guards(app, s.allowed_hosts, s.allowed_origins, s.auth_token)
+
+    # Liveness probe. Behind the token guard, so a 200 also proves the caller reached this
+    # instance and not another program on the same port.
+    @app.get("/health", include_in_schema=False)
+    def health() -> dict:
+        return {"status": "ok"}
 
     for router in (
         projects.router,

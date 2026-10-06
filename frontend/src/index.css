@@ -4,9 +4,8 @@
 
 /* ---------------------------------------------------------------------------
  * Fonts. Self-hosted under /public/fonts (the static-served / pywebview build
- * has a CSP that forbids CDN fetches). Drop the files named in
- * public/fonts/README.md in place; until then the fallbacks in the
- * tailwind.config fontFamily stacks render.
+ * has a CSP that forbids CDN fetches), with each OFL license alongside.
+ * See public/fonts/README.md.
  * ------------------------------------------------------------------------- */
 @font-face {
   font-family: "Ibarra Real Nova";

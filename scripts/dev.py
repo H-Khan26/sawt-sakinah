@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import signal
@@ -76,6 +77,13 @@ def main() -> int:
     frontend_env = os.environ.copy()
     frontend_env.setdefault("SAWT_API_URL", f"http://{args.host}:{args.port}")
     frontend_env.setdefault("SAWT_VITE_PORT", DEFAULT_FRONTEND_PORT)
+    # The backend accepts writes only from its own origin, so allow the Vite dev origin.
+    vite_port = frontend_env["SAWT_VITE_PORT"]
+    backend_env = os.environ.copy()
+    backend_env.setdefault(
+        "SAWT_ALLOWED_ORIGINS",
+        json.dumps([f"http://localhost:{vite_port}", f"http://127.0.0.1:{vite_port}"]),
+    )
 
     print(f"backend:  http://{args.host}:{args.port}", flush=True)
     print(
@@ -87,7 +95,7 @@ def main() -> int:
 
     procs: list[subprocess.Popen] = []
     try:
-        procs.append(subprocess.Popen(backend_cmd, cwd=ROOT))
+        procs.append(subprocess.Popen(backend_cmd, cwd=ROOT, env=backend_env))
         procs.append(_npm(["run", "dev"], background=True, env=frontend_env))
 
         # Wait until either process exits, then fall through to teardown.

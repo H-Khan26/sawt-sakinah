@@ -36,6 +36,14 @@ class ServiceSettings(BaseSettings):
         ffmpeg_bin: Name/path of the ffmpeg executable.
         static_dir: Built SPA directory to serve at ``/`` (same-origin). Mounted only when
             it exists, so the dev Vite server is unaffected.
+        allowed_hosts: Hostnames accepted in the ``Host`` header and in the ``Origin`` of
+            state-changing requests. Blocks DNS rebinding and cross-site writes. As an
+            env var, a JSON list: ``SAWT_ALLOWED_HOSTS='["127.0.0.1","localhost"]'``.
+        allowed_origins: Extra origins allowed to make state-changing requests, beyond the
+            service's own (e.g. the Vite dev server). A JSON list as an env var.
+        auth_token: Per-launch secret required on every request (``X-Sawt-Token`` header
+            or the session cookie set by ``/_session``). ``None`` disables the check; the
+            desktop shell always sets one.
     """
 
     model_config = SettingsConfigDict(env_prefix="SAWT_", env_file=".env", extra="ignore")
@@ -47,3 +55,6 @@ class ServiceSettings(BaseSettings):
     phrase_workers: int = CONFIG.service.phrase_workers
     ffmpeg_bin: str = CONFIG.ffmpeg.bin
     static_dir: Optional[Path] = Field(default_factory=default_static_dir)
+    allowed_hosts: list[str] = Field(default_factory=lambda: ["127.0.0.1", "localhost"])
+    allowed_origins: list[str] = Field(default_factory=list)
+    auth_token: Optional[str] = None

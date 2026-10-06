@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,8 @@ name = "sawt-sakinah"
 version = "0.1.0"
 description = "Extract Quran recitation audio from YouTube, detect silence/takbirs, and edit non-destructively."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 
 # Core runtime: extraction (yt-dlp + ffmpeg), the shared pydantic contracts, and the

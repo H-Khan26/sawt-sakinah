@@ -95,6 +95,28 @@ POST /projects/{id}/export     { format, params }      -> { job_id } -> artifact
 - **Persistence**: on-disk project JSON plus audio files in a per-project directory
   (`service/projects.py`); SQLite/Postgres only if multi-user or history is needed.
 
+## Request guards
+
+The service listens on localhost, so any web page the user opens can try to reach it.
+`service/security.py` guards every request:
+
+- **Host allow-list** (`SAWT_ALLOWED_HOSTS`, default `127.0.0.1` and `localhost`) blocks
+  DNS rebinding.
+- **Origin check**: a `POST`/`PUT`/`PATCH`/`DELETE` whose `Origin` is not the service's
+  own (or listed in `SAWT_ALLOWED_ORIGINS`, which `make dev` sets for the Vite server)
+  gets a 403, as does any request marked `Sec-Fetch-Site: cross-site`.
+- **Launch token**: when `auth_token` is set (the desktop shell always sets one), every
+  request needs the `X-Sawt-Token` header or the session cookie. The window loads
+  `/_session?token=…`, which sets the cookie and redirects to `/`. `GET /health` answers
+  200 only with a valid token. `make dev` runs without a token.
+- **Upload size**: `POST /projects/upload` is refused from its `Content-Length` before the
+  body is read.
+
+Request fields that reach file names, ffmpeg or model loading (`format`, `bitrate`,
+`audio_format`, `audio_quality`, `model_size`, `device`, `compute_type`, `detector`) are
+checked against allow-lists in `service/schemas.py`, and export paths must stay inside
+the project's exports folder.
+
 ## Contract discipline
 
 - These types are defined **once** (pydantic) and shared across detection, editing, and

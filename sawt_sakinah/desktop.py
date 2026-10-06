@@ -4,6 +4,10 @@ Runs the same app the browser uses (``service.app:create_app``) on a background 
 thread, waits for it to accept connections, then opens a pywebview window pointed at the
 local URL. Closing the window stops the server and returns.
 
+Each launch generates a secret token that the service requires on every request; the
+window receives it through ``/_session`` (see ``service/security.py``). The default port is
+used when free, otherwise the OS picks one.
+
 The SPA must be built first (``cd frontend && npm run build``) so the service can serve it
 at ``/`` — the window loads that same origin. Requires the optional ``desktop`` extra
 (pywebview) plus the ``service`` extra::
@@ -18,6 +22,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
+import secrets
+import socket
 import threading
 import time
 import urllib.error
@@ -25,18 +32,49 @@ import urllib.request
 from typing import Optional, Sequence
 
 
-def _wait_until_up(url: str, timeout: float = 20.0) -> bool:
-    """Poll ``url`` until it answers (any HTTP status) or ``timeout`` elapses."""
+def _port_free(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        # Match uvicorn's bind on POSIX so a previous run's TIME_WAIT sockets don't count
+        # as busy. On Windows SO_REUSEADDR would allow binding over a live listener.
+        if os.name != "nt":
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
+def _pick_port(host: str, preferred: int) -> int:
+    """``preferred`` when it is free (keeps the SPA's per-origin storage stable), else a
+    free port chosen by the OS."""
+    if preferred and _port_free(host, preferred):
+        return preferred
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind((host, 0))
+        return sock.getsockname()[1]
+
+
+def _wait_until_up(base_url: str, headers: dict[str, str], timeout: float = 20.0) -> bool:
+    """Poll ``/health`` with the launch token until it answers 200 or ``timeout`` elapses.
+
+    Only this launch's service knows the token, so a 200 rules out another program that
+    happens to answer on the same port.
+    """
     deadline = time.monotonic() + timeout
+    req = urllib.request.Request(f"{base_url}/health", headers=headers)
+    # Bypass any configured HTTP proxy: the probe (and its token) must stay on loopback.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     while time.monotonic() < deadline:
         try:
-            urllib.request.urlopen(url, timeout=1.0)  # noqa: S310 (local URL)
-            return True
+            with opener.open(req, timeout=1.0) as res:  # noqa: S310 (local URL)
+                if res.status == 200:
+                    return True
         except urllib.error.HTTPError:
-            # A 4xx/5xx still means the server is accepting connections.
-            return True
+            return False  # something answered, but it is not this launch's service
         except (urllib.error.URLError, ConnectionError, OSError):
-            time.sleep(0.2)
+            pass
+        time.sleep(0.2)
     return False
 
 
@@ -58,9 +96,13 @@ def run(host: str = "127.0.0.1", port: int = 38427) -> int:
         )
 
     from .service.app import create_app
+    from .service.security import SESSION_PATH, TOKEN_HEADER
     from .service.settings import ServiceSettings
 
-    settings = ServiceSettings()
+    token = secrets.token_urlsafe(32)
+    settings = ServiceSettings(auth_token=token)
+    if host not in settings.allowed_hosts:
+        settings.allowed_hosts.append(host)
     if settings.static_dir is None or not settings.static_dir.is_dir():
         raise SystemExit(
             "The SPA isn't built, so there is nothing to show. Build it first:\n"
@@ -68,6 +110,7 @@ def run(host: str = "127.0.0.1", port: int = 38427) -> int:
             "(or set SAWT_STATIC_DIR to a built dist directory)."
         )
 
+    port = _pick_port(host, port)
     app = create_app(settings)
     config = uvicorn.Config(app, host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)
@@ -75,12 +118,13 @@ def run(host: str = "127.0.0.1", port: int = 38427) -> int:
     thread.start()
 
     url = f"http://{host}:{port}"
-    if not _wait_until_up(url):
+    if not _wait_until_up(url, {TOKEN_HEADER: token}):
         server.should_exit = True
         raise SystemExit(f"service did not come up at {url}")
 
     try:
-        webview.create_window("Sawt Sakinah", url)
+        # The session route sets the token cookie, then redirects to the SPA.
+        webview.create_window("Sawt Sakinah", f"{url}{SESSION_PATH}?token={token}")
         webview.start()  # blocks until the window is closed
     finally:
         server.should_exit = True
