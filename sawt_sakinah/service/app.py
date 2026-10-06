@@ -34,6 +34,7 @@ from ..models import (
 from .jobs import JobRegistry
 from .projects import ProjectStore
 from .routes import detect, export, jobs, media, projects
+from .security import install_guards
 from .settings import ServiceSettings
 
 # Most specific first; Starlette resolves by the closest match in the exception's MRO.
@@ -98,6 +99,13 @@ def _mount_spa(app: FastAPI, dist: Path) -> None:
 def create_app(settings: Optional[ServiceSettings] = None) -> FastAPI:
     app = FastAPI(title="sawt-sakinah service", lifespan=lifespan)
     app.state.settings = settings or ServiceSettings()
+    install_guards(app, app.state.settings.allowed_hosts, app.state.settings.auth_token)
+
+    # Liveness probe. Behind the token guard, so a 200 also proves the caller reached this
+    # instance and not another program on the same port.
+    @app.get("/health", include_in_schema=False)
+    def health() -> dict:
+        return {"status": "ok"}
 
     for router in (
         projects.router,
