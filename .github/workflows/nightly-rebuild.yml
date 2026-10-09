@@ -1,0 +1,129 @@
+# Weekly canary: rebuild the Windows bundle against the newest yt-dlp, self-test it and
+# extract a short public YouTube video. Opens (or updates) an issue when anything fails.
+# Nothing is published; a passing run means a yt-dlp bump of the lock is safe to release.
+name: Weekly rebuild
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-rebuild
+  cancel-in-progress: true
+
+jobs:
+  rebuild:
+    name: Rebuild with the newest yt-dlp
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      SAWT_SPA_DIR: ${{ github.workspace }}/frontend/dist
+      SAWT_VENDOR_DIR: ${{ github.workspace }}/packaging/build/vendor
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Build the SPA
+        working-directory: frontend
+        run: |
+          npm ci
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm run build
+
+      - name: Fetch ffmpeg, ffprobe and Deno
+        run: python packaging/fetch_binaries.py windows-x64 $env:SAWT_VENDOR_DIR
+
+      - name: Install the lock, then upgrade yt-dlp over it
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r packaging/requirements-build.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip install --require-hashes --no-build-isolation -r packaging/requirements-windows.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip install --upgrade yt-dlp yt-dlp-ejs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip show yt-dlp yt-dlp-ejs | Select-String '^(Name|Version):'
+
+      - name: PyInstaller
+        run: python -m PyInstaller --noconfirm --clean --distpath packaging/dist --workpath packaging/build/pyinstaller packaging/sawt_sakinah.spec
+
+      - name: Self-test the frozen app
+        id: selftest
+        timeout-minutes: 10
+        run: |
+          $exe = Resolve-Path packaging/dist/SawtSakinah/SawtSakinah.exe
+          $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
+          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"" -Wait -PassThru
+          if (Test-Path $report) { Get-Content $report -Raw } else { Write-Host 'No self-test report was written.' }
+          if ($p.ExitCode -ne 0) {
+            Write-Host "::error::self-test failed with exit code $($p.ExitCode)"
+            Get-ChildItem (Join-Path $env:LOCALAPPDATA 'SawtSakinah\logs') -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "----- $($_.FullName)"
+              Get-Content $_.FullName -Tail 200
+            }
+            exit 1
+          }
+
+      # Runs the same yt-dlp + Deno + ffmpeg combination from source: the bundled helper
+      # programs go on PATH, which is where a source checkout looks for them.
+      - name: YouTube extraction smoke test
+        id: youtube
+        timeout-minutes: 10
+        run: |
+          $env:PATH = "$env:SAWT_VENDOR_DIR\bin;$env:PATH"
+          $out = Join-Path $env:RUNNER_TEMP 'yt-smoke'
+          python -m sawt_sakinah extract "https://www.youtube.com/watch?v=jNQXAC9IVRw" -o $out
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-ChildItem $out | Format-Table Name, Length
+          if (-not (Get-ChildItem $out -File)) { Write-Host '::error::no output file'; exit 1 }
+
+      - name: Upload the logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rebuild-logs
+          path: |
+            ${{ runner.temp }}/self-test.json
+            ~/AppData/Local/SawtSakinah/logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+  report:
+    name: Report a failure
+    needs: rebuild
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write # open or comment on the failure issue
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open or update the tracking issue
+        run: |
+          title="Weekly rebuild against the newest yt-dlp failed"
+          body="The weekly rebuild (bundle self-test or YouTube extraction smoke test) failed: $RUN_URL"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

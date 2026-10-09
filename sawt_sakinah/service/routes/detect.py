@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
+from ...detection import whisper_models
 from ..deps import get_jobs, get_settings, get_store
 from ..jobs import JobKind
 from ..schemas import JobAccepted, PhraseRequest, SilenceParams
 from ..workers import phrases_worker, silence_worker
 from .common import validate_id
+from .models import selected_model
 
 router = APIRouter(prefix="/projects", tags=["detect"])
 
@@ -43,6 +45,12 @@ def detect_phrases_endpoint(
     validate_id(project_id, "project_id")
     if not store.exists(project_id):
         raise HTTPException(status_code=404, detail="project not found")
+    # Pin the job to a concrete model and fail fast (409 ModelNotInstalledError) when it
+    # isn't downloaded, rather than queueing a job that can only fail.
+    model_id = request.params.model_size or selected_model()
+    whisper_models.installed_path(model_id, settings.models_dir)
+    params = request.params.model_copy(update={"model_size": model_id})
+    request = request.model_copy(update={"params": params})
     # Dedicated single-worker pool: concurrent Whisper on one device OOMs.
     job = jobs.submit(
         JobKind.detect_phrases,

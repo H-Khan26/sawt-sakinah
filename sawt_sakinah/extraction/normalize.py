@@ -7,11 +7,11 @@ This write lives in the extraction (side-effecting) layer so detection stays rea
 
 from __future__ import annotations
 
-import shutil
-import subprocess
 from pathlib import Path
 
 from ..config import CONFIG
+from ..ffmpeg import run_ffmpeg
+from ..proc import ffmpeg_input
 
 # Sample rate that both energy thresholds and Silero/WebRTC VAD expect.
 WORKING_SAMPLE_RATE = CONFIG.audio.working_sample_rate
@@ -45,21 +45,17 @@ def make_working_copy(
 
     Raises:
         FileNotFoundError: If ffmpeg or the input file is missing.
-        RuntimeError: If FFmpeg exits with an error.
+        RuntimeError: If FFmpeg exits with an error or times out.
     """
     src = Path(input_path)
     if not src.exists():
         raise FileNotFoundError(f"Input audio not found: {src}")
-    if shutil.which(ffmpeg_bin) is None:
-        raise FileNotFoundError(
-            f"'{ffmpeg_bin}' not found on PATH. Install FFmpeg (standalone binary)."
-        )
 
-    dst = Path(output_path) if output_path is not None else src.with_name(
+    dst =Path(output_path) if output_path is not None else src.with_name(
         f"{src.stem}{WORKING_SUFFIX}"
     )
 
-    cmd = [ffmpeg_bin, "-y" if overwrite else "-n", "-i", str(src)]
+    cmd = [ffmpeg_bin, "-y" if overwrite else "-n", *ffmpeg_input(src)]
     if normalize_loudness:
         cmd += ["-af", "loudnorm=I=-23:TP=-2:LRA=11"]
     cmd += [
@@ -70,7 +66,7 @@ def make_working_copy(
         str(dst),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = run_ffmpeg(cmd)
     if proc.returncode != 0:
         raise RuntimeError(
             f"FFmpeg normalization failed (exit {proc.returncode}):\n{proc.stderr.strip()}"

@@ -12,13 +12,13 @@ instead of cutting; this is the analysis counterpart to the editing layer's
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..config import CONFIG
+from ..ffmpeg import run_ffmpeg
 from ..models import SilenceSegment
+from ..proc import ffmpeg_input
 from ._spans import merge_within_gap
 from .loudness import measure_mean_db
 
@@ -42,6 +42,7 @@ def detect_silence(
     speech_threshold: float = CONFIG.segmentation.speech_threshold,
     min_speech_duration: float = CONFIG.segmentation.min_speech_duration,
     speech_map: "SpeechMap | None" = None,
+    ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin,
 ) -> list[SilenceSegment]:
     """Return the silent regions in ``input_path`` as structured segments.
 
@@ -69,13 +70,15 @@ def detect_silence(
             inverting, so brief blips do not split a silence.
         speech_map: ``"vad"`` only: the source's precomputed speech map. ``None``
             computes it in memory (requires the ``vad`` extra).
+        ffprobe_bin: Name/path of the ffprobe executable, used to close a trailing
+            silence when ``total_duration`` is not supplied (ffmpeg path).
 
     Returns:
         List of ``SilenceSegment`` ordered by start time.
 
     Raises:
         FileNotFoundError: If ffmpeg or the input file is missing.
-        RuntimeError: If FFmpeg exits with an error.
+        RuntimeError: If FFmpeg exits with an error or times out.
         ValueError: If an unsupported ``detector`` is requested.
         ImportError: If ``detector="vad"``, no ``speech_map`` is given, and
             onnxruntime is not installed.
@@ -102,20 +105,16 @@ def detect_silence(
     src = Path(input_path)
     if not src.exists():
         raise FileNotFoundError(f"Input audio not found: {src}")
-    if shutil.which(ffmpeg_bin) is None:
-        raise FileNotFoundError(
-            f"'{ffmpeg_bin}' not found on PATH. Install FFmpeg (standalone binary)."
-        )
 
     # silencedetect writes its findings to stderr; -f null discards the audio output.
     cmd = [
         ffmpeg_bin,
-        "-i", str(src),
+        *ffmpeg_input(src),
         "-af", f"silencedetect=noise={threshold_db}dB:d={min_silence_duration}",
         "-f", "null",
         "-",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = run_ffmpeg(cmd)
     if proc.returncode != 0:
         raise RuntimeError(
             f"FFmpeg silence detection failed (exit {proc.returncode}):\n{proc.stderr.strip()}"
@@ -126,7 +125,7 @@ def detect_silence(
     # Close a trailing silence that runs to EOF (silencedetect omits its end).
     if spans and spans[-1][1] is None:
         if total_duration is None:
-            total_duration = _probe_duration(src, ffmpeg_bin)
+            total_duration = _probe_duration(src, ffprobe_bin)
         start = spans[-1][0]
         spans[-1] = (start, total_duration) if total_duration > start else None
         if spans[-1] is None:
@@ -168,7 +167,7 @@ def _parse_silencedetect(stderr: str) -> list[tuple[float, float | None]]:
     return spans
 
 
-def _probe_duration(src: Path, ffmpeg_bin: str) -> float:
-    from ..extraction.probe import ffprobe_for, probe
+def _probe_duration(src: Path, ffprobe_bin: str) -> float:
+    from ..extraction.probe import probe
 
-    return probe(src, ffprobe_bin=ffprobe_for(ffmpeg_bin))["duration_sec"]
+    return probe(src, ffprobe_bin=ffprobe_bin)["duration_sec"]

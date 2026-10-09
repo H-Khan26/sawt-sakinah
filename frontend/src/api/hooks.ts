@@ -1,30 +1,42 @@
 import { ApiError } from "@/api/client";
 import { useToast } from "@/components/ui";
 import type {
+  AppPreferences,
   CreateProjectRequest,
   EditOperation,
   ExportRequest,
   Marker,
   PhraseRequest,
+  PreferencesPatch,
   ProjectSummary,
   ProjectView,
   SilenceParams,
+  SpeechModel,
   SplitRequest,
+  UpdateStatus,
 } from "@/types/api";
 /** React Query hooks over the typed endpoints. Server state lives here, not in stores. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import {
   createProject,
+  deleteModel,
   deleteProject,
   detectPhrases,
   detectSilence,
+  downloadModel,
   editSaveKey,
   exportAudio,
+  getAppInfo,
   getJob,
+  getPreferences,
   getProject,
+  getUpdateStatus,
   getWaveform,
+  listModels,
   listProjects,
+  openLogs,
+  patchPreferences,
   putEdl,
   queryKeys,
   renameProject,
@@ -245,5 +257,139 @@ export function useExport(projectId: string) {
 export function useSplitProject(projectId: string) {
   return useMutation({
     mutationFn: (body: SplitRequest) => splitProject(projectId, body),
+  });
+}
+
+// --- app preferences, info and updates ---------------------------------------
+
+/** Backend-stored preferences. Loaded once per session; writes patch the cache directly. */
+export function usePreferences() {
+  return useQuery({
+    queryKey: queryKeys.preferences,
+    queryFn: ({ signal }) => getPreferences(signal),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/** PATCH a subset of preferences, optimistically applied to the cache and rolled back on error. */
+export function usePatchPreferences() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: PreferencesPatch) => patchPreferences(patch),
+    onMutate: async (patch) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.preferences });
+      const prev = queryClient.getQueryData<AppPreferences>(queryKeys.preferences);
+      queryClient.setQueryData<AppPreferences>(queryKeys.preferences, (p) =>
+        p ? { ...p, ...patch } : p,
+      );
+      return { prev };
+    },
+    onError: (_err, _patch, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(queryKeys.preferences, ctx.prev);
+    },
+    onSuccess: (prefs) => queryClient.setQueryData(queryKeys.preferences, prefs),
+  });
+}
+
+/** App version and whether this is the packaged build. Fixed for the process lifetime. */
+export function useAppInfo() {
+  return useQuery({
+    queryKey: queryKeys.appInfo,
+    queryFn: ({ signal }) => getAppInfo(signal),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/** The backend's release check. Fetched once per session; a failure just means no banner. */
+export function useUpdateStatus() {
+  return useQuery({
+    queryKey: queryKeys.appUpdate,
+    queryFn: ({ signal }) => getUpdateStatus(signal),
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  });
+}
+
+/** Dismiss the update banner for `latest`: hides it at once and stores the version. */
+export function useDismissUpdate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (latest: string) => patchPreferences({ dismissed_update: latest }),
+    onMutate: (latest) => {
+      queryClient.setQueryData<UpdateStatus>(queryKeys.appUpdate, (u) =>
+        u && u.latest === latest ? { ...u, update_available: false } : u,
+      );
+    },
+    onSuccess: (prefs) => queryClient.setQueryData(queryKeys.preferences, prefs),
+  });
+}
+
+/** Open the logs folder in the OS file manager. */
+export function useOpenLogs() {
+  return useMutation({ mutationFn: () => openLogs() });
+}
+
+// --- speech models -------------------------------------------------------------
+
+/** The speech-model catalog with install/selection state and any in-flight download job. */
+export function useModels() {
+  return useQuery({
+    queryKey: queryKeys.models,
+    queryFn: ({ signal }) => listModels(signal),
+  });
+}
+
+/**
+ * Start a model download. Seeds the job cache with the returned record and stamps its id on
+ * the model, so every `useModelDownload` watching that model starts polling at once.
+ */
+export function useDownloadModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (modelId: string) => downloadModel(modelId),
+    onSuccess: (job, modelId) => {
+      queryClient.setQueryData(queryKeys.job(job.id), job);
+      queryClient.setQueryData<SpeechModel[]>(queryKeys.models, (list) =>
+        list?.map((m) => (m.id === modelId ? { ...m, download_job_id: job.id } : m)),
+      );
+    },
+  });
+}
+
+/** Remove a downloaded model, then refetch the catalog. */
+export function useDeleteModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (modelId: string) => deleteModel(modelId),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.models }),
+  });
+}
+
+/**
+ * Choose the active speech model (`whisper_model`). Optimistically moves the `selected` flag in
+ * the catalog and the preference, rolls both back on error, and refetches the catalog after.
+ */
+export function useSelectModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (modelId: string) => patchPreferences({ whisper_model: modelId }),
+    onMutate: async (modelId) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.models });
+      const prevModels = queryClient.getQueryData<SpeechModel[]>(queryKeys.models);
+      const prevPrefs = queryClient.getQueryData<AppPreferences>(queryKeys.preferences);
+      queryClient.setQueryData<SpeechModel[]>(queryKeys.models, (list) =>
+        list?.map((m) => ({ ...m, selected: m.id === modelId })),
+      );
+      queryClient.setQueryData<AppPreferences>(queryKeys.preferences, (p) =>
+        p ? { ...p, whisper_model: modelId } : p,
+      );
+      return { prevModels, prevPrefs };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prevModels) queryClient.setQueryData(queryKeys.models, ctx.prevModels);
+      if (ctx?.prevPrefs) queryClient.setQueryData(queryKeys.preferences, ctx.prevPrefs);
+    },
+    onSuccess: (prefs) => queryClient.setQueryData(queryKeys.preferences, prefs),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.models }),
   });
 }

@@ -2,9 +2,11 @@ import { AppShell } from "@/components/layout/AppShell";
 import { EditorPage } from "@/pages/EditorPage";
 import { NewProjectPage } from "@/pages/NewProjectPage";
 import { ProjectLibraryPage } from "@/pages/ProjectLibraryPage";
+import { useSyncViewPrefs } from "@/stores/viewPrefs";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 export function App() {
+  useSyncViewPrefs();
   return (
     <AppShell>
       <Routes>

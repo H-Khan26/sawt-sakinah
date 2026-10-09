@@ -26,6 +26,14 @@ env/
 /projects/
 /cache/
 
+# Desktop bundle outputs (make bundle / release workflow): PyInstaller work and dist
+# folders, the downloaded helper programs and the zips. A bin/ at the repo root would
+# shadow PATH for ffmpeg/ffprobe/deno in a source checkout (see runtime.py).
+/packaging/build/
+/packaging/dist/
+/packaging/release/
+/bin/
+
 # Test / build caches
 .pytest_cache/
 node_modules/

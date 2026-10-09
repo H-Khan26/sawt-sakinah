@@ -1,5 +1,7 @@
 /** Typed wrappers over the backend HTTP surface. One function per endpoint. */
 import type {
+  AppInfo,
+  AppPreferences,
   CreateProjectRequest,
   CreateProjectResponse,
   EditDecisionList,
@@ -9,10 +11,13 @@ import type {
   JobRecord,
   Marker,
   PhraseRequest,
+  PreferencesPatch,
   ProjectListResponse,
   ProjectView,
   SilenceParams,
+  SpeechModel,
   SplitRequest,
+  UpdateStatus,
   WaveformPeaks,
 } from "@/types/api";
 import { type UploadOptions, request, upload } from "./client";
@@ -71,6 +76,31 @@ export const splitProject = (projectId: string, body: SplitRequest) =>
 export const getWaveform = (projectId: string, signal?: AbortSignal) =>
   request<WaveformPeaks>(`/projects/${projectId}/waveform`, { signal });
 
+export const getPreferences = (signal?: AbortSignal) =>
+  request<AppPreferences>("/app/preferences", { signal });
+
+/** Merge a subset of preferences; returns the full stored object. */
+export const patchPreferences = (body: PreferencesPatch) =>
+  request<AppPreferences>("/app/preferences", { method: "PATCH", body });
+
+export const getAppInfo = (signal?: AbortSignal) => request<AppInfo>("/app/info", { signal });
+
+export const getUpdateStatus = (signal?: AbortSignal) =>
+  request<UpdateStatus>("/app/update", { signal });
+
+/** Open the logs folder in the OS file manager. Resolves on 204. */
+export const openLogs = () => request<void>("/app/open-logs", { method: "POST" });
+
+export const listModels = (signal?: AbortSignal) => request<SpeechModel[]>("/models", { signal });
+
+/** Start downloading a speech model; returns the `download_model` job record. */
+export const downloadModel = (modelId: string) =>
+  request<JobRecord>(`/models/${encodeURIComponent(modelId)}/download`, { method: "POST" });
+
+/** Remove a downloaded speech model. Resolves on 204. */
+export const deleteModel = (modelId: string) =>
+  request<void>(`/models/${encodeURIComponent(modelId)}`, { method: "DELETE" });
+
 /** Relative URLs for media the browser loads directly (not via `request`). */
 export const audioUrl = (projectId: string) => `/projects/${projectId}/audio`;
 export const exportDownloadUrl = (projectId: string, artifactId: string) =>
@@ -82,6 +112,10 @@ export const queryKeys = {
   project: (projectId: string) => ["project", projectId] as const,
   job: (jobId: string) => ["job", jobId] as const,
   waveform: (projectId: string) => ["waveform", projectId] as const,
+  preferences: ["app", "preferences"] as const,
+  appInfo: ["app", "info"] as const,
+  appUpdate: ["app", "update"] as const,
+  models: ["models"] as const,
 };
 
 /** Mutation key prefix for the per-edit autosaves, so `SaveStatus` can observe them. */

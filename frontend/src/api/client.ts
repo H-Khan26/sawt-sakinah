@@ -1,6 +1,6 @@
 /**
  * Thin fetch wrapper. All endpoints are same-origin: in dev the Vite proxy forwards
- * `/projects` and `/jobs` to the FastAPI service; in the static-served / pywebview build
+ * the API prefixes (`/projects`, `/jobs`, `/models`, `/app/`) to the FastAPI service; in the static-served / pywebview build
  * FastAPI serves both the SPA and the API. So requests use relative paths and no base URL.
  */
 import type { ApiErrorBody } from "@/types/api";

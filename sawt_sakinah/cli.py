@@ -4,6 +4,8 @@ Two ways to run the tool locally, mirroring its two usage shapes:
 
 * ``sawt serve``    -- run the FastAPI service (the interactive app the frontend talks
   to: extract -> detect -> edit via EDL -> export). Requires the ``service`` extra.
+* ``sawt desktop``  -- the same app in a native window (``--self-test`` runs the headless
+  end-to-end check instead). Requires the ``service`` and ``desktop`` extras.
 * ``sawt extract``  -- one-shot, no server: a YouTube URL straight to a silence-trimmed
   file via :func:`sawt_sakinah.pipeline.youtube_to_clean_audio`.
 
@@ -19,6 +21,7 @@ import os
 from typing import Optional, Sequence
 
 from .config import CONFIG
+from .desktop import add_arguments as add_desktop_arguments
 
 
 def _serve(args: argparse.Namespace) -> int:
@@ -45,10 +48,11 @@ def _serve(args: argparse.Namespace) -> int:
 
 
 def _desktop(args: argparse.Namespace) -> int:
-    """Run the service in-process and open it in a native window (needs the ``desktop`` extra)."""
-    from .desktop import run
+    """Run the service in-process and open it in a native window (needs the ``desktop``
+    extra), or with ``--self-test`` run the headless end-to-end check."""
+    from .desktop import launch
 
-    return run(host=args.host, port=args.port)
+    return launch(args)
 
 
 def _extract(args: argparse.Namespace) -> int:
@@ -78,8 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.set_defaults(func=_serve)
 
     desktop = sub.add_parser("desktop", help="run the app in a native window (needs [desktop])")
-    desktop.add_argument("--host", default="127.0.0.1", help="bind host (default: local-only)")
-    desktop.add_argument("--port", type=int, default=38427, help="bind port (default: 38427)")
+    add_desktop_arguments(desktop)
     desktop.set_defaults(func=_desktop)
 
     extract = sub.add_parser("extract", help="one-shot URL -> silence-trimmed file (no server)")

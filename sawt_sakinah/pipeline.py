@@ -27,7 +27,7 @@ def youtube_to_clean_audio(
     Args:
         url: YouTube video URL.
         output_dir: Directory for output files.
-        filename: Output stem (no extension). Defaults to the video title.
+        filename: Output stem (no extension). Defaults to ``source``.
         audio_format: Audio codec/extension for extraction (default ``mp3``).
         audio_quality: FFmpeg audio quality (``"0"`` = best VBR, or e.g. ``"192K"``).
         threshold_db: Silence loudness threshold in dB (see ``remove_silence``).

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 
 from ...config import CONFIG
 from ..deps import get_jobs, get_settings, get_store
-from ..jobs import JobKind
+from ..jobs import JobKind, JobQueueFullError
 from ..schemas import (
     CreateProjectRequest,
     CreateProjectResponse,
@@ -35,6 +35,16 @@ _UPLOAD_CHUNK = 1024 * 1024
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
+def _submit_new_project(jobs, store, project_id: str, kind: JobKind, fn):
+    """Submit the job that fills a freshly prepared project; drop the project if the job
+    queue refuses it, so no empty skeleton is left behind."""
+    try:
+        return jobs.submit(kind, fn, project_id=project_id)
+    except JobQueueFullError:
+        store.delete(project_id)
+        raise
+
+
 @router.post("", response_model=CreateProjectResponse, status_code=202)
 def create_project(
     req: CreateProjectRequest,
@@ -45,12 +55,11 @@ def create_project(
     """Create a project directory and kick off extraction; ``project.json`` is written
     by the extract job once the ``AudioSource`` exists (``GET /projects/{id}`` 404s until
     then)."""
+    jobs.ensure_capacity()
     project_id = uuid4().hex
     store.prepare(project_id)
-    job = jobs.submit(
-        JobKind.extract,
-        extract_worker(store, settings, project_id, req),
-        project_id=project_id,
+    job = _submit_new_project(
+        jobs, store, project_id, JobKind.extract, extract_worker(store, settings, project_id, req)
     )
     return CreateProjectResponse(project_id=project_id, job_id=job.id)
 
@@ -76,6 +85,7 @@ async def upload_project(
             f"'{file.filename or 'file'}' is not a supported file type. Accepted: {allowed}."
         )
 
+    jobs.ensure_capacity()
     project_id = uuid4().hex
     store.prepare(project_id)
     staging = store.audio_dir(project_id) / f"upload{ext}"
@@ -97,10 +107,12 @@ async def upload_project(
     finally:
         await file.close()
 
-    job = jobs.submit(
+    job = _submit_new_project(
+        jobs,
+        store,
+        project_id,
         JobKind.extract,
         import_worker(store, settings, project_id, staging, file.filename or staging.name),
-        project_id=project_id,
     )
     return CreateProjectResponse(project_id=project_id, job_id=job.id)
 
@@ -121,12 +133,11 @@ def split_project(
     validate_id(project_id, "project_id")
     if not store.exists(project_id):
         raise HTTPException(status_code=404, detail="project not found")
+    jobs.ensure_capacity()
     new_id = uuid4().hex
     store.prepare(new_id)
-    job = jobs.submit(
-        JobKind.split,
-        split_worker(store, settings, project_id, new_id, req),
-        project_id=new_id,
+    job = _submit_new_project(
+        jobs, store, new_id, JobKind.split, split_worker(store, settings, project_id, new_id, req)
     )
     return CreateProjectResponse(project_id=new_id, job_id=job.id)
 

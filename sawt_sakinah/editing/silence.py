@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Sequence
 
 from ..config import CONFIG
+from ..ffmpeg import run_ffmpeg
 from ..models import EditOperation, SilenceSegment
+from ..proc import ffmpeg_input
 from .render import _render
 
 
@@ -21,6 +21,7 @@ def remove_silence(
     ffmpeg_bin: str = CONFIG.ffmpeg.bin,
     overwrite: bool = True,
     segments: Sequence[SilenceSegment] | None = None,
+    ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin,
 ) -> Path:
     """Strip silence from ``input_path`` and write a new file.
 
@@ -48,6 +49,7 @@ def remove_silence(
         overwrite: Overwrite ``output_path`` if it already exists.
         segments: Explicit silence spans to cut. When provided, switches to
             explicit-segment mode (see above).
+        ffprobe_bin: Name/path of the ffprobe executable (explicit-segment mode).
 
     Returns:
         Path to the de-silenced audio file.
@@ -55,15 +57,11 @@ def remove_silence(
     Raises:
         FileNotFoundError: If ffmpeg or the input file is missing.
         ValueError: If ``segments`` cover the entire file (nothing left to keep).
-        RuntimeError: If FFmpeg exits with an error.
+        RuntimeError: If FFmpeg exits with an error or times out.
     """
     src = Path(input_path)
     if not src.exists():
         raise FileNotFoundError(f"Input audio not found: {src}")
-    if shutil.which(ffmpeg_bin) is None:
-        raise FileNotFoundError(
-            f"'{ffmpeg_bin}' not found on PATH. Install FFmpeg (standalone binary)."
-        )
 
     dst = Path(output_path) if output_path is not None else src.with_name(
         f"{src.stem}.nosilence{src.suffix}"
@@ -82,6 +80,7 @@ def remove_silence(
             operations,
             dst,
             ffmpeg_bin=ffmpeg_bin,
+            ffprobe_bin=ffprobe_bin,
             overwrite=overwrite,
             boundary_fade=0.0,
             embed_markers=False,
@@ -96,9 +95,12 @@ def remove_silence(
         f"stop_threshold={threshold_db}dB:"
         f"stop_silence={keep_silence}"
     )
-    cmd = [ffmpeg_bin, "-y" if overwrite else "-n", "-i", str(src), "-af", silence_filter, str(dst)]
+    cmd = [
+        ffmpeg_bin, "-y" if overwrite else "-n", *ffmpeg_input(src),
+        "-af", silence_filter, str(dst),
+    ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = run_ffmpeg(cmd)
     if proc.returncode != 0:
         raise RuntimeError(
             f"FFmpeg silence removal failed (exit {proc.returncode}):\n{proc.stderr.strip()}"

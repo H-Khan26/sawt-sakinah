@@ -1,0 +1,69 @@
+{
+  "_comment": [
+    "Helper programs bundled under bin/, pinned by URL and SHA-256. fetch_binaries.py",
+    "reads this file. Each archive lists the members to extract into bin/ and the license",
+    "files to copy into THIRD_PARTY/<name>/. 'licenses' entries with a url are fetched and",
+    "verified separately; 'notice' is written verbatim as SOURCE.txt.",
+    "FFmpeg: BtbN FFmpeg-Builds LGPL static build from the release/8.1 branch, taken from a",
+    "month-end autobuild tag (those are kept for about two years; daily tags for about two",
+    "weeks). Deno: official denoland/deno release (yt-dlp needs Deno >= 2.3).",
+    "macos-arm64 is added in Phase 2."
+  ],
+  "platforms": {
+    "windows-x64": {
+      "ffmpeg": {
+        "version": "n8.1.3-9-g29e619e767",
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n8.1.3-9-g29e619e767-win64-lgpl-8.1.zip",
+        "sha256": "4a7642b2264c03e8a0ce8a3825b933ee5580656f45695a086fe7e294045ffc0a",
+        "executables": {
+          "ffmpeg.exe": "ffmpeg-n8.1.3-9-g29e619e767-win64-lgpl-8.1/bin/ffmpeg.exe",
+          "ffprobe.exe": "ffmpeg-n8.1.3-9-g29e619e767-win64-lgpl-8.1/bin/ffprobe.exe"
+        },
+        "license_members": {
+          "LICENSE.txt": "ffmpeg-n8.1.3-9-g29e619e767-win64-lgpl-8.1/LICENSE.txt"
+        },
+        "licenses": {
+          "COPYING.GPLv3": {
+            "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.3/COPYING.GPLv3",
+            "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+          }
+        },
+        "license_name": "LGPL-3.0-or-later",
+        "notice": [
+          "FFmpeg (ffmpeg.exe, ffprobe.exe), version n8.1.3-9-g29e619e767, LGPL build.",
+          "Licensed under the GNU Lesser General Public License v3 or later (LICENSE.txt);",
+          "the LGPL v3 incorporates the GNU GPL v3 (COPYING.GPLv3).",
+          "",
+          "Binary: https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08",
+          "FFmpeg source: https://github.com/FFmpeg/FFmpeg/tree/29e619e767cde9045a75c29bc9a8278ae7b3a98b",
+          "Build scripts and the sources of the bundled libraries:",
+          "  https://github.com/BtbN/FFmpeg-Builds/tree/6c9aec5fc9a72ec3abedd1fa84db141fa18cf52b",
+          "",
+          "Sawt Sakinah runs these programs as separate processes and does not modify them."
+        ]
+      },
+      "deno": {
+        "version": "2.9.7",
+        "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-pc-windows-msvc.zip",
+        "sha256": "a0c3101b4158d1dfb7d6a78a7bf0f3de80c96bb423c152beec8beb22786f2238",
+        "executables": {
+          "deno.exe": "deno.exe"
+        },
+        "license_members": {},
+        "licenses": {
+          "LICENSE.md": {
+            "url": "https://raw.githubusercontent.com/denoland/deno/v2.9.7/LICENSE.md",
+            "sha256": "f62497fffecc0852960c8d3e6934b9db86d16396e9b604072e923892cae3a588"
+          }
+        },
+        "license_name": "MIT",
+        "notice": [
+          "Deno (deno.exe), version 2.9.7. MIT License (LICENSE.md).",
+          "Source: https://github.com/denoland/deno/tree/v2.9.7",
+          "",
+          "yt-dlp runs it to solve YouTube's JavaScript challenges."
+        ]
+      }
+    }
+  }
+}

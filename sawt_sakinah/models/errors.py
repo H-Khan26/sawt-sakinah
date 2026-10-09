@@ -29,7 +29,7 @@ class NoAudioStreamError(ExtractionError):
 
 
 class FileTooLargeError(ExtractionError):
-    """The uploaded file exceeds the configured size cap."""
+    """The upload or YouTube video exceeds the configured size or duration cap."""
 
 
 class PrivateVideoError(ExtractionError):

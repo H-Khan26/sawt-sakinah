@@ -21,15 +21,15 @@ legacy :func:`remove_silence` path can share the exact same engine.
 
 from __future__ import annotations
 
-import shutil
-import subprocess
+import os
 import tempfile
 from pathlib import Path
 from typing import Optional, Sequence
 
 from ..config import CONFIG
-from ..extraction.probe import ffprobe_for
+from ..ffmpeg import run_ffmpeg
 from ..models import AudioSource, EditDecisionList, EditOperation
+from ..proc import ffmpeg_input
 
 # Small fade (seconds) applied at every internal cut boundary to avoid clicks/pops when
 # concatenating slices that do not start/end on a zero crossing.
@@ -43,6 +43,7 @@ def render(
     out_path: str | Path | None = None,
     *,
     ffmpeg_bin: str = CONFIG.ffmpeg.bin,
+    ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin,
     overwrite: bool = True,
     boundary_fade: float = DEFAULT_BOUNDARY_FADE,
     bitrate: str | None = None,
@@ -61,6 +62,8 @@ def render(
             ``out_path`` is not given (and to pick default quality knobs).
         out_path: Destination file. Defaults to ``<local_path stem>.edited.<out_format>``.
         ffmpeg_bin: Name/path of the ffmpeg executable.
+        ffprobe_bin: Name/path of the ffprobe executable, used when the source's
+            duration is unknown.
         overwrite: Overwrite ``out_path`` if it already exists.
         boundary_fade: Length in seconds of the automatic fade at each cut boundary.
             ``0`` disables it.
@@ -81,7 +84,7 @@ def render(
     Raises:
         FileNotFoundError: If ffmpeg or the source file is missing.
         ValueError: If the operations cut the entire file (nothing left to keep).
-        RuntimeError: If ffmpeg exits with an error.
+        RuntimeError: If ffmpeg exits with an error or times out.
     """
     src = Path(audio_source.local_path)
     dst = (
@@ -105,6 +108,7 @@ def render(
         edl.operations,
         dst,
         ffmpeg_bin=ffmpeg_bin,
+        ffprobe_bin=ffprobe_bin,
         overwrite=overwrite,
         boundary_fade=boundary_fade,
         bitrate=bitrate,
@@ -122,6 +126,7 @@ def _render(
     out_path: Path,
     *,
     ffmpeg_bin: str = CONFIG.ffmpeg.bin,
+    ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin,
     overwrite: bool = True,
     boundary_fade: float = 0.0,
     bitrate: str | None = None,
@@ -133,14 +138,10 @@ def _render(
     """Path-based render engine shared by :func:`render` and ``remove_silence``."""
     if not src.exists():
         raise FileNotFoundError(f"Input audio not found: {src}")
-    if shutil.which(ffmpeg_bin) is None:
-        raise FileNotFoundError(
-            f"'{ffmpeg_bin}' not found on PATH. Install FFmpeg (standalone binary)."
-        )
     if not duration or duration <= 0:
         from ..extraction.probe import probe
 
-        duration = probe(src, ffprobe_bin=ffprobe_for(ffmpeg_bin))["duration_sec"]
+        duration = probe(src, ffprobe_bin=ffprobe_bin)["duration_sec"]
 
     keeps = _resolve_keeps(operations, duration)
     if not keeps:
@@ -149,14 +150,14 @@ def _render(
     fade_ops = [op for op in operations if op.type == "fade" and op.end is not None]
     out_total = sum(b - a for a, b in keeps)
 
-    base = [ffmpeg_bin, "-y" if overwrite else "-n", "-i", str(src)]
+    base = [ffmpeg_bin, "-y" if overwrite else "-n", *ffmpeg_input(src)]
 
     meta_file: Optional[Path] = None
     if embed_markers:
         chapters = _chapter_lines(operations, keeps, out_total, chapter_markers)
         if chapters:
             meta_file = _write_ffmetadata(chapters)
-            base += ["-i", str(meta_file)]
+            base += ffmpeg_input(meta_file)
 
     cmd = list(base)
     trimming = keeps != [(0.0, duration)]
@@ -182,7 +183,7 @@ def _render(
     cmd += [str(out_path)]
 
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = run_ffmpeg(cmd)
     finally:
         if meta_file is not None:
             meta_file.unlink(missing_ok=True)
@@ -340,6 +341,14 @@ def _chapter_lines(
     return chapters
 
 
+def _escape_ffmetadata(value: str) -> str:
+    """Escape ffmetadata syntax (``= ; # \\``) and fold line breaks into spaces."""
+    value = " ".join(value.splitlines())
+    for ch in ("\\", "=", ";", "#"):
+        value = value.replace(ch, "\\" + ch)
+    return value
+
+
 def _write_ffmetadata(chapters: list[tuple[float, float, str]]) -> Path:
     """Write an ffmetadata file describing ``chapters`` and return its path."""
     lines = [";FFMETADATA1"]
@@ -349,12 +358,10 @@ def _write_ffmetadata(chapters: list[tuple[float, float, str]]) -> Path:
             "TIMEBASE=1/1000",
             f"START={int(round(start * 1000))}",
             f"END={int(round(end * 1000))}",
-            f"title={title}",
+            f"title={_escape_ffmetadata(title)}",
         ]
     fd, name = tempfile.mkstemp(suffix=".ffmeta", text=True)
     path = Path(name)
-    import os
-
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
     return path

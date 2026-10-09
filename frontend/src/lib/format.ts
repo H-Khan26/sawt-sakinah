@@ -1,4 +1,13 @@
-/** Small display formatters for the project library and switcher. */
+/** Small display formatters for the project library, switcher and settings. */
+
+/** A download size in decimal units: `850 MB`, `1.6 GB`. */
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  return `${Math.max(0, Math.round(bytes / 1e6))} MB`;
+}
+
+/** {@link formatBytes} for a size given in megabytes (the model catalog's `size_mb`). */
+export const formatMegabytes = (mb: number): string => formatBytes(mb * 1e6);
 
 /**
  * A compact relative time like `just now`, `4m ago`, `3h ago`, `2d ago`, falling back to a
