@@ -9,7 +9,9 @@ The service listens on localhost, so any web page the user visits can try to rea
   ``Sec-Fetch-Site: cross-site`` and any state-changing request whose ``Origin`` is not
   this service (or an explicitly allowed dev origin), requires the per-launch token when
   one is configured, and refuses oversized uploads from ``Content-Length`` before
-  Starlette spools the body.
+  Starlette spools the body. Every other request body is capped at ``MAX_BODY_BYTES``:
+  a larger ``Content-Length`` is refused up front, and a body without one (chunked) is
+  read up to the cap before the app sees it.
 
 The token is presented as the ``X-Sawt-Token`` header or as an HttpOnly, SameSite=Strict
 session cookie. The desktop window gets the cookie by first loading
@@ -29,7 +31,7 @@ from fastapi import FastAPI
 from starlette.datastructures import Headers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import cookie_parser
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..config import CONFIG
 
@@ -40,6 +42,8 @@ _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _DIGITS = re.compile(r"[0-9]+")
 # Headroom over the file cap for the multipart envelope (boundaries, part headers).
 _MULTIPART_OVERHEAD = 1024 * 1024
+# Cap for every body except the upload: JSON edits, markers and preferences are far below it.
+MAX_BODY_BYTES = 1024 * 1024
 
 
 def cookie_name(scope: Scope) -> str:
@@ -91,9 +95,13 @@ class LocalGuard:
                 await _reject(send, 401, "Unauthorized", "missing or invalid launch token")
                 return
 
+        length = headers.get("content-length")
+        if length is not None and not _DIGITS.fullmatch(length):
+            await _reject(send, 400, "BadRequest", "invalid Content-Length")
+            return
+
         if method == "POST" and path == UPLOAD_PATH:
-            length = headers.get("content-length")
-            if length is None or not _DIGITS.fullmatch(length):
+            if length is None:
                 await _reject(send, 411, "LengthRequired", "upload needs a Content-Length")
                 return
             if int(length) > self.max_body:
@@ -102,6 +110,16 @@ class LocalGuard:
                     send, 413, "FileTooLargeError", f"Upload exceeds the {limit} MB limit."
                 )
                 return
+        elif length is not None:
+            if int(length) > MAX_BODY_BYTES:
+                await _reject_too_large(send)
+                return
+        elif "transfer-encoding" in headers:
+            body = await _read_capped(receive, MAX_BODY_BYTES)
+            if body is None:
+                await _reject_too_large(send)
+                return
+            receive = _replay(body, receive)
 
         await self.app(scope, receive, send)
 
@@ -159,6 +177,47 @@ class LocalGuard:
             }
         )
         await send({"type": "http.response.body", "body": b""})
+
+
+async def _read_capped(receive: Receive, limit: int) -> Optional[bytes]:
+    """Read the whole request body, or return ``None`` as soon as it exceeds ``limit``."""
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        message = await receive()
+        if message["type"] != "http.request":
+            break  # client disconnected; the app sees an empty body
+        chunk = message.get("body", b"")
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+        if not message.get("more_body", False):
+            break
+    return b"".join(chunks)
+
+
+def _replay(body: bytes, receive: Receive) -> Receive:
+    """A ``receive`` that yields the buffered body once, then defers to the original."""
+    sent = False
+
+    async def replay() -> Message:
+        nonlocal sent
+        if not sent:
+            sent = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        return await receive()
+
+    return replay
+
+
+async def _reject_too_large(send: Send) -> None:
+    await _reject(
+        send,
+        413,
+        "RequestTooLargeError",
+        f"The request body exceeds the {MAX_BODY_BYTES // (1024 * 1024)} MB limit.",
+    )
 
 
 async def _reject(send: Send, status: int, error: str, detail: str) -> None:
