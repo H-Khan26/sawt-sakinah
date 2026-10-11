@@ -71,16 +71,11 @@ def data_dir_env_error() -> Optional[str]:
 
 
 def bundle_root() -> Path:
-    """The read-only root: the unpacked bundle when frozen, else the repo checkout."""
-    if not FROZEN:
-        return _PACKAGE_DIR.parent
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass:
-        return Path(meipass)
-    exe_dir = Path(sys.executable).resolve().parent
-    if exe_dir.name == "MacOS" and exe_dir.parent.name == "Contents":
-        return exe_dir.parent / "Frameworks"  # macOS .app layout
-    return exe_dir
+    """The read-only root: ``sys._MEIPASS`` when frozen (``_internal`` on Windows,
+    ``Contents/Frameworks`` in the macOS app), else the repo checkout."""
+    if FROZEN:
+        return Path(sys._MEIPASS)  # type: ignore[attr-defined]  # set by the bootloader
+    return _PACKAGE_DIR.parent
 
 
 def static_dir() -> Path:
