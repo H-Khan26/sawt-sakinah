@@ -76,8 +76,10 @@ def latest_btbn() -> str:
 def latest_riedl(attempts: int = 3) -> str:
     # Read the redirect itself (a GET that is not followed; the server often answers HEAD
     # with 404). The provider names each build's folder <id>_<version>.
-    # Only network errors are retried; any answer other than a redirect is final.
+    # Only network and protocol errors are retried; any answer other than a redirect is
+    # final. After the last attempt the last error is raised.
     url = urllib.parse.urlsplit(RIEDL_LATEST)
+    last_error: Exception = RuntimeError("no attempt was made")
     for attempt in range(attempts):
         if attempt:
             time.sleep(5 * attempt)
@@ -86,9 +88,8 @@ def latest_riedl(attempts: int = 3) -> str:
             conn.request("GET", url.path, headers={"User-Agent": USER_AGENT})
             res = conn.getresponse()
             status, location = res.status, res.getheader("Location") or ""
-        except OSError:
-            if attempt == attempts - 1:
-                raise
+        except (OSError, http.client.HTTPException) as exc:
+            last_error = exc
             continue
         finally:
             conn.close()
@@ -98,7 +99,7 @@ def latest_riedl(attempts: int = 3) -> str:
         if not match:
             raise ValueError(f"unexpected redirect target {location!r}")
         return match.group(1)
-    raise AssertionError("unreachable")
+    raise last_error
 
 
 def _source(platform: str, tool: str) -> tuple[str, Callable[[], str]]:
@@ -118,9 +119,9 @@ def check() -> tuple[str, int]:
     cache: dict[str, str | Exception] = {}
     for platform, tools in manifest["platforms"].items():
         for tool, spec in tools.items():
-            pinned = spec["version"]
-            source, latest = "?", "?"
+            pinned, source, latest = "?", "?", "?"
             try:
+                pinned = spec["version"]
                 source, fetch = _source(platform, tool)
                 if source not in cache:
                     try:
@@ -134,7 +135,7 @@ def check() -> tuple[str, int]:
                 status = "**behind**" if is_behind else "current"
                 behind |= is_behind
             except Exception as exc:  # noqa: BLE001 - report every source, then fail
-                status = f"error: {exc}"
+                status = f"error: {type(exc).__name__}: {exc}"
                 failed = True
             rows.append(f"| {tool} | {platform} | {source} | {pinned} | {latest} | {status} |")
     report = "\n".join(
