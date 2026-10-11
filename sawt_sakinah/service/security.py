@@ -10,8 +10,7 @@ The service listens on localhost, so any web page the user visits can try to rea
   this service (or an explicitly allowed dev origin), requires the per-launch token when
   one is configured, and refuses oversized uploads from ``Content-Length`` before
   Starlette spools the body. Every other request body is capped at ``MAX_BODY_BYTES``,
-  also from ``Content-Length``. A body without one (chunked) is refused with 411, and a
-  request carrying both ``Content-Length`` and ``Transfer-Encoding`` with 400.
+  also from ``Content-Length``, and a body without one (chunked) is refused with 411.
 
 The token is presented as the ``X-Sawt-Token`` header or as an HttpOnly, SameSite=Strict
 session cookie. The desktop window gets the cookie by first loading
@@ -100,13 +99,6 @@ class LocalGuard:
         chunked = "transfer-encoding" in headers
         if length is not None and not _DIGITS.fullmatch(length):
             await _reject(send, 400, "BadRequest", "invalid Content-Length")
-            return
-        # Transfer-Encoding overrides Content-Length (RFC 9112), so a request with both
-        # could carry more than its Content-Length claims; refuse the ambiguity.
-        if chunked and length is not None:
-            await _reject(
-                send, 400, "BadRequest", "Content-Length and Transfer-Encoding together"
-            )
             return
         # Every body is checked against its cap from Content-Length before it is read, so
         # one without it (chunked) is refused; browsers always send it for these requests.

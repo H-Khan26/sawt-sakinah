@@ -113,8 +113,7 @@ The service listens on localhost, so any web page the user opens can try to reac
   body is read.
 - **Body size**: every other request body is capped at 8 MiB (413
   `RequestTooLargeError`), checked from its `Content-Length` before the body is read. A
-  body without `Content-Length` (chunked) gets 411, and a request with both
-  `Content-Length` and `Transfer-Encoding` gets 400.
+  body without `Content-Length` (chunked) gets 411.
 
 Request fields that reach file names, ffmpeg or model loading (`format`, `bitrate`,
 `audio_format`, `audio_quality`, `model_size`, `device`, `compute_type`, `detector`) are
