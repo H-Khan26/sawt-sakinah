@@ -16,7 +16,9 @@ module adds two things on top:
 from __future__ import annotations
 
 import re
+import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -54,6 +56,38 @@ WHISPER_COMPUTE_TYPES = frozenset(
 _BITRATE = re.compile(r"[0-9]{2,3}[kK]")
 _VBR_QUALITY = re.compile(r"[0-9]")
 _LANGUAGE = re.compile(r"[a-z]{2,3}")
+# Browsers yt-dlp can read YouTube cookies from, in display order; Safari only on macOS.
+_COOKIE_BROWSER_ORDER = (
+    "chrome", "edge", "firefox", "brave", "chromium", "vivaldi", "opera", "safari",
+)
+COOKIE_BROWSERS = frozenset(
+    b for b in _COOKIE_BROWSER_ORDER if b != "safari" or sys.platform == "darwin"
+)
+_MAX_PATH_LEN = 1024
+
+
+def cookie_browsers() -> list[str]:
+    """The browsers offered for YouTube cookies on this OS, in display order."""
+    return [b for b in _COOKIE_BROWSER_ORDER if b in COOKIE_BROWSERS]
+
+
+def check_cookie_browser(value: str) -> str:
+    return _one_of(value, COOKIE_BROWSERS, "cookies_browser")
+
+
+def check_cookies_file(value: str, *, must_exist: bool = True) -> str:
+    """A cookies.txt path: absolute, local (no UNC share) and, with ``must_exist``, an
+    existing file. Returned as given."""
+    message = "cookies_file must be an absolute path to an existing file"
+    if not value or len(value) > _MAX_PATH_LEN or "\x00" in value:
+        raise ValueError(message)
+    # A network path would make the app contact that host just to check it.
+    if value.startswith(("\\\\", "//")):
+        raise ValueError("cookies_file must be on this computer, not a network share")
+    path = Path(value)
+    if not path.is_absolute() or (must_exist and not path.is_file()):
+        raise ValueError(message)
+    return value
 
 
 def _one_of(value: str, allowed: Iterable[str], field: str) -> str:

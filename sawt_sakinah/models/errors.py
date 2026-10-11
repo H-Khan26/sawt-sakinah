@@ -61,6 +61,11 @@ class YouTubeBotCheckError(ExtractionError):
     or the transient "content isn't available, try again later" block)."""
 
 
+class CookiesError(ExtractionError):
+    """The YouTube cookies chosen in Settings (a browser or a cookies.txt file) can't be
+    read."""
+
+
 class ProjectInUseError(Exception):
     """A project's files are still open (e.g. by playback), so it can't be deleted now."""
 

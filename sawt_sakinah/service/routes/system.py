@@ -9,6 +9,7 @@ from pydantic import BaseModel, ValidationError
 from ... import __version__, runtime
 from ...applog import open_folder
 from ..preferences import Preferences, PreferencesPatch, load_preferences, update_preferences
+from ..schemas import cookie_browsers
 from ..updates import UpdateStatus, check_for_update
 
 router = APIRouter(prefix="/app", tags=["app"])
@@ -17,11 +18,14 @@ router = APIRouter(prefix="/app", tags=["app"])
 class AppInfo(BaseModel):
     version: str
     frozen: bool
+    cookie_browsers: list[str]  # browsers offered for YouTube cookies on this OS
 
 
 @router.get("/info", response_model=AppInfo)
 def app_info() -> AppInfo:
-    return AppInfo(version=__version__, frozen=runtime.FROZEN)
+    return AppInfo(
+        version=__version__, frozen=runtime.FROZEN, cookie_browsers=cookie_browsers()
+    )
 
 
 @router.get("/preferences", response_model=Preferences)

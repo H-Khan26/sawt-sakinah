@@ -44,6 +44,7 @@ from ..models import (
 )
 from ..prayer import derive_structure
 from .jobs import TaskFn
+from .preferences import load_preferences
 from .projects import ProjectStore
 from .schemas import (
     CreateProjectRequest,
@@ -228,6 +229,8 @@ def extract_worker(
     req: CreateProjectRequest,
 ) -> TaskFn:
     def run(progress):
+        # Read at run time, so a cookies change in Settings applies to the next try.
+        prefs = load_preferences()
         source = extract_audio(
             req.url,
             output_dir=store.audio_dir(project_id),
@@ -237,6 +240,8 @@ def extract_worker(
             ffmpeg_bin=settings.ffmpeg_bin,
             ffprobe_bin=settings.ffprobe_bin,
             progress_callback=progress,
+            cookies_from_browser=prefs.cookies_browser,
+            cookies_file=prefs.cookies_file,
         )
         return _persist_source(store, project_id, source)
 
