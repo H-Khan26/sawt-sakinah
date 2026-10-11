@@ -49,15 +49,16 @@ STATIC_NOTICES = [
     (
         "PyInstaller bootloader",
         "GPL-2.0-or-later WITH Bootloader-exception",
-        "SawtSakinah.exe starts through the PyInstaller bootloader. Its license (GPL v2 or\n"
-        "later with the bootloader exception) allows distributing it with programs under any\n"
-        "license. https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt",
+        "The SawtSakinah program starts through the PyInstaller bootloader. Its license\n"
+        "(GPL v2 or later with the bootloader exception) allows distributing it with\n"
+        "programs under any license.\n"
+        "https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt",
     ),
     (
-        "FFmpeg libraries inside PyAV (av.libs)",
+        "FFmpeg libraries inside PyAV",
         "LGPL-2.1-or-later",
-        "The PyAV wheel ships its own FFmpeg shared libraries (_internal/av.libs), built\n"
-        "under the LGPL. Sources: https://github.com/PyAV-Org/PyAV and\n"
+        "The PyAV wheel ships its own FFmpeg shared libraries (av.libs on Windows, av/.dylibs\n"
+        "on macOS), built under the LGPL. Sources: https://github.com/PyAV-Org/PyAV and\n"
         "https://github.com/PyAV-Org/pyav-ffmpeg (build scripts and FFmpeg sources).",
     ),
 ]
