@@ -14,6 +14,7 @@ deliberately the simplest thing that gives handles, state, and progress.
 
 from __future__ import annotations
 
+import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -24,6 +25,8 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from ..config import CONFIG
+
+_log = logging.getLogger(__name__)
 
 # A task body receives a progress callback and returns an optional JSON-able result dict.
 TaskFn = Callable[[Callable[[dict], None]], Optional[dict]]
@@ -66,6 +69,11 @@ class JobRecord(BaseModel):
     error_type: Optional[str] = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
+
+
+def _failure(error: str, exc: BaseException) -> dict:
+    """The ``_patch`` fields recording a failed job."""
+    return {"state": JobState.failed, "error": error, "error_type": type(exc).__name__}
 
 
 class JobRegistry:
@@ -149,24 +157,24 @@ class JobRegistry:
         outcome: Optional[dict] = None
         try:
             self._patch(job_id, state=JobState.running)
-            try:
-                result = fn(lambda payload: self.update_progress(job_id, payload))
-                outcome = {"state": JobState.succeeded, "result": result or None}
-            except Exception as exc:  # noqa: BLE001 - record any failure for the client
-                outcome = {
-                    "state": JobState.failed,
-                    "error": str(exc),
-                    "error_type": type(exc).__name__,
-                }
+            result = fn(lambda payload: self.update_progress(job_id, payload))
+            outcome = {"state": JobState.succeeded, "result": result or None}
+        except Exception as exc:  # noqa: BLE001 - record any failure for the client
+            outcome = _failure(str(exc), exc)
+        except BaseException as exc:
+            # SystemExit / KeyboardInterrupt: record the job as failed, then let it propagate.
+            outcome = _failure(repr(exc), exc)
+            raise
         finally:
-            try:
-                if on_finish is not None:
+            if on_finish is not None:
+                try:
                     on_finish()
-            finally:
-                if outcome is not None:
-                    self._patch(job_id, **outcome)
-                with self._lock:
-                    self._active -= 1
+                except Exception:  # noqa: BLE001 - nothing reads the job's Future
+                    _log.exception("on_finish failed for job %s", job_id)
+            if outcome is not None:
+                self._patch(job_id, **outcome)
+            with self._lock:
+                self._active -= 1
 
     def update_progress(self, job_id: str, payload: dict) -> None:
         self._patch(job_id, progress=payload)
