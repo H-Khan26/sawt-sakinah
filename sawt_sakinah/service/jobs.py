@@ -25,6 +25,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from ..config import CONFIG
+from ..models import JobCancelledError
 
 _log = logging.getLogger(__name__)
 
@@ -76,12 +77,9 @@ def _failure(error: str, exc: BaseException) -> dict:
     return {"state": JobState.failed, "error": error, "error_type": type(exc).__name__}
 
 
-# Final state of a job dropped from the queue at shutdown.
-_CANCELLED = {
-    "state": JobState.failed,
-    "error": "The job was cancelled at shutdown.",
-    "error_type": "JobCancelledError",
-}
+def _cancelled() -> dict:
+    """The final state of a job dropped from the queue at shutdown."""
+    return _failure("The job was cancelled at shutdown.", JobCancelledError())
 
 
 class JobRegistry:
@@ -156,7 +154,7 @@ class JobRegistry:
             raise
         # A job cancelled before it started (dropped at shutdown) never reaches ``_run``.
         future.add_done_callback(
-            lambda f: self._close(job_id, _CANCELLED, on_finish) if f.cancelled() else None
+            lambda f: self._close(job_id, _cancelled(), on_finish) if f.cancelled() else None
         )
         return record.model_copy(deep=True)
 
