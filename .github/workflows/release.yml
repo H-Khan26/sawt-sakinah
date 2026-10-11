@@ -1,4 +1,5 @@
-# Build, self-test, attest and draft-release the desktop bundle.
+# Build, self-test, attest and draft-release the desktop bundles: a Windows x64 folder
+# and a macOS arm64 SawtSakinah.app, each zipped.
 #
 # A pushed tag vX.Y.Z (matching sawt_sakinah.__version__) produces a DRAFT release with
 # the zips and SHA256SUMS; a maintainer reviews and publishes it. Running the workflow by
@@ -86,10 +87,13 @@ jobs:
           - os: windows-2025
             platform: windows-x64
             lock: packaging/requirements-windows.txt
-          # Phase 2:
-          # - os: macos-15
-          #   platform: macos-arm64
-          #   lock: packaging/requirements-macos.txt
+            build_lock: packaging/requirements-build.txt
+            app: packaging/dist/SawtSakinah
+          - os: macos-15 # arm64 (Apple Silicon)
+            platform: macos-arm64
+            lock: packaging/requirements-macos.txt
+            build_lock: packaging/requirements-build-macos.txt
+            app: packaging/dist/SawtSakinah.app
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -100,11 +104,17 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       PLATFORM: ${{ matrix.platform }}
       LOCK: ${{ matrix.lock }}
+      BUILD_LOCK: ${{ matrix.build_lock }}
+      APP: ${{ matrix.app }}
       SAWT_SPA_DIR: ${{ github.workspace }}/spa-artifact/dist
       SAWT_VENDOR_DIR: ${{ github.workspace }}/packaging/build/vendor
+      SAWT_NOTICES: ${{ github.workspace }}/packaging/build/THIRD_PARTY_LICENSES.txt
+      # macOS: fail the build when PyInstaller cannot sign the .app or the seal is broken.
+      PYINSTALLER_STRICT_BUNDLE_CODESIGN_ERROR: "1"
+      PYINSTALLER_VERIFY_BUNDLE_SIGNATURE: "1"
     defaults:
       run:
-        shell: pwsh
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -120,20 +130,24 @@ jobs:
           path: spa-artifact
 
       - name: Fetch ffmpeg, ffprobe and Deno (SHA-256 pinned)
-        run: python packaging/fetch_binaries.py $env:PLATFORM $env:SAWT_VENDOR_DIR
+        run: python packaging/fetch_binaries.py "$PLATFORM" "$SAWT_VENDOR_DIR"
 
       - name: Install the hash-pinned dependencies
         run: |
-          python -m pip install --require-hashes --only-binary :all: -r packaging/requirements-build.txt
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m pip install --require-hashes --no-build-isolation -r $env:LOCK
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip install --require-hashes --only-binary :all: -r "$BUILD_LOCK"
+          python -m pip install --require-hashes --no-build-isolation -r "$LOCK"
           python -m pip list
+
+      # Before PyInstaller: the macOS spec seals the notices inside the signed .app.
+      - name: Third-party notices
+        run: python packaging/third_party.py bundle --lock "$LOCK" --vendor "$SAWT_VENDOR_DIR" --spa "$SAWT_SPA_DIR" --frontend-notices spa-artifact/frontend-licenses.txt -o "$SAWT_NOTICES"
 
       - name: PyInstaller
         run: python -m PyInstaller --noconfirm --clean --distpath packaging/dist --workpath packaging/build/pyinstaller packaging/sawt_sakinah.spec
 
-      - name: Self-test the frozen app
+      - name: Self-test the frozen app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         timeout-minutes: 10
         env:
           # Keeps the app's logs (and all its data) in a known place on every OS.
@@ -157,13 +171,53 @@ jobs:
             exit 1
           }
 
-      - name: Third-party notices and zip
+      - name: Self-test the frozen app (macOS)
+        if: runner.os == 'macOS'
+        timeout-minutes: 10
+        env:
+          # Keeps the app's logs (and all its data) in a known place on every OS.
+          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
         run: |
-          python packaging/third_party.py bundle --lock $env:LOCK --vendor $env:SAWT_VENDOR_DIR --spa $env:SAWT_SPA_DIR --frontend-notices spa-artifact/frontend-licenses.txt -o packaging/build/THIRD_PARTY_LICENSES.txt
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python packaging/package.py --dist packaging/dist/SawtSakinah --version $env:VERSION --platform $env:PLATFORM --notices packaging/build/THIRD_PARTY_LICENSES.txt --out packaging/release
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          Get-ChildItem packaging/release | Format-Table Name, Length
+          report="$RUNNER_TEMP/self-test.json"
+          code=0
+          "$APP/Contents/MacOS/SawtSakinah" --self-test --self-test-report "$report" || code=$?
+          if [ -f "$report" ]; then cat "$report"; else echo 'No self-test report was written.'; fi
+          if [ "$code" -ne 0 ]; then
+            echo "::error::self-test failed with exit code $code"
+            if [ -d "$SAWT_DATA_DIR/logs" ]; then
+              for log in "$SAWT_DATA_DIR/logs"/*; do
+                [ -f "$log" ] || continue
+                echo "----- $log"
+                tail -n 200 "$log"
+              done
+            else
+              echo '::notice::The app wrote no logs.'
+            fi
+            exit 1
+          fi
+
+      - name: Zip
+        run: |
+          python packaging/package.py --dist "$APP" --version "$VERSION" --platform "$PLATFORM" --notices "$SAWT_NOTICES" --out packaging/release
+          ls -l packaging/release
+
+      # The zip is what users get: unpack it the way Finder does and check the seal again.
+      - name: Check the zipped app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          unpacked="$RUNNER_TEMP/unpacked"
+          rm -rf "$unpacked"
+          ditto -x -k packaging/release/SawtSakinah-*.zip "$unpacked"
+          app="$unpacked/SawtSakinah.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --display --verbose=2 "$app" 2>&1 | grep -E '^(Identifier|Format|Signature|TeamIdentifier)'
+          plutil -p "$app/Contents/Info.plist"
+          ls -l "$app/Contents/Frameworks/bin" "$app/Contents/Resources" | sed -n 1,40p
+          for tool in ffmpeg ffprobe deno; do
+            file "$app/Contents/Frameworks/bin/$tool"
+          done
+          "$app/Contents/Frameworks/bin/ffmpeg" -hide_banner -version | sed -n 1p
+          "$app/Contents/Frameworks/bin/deno" --version | sed -n 1p
 
       - name: Attest build provenance
         if: needs.prepare.outputs.dry_run != 'true'
@@ -189,16 +243,14 @@ jobs:
           # Where the self-test step had the app write its logs.
           SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
         run: |
-          $dest = Join-Path $env:RUNNER_TEMP 'diagnostics'
-          New-Item -ItemType Directory -Force $dest | Out-Null
-          $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
-          if (Test-Path $report) { Copy-Item $report $dest }
-          $logs = Join-Path $env:SAWT_DATA_DIR 'logs'
-          if (Test-Path $logs) {
-            Copy-Item $logs (Join-Path $dest 'logs') -Recurse
-          } else {
-            Write-Host '::notice::The app wrote no logs.'
-          }
+          dest="$RUNNER_TEMP/diagnostics"
+          mkdir -p "$dest"
+          if [ -f "$RUNNER_TEMP/self-test.json" ]; then cp "$RUNNER_TEMP/self-test.json" "$dest/"; fi
+          if [ -d "$SAWT_DATA_DIR/logs" ]; then
+            cp -R "$SAWT_DATA_DIR/logs" "$dest/logs"
+          else
+            echo '::notice::The app wrote no logs.'
+          fi
 
       - name: Upload the self-test logs
         if: failure()
@@ -244,27 +296,47 @@ jobs:
         run: |
           ytdlp=$(sed -n 's/^yt-dlp==\([^ ]*\).*/\1/p' packaging/requirements-windows.txt)
           ejs=$(sed -n 's/^yt-dlp-ejs==\([^ ]*\).*/\1/p' packaging/requirements-windows.txt)
-          ffmpeg=$(jq -r '.platforms["windows-x64"].ffmpeg.version' packaging/binaries.json)
-          deno=$(jq -r '.platforms["windows-x64"].deno.version' packaging/binaries.json)
+          mac_ytdlp=$(sed -n 's/^yt-dlp==\([^ ]*\).*/\1/p' packaging/requirements-macos.txt)
+          if [ "$mac_ytdlp" != "$ytdlp" ]; then
+            echo "::error::the Windows and macOS locks pin different yt-dlp versions"
+            exit 1
+          fi
+          pin() { jq -r ".platforms[\"$1\"].$2.version" packaging/binaries.json; }
           cat > notes.md <<EOF
           ## Download
 
-          Windows 10 22H2 / 11 (x64): \`SawtSakinah-${VERSION}-windows-x64.zip\`. Unzip it and run
-          \`SawtSakinah.exe\`. The app is not code-signed yet, so SmartScreen asks first: choose
-          **More info**, then **Run anyway**. See the README for requirements.
+          **Windows 10 22H2 / 11 (x64)**: \`SawtSakinah-${VERSION}-windows-x64.zip\`. Unzip it and
+          run \`SawtSakinah.exe\`. The app is not code-signed yet, so SmartScreen asks first:
+          choose **More info**, then **Run anyway**.
 
-          Verify the download:
+          **macOS 14 or later on Apple Silicon (M1 or newer)**:
+          \`SawtSakinah-${VERSION}-macos-arm64.zip\`. Unzip it and move **SawtSakinah.app** to
+          Applications. The app is not signed or notarized by Apple, so macOS blocks the first
+          launch:
+
+          1. Open the app once, and close the warning that it cannot be opened.
+          2. Open **System Settings > Privacy & Security**, scroll down to **Security** and click
+             **Open Anyway** next to the message about SawtSakinah, then confirm.
+
+          If no **Open Anyway** button appears, run this in Terminal and open the app again:
+          \`xattr -dr com.apple.quarantine /Applications/SawtSakinah.app\`
+
+          Intel Macs are not supported; they can run the app from source. See the README for
+          requirements.
+
+          Verify a download:
 
           \`\`\`
-          gh attestation verify SawtSakinah-${VERSION}-windows-x64.zip -R ${GH_REPO}
+          gh attestation verify SawtSakinah-${VERSION}-<platform>.zip -R ${GH_REPO}
           \`\`\`
 
           or compare its SHA-256 with \`SHA256SUMS\`.
 
           ## Bundled components
 
-          - yt-dlp ${ytdlp} (with yt-dlp-ejs ${ejs})
-          - FFmpeg ${ffmpeg} (LGPL build) and Deno ${deno}
+          - yt-dlp ${ytdlp} (with yt-dlp-ejs ${ejs}), on both platforms
+          - Windows: FFmpeg $(pin windows-x64 ffmpeg) (LGPL build) and Deno $(pin windows-x64 deno)
+          - macOS: FFmpeg $(pin macos-arm64 ffmpeg) (GPL v3 build) and Deno $(pin macos-arm64 deno)
 
           ## Network use
 

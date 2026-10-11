@@ -51,11 +51,12 @@ jobs:
             echo "No tests directory; skipping."
           fi
 
-      - name: Audit the release lock (pip-audit, warn only)
+      - name: Audit the release locks (pip-audit, warn only)
         continue-on-error: true
         run: |
           python -m pip install pip-audit
           pip-audit --disable-pip --no-deps -r packaging/requirements-windows.txt
+          pip-audit --disable-pip --no-deps -r packaging/requirements-macos.txt
 
   frontend:
     name: Frontend
