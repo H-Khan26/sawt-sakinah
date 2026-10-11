@@ -199,16 +199,15 @@ if IS_MAC:
         name="SawtSakinah.app",
         icon=str(REPO / "packaging" / "sawt_sakinah.icns"),
         bundle_identifier=BUNDLE_ID,
-        version=version,
+        version=version,  # CFBundleShortVersionString
+        # Only what PyInstaller does not set; it adds the executable, icon, identifier,
+        # short version and NSHighResolutionCapable (windowed build) itself.
         info_plist={
-            "CFBundleName": "Sawt Sakinah",
+            "CFBundleName": "Sawt Sakinah",  # PyInstaller's default is the file name
             "CFBundleDisplayName": "Sawt Sakinah",
-            "CFBundleVersion": version,
-            "CFBundleShortVersionString": version,
+            "CFBundleVersion": version,  # build version; PyInstaller leaves it unset
             "LSMinimumSystemVersion": MIN_MACOS,
             "LSApplicationCategoryType": "public.app-category.music",
-            "NSHighResolutionCapable": True,
-            "NSRequiresAquaSystemAppearance": False,
             # The window loads the app's own service on 127.0.0.1.
             "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
             "NSHumanReadableCopyright": "MIT License",
