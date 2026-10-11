@@ -174,14 +174,24 @@ jobs:
           compression-level: 0
           retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 14 || 3 }}
 
+      # upload-artifact needs one common root; the temp dir and the user profile are on
+      # different drives on hosted runners.
+      - name: Collect the self-test logs
+        if: failure()
+        run: |
+          $dest = Join-Path $env:RUNNER_TEMP 'diagnostics'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
+          if (Test-Path $report) { Copy-Item $report $dest }
+          $logs = Join-Path $env:LOCALAPPDATA 'SawtSakinah\logs'
+          if (Test-Path $logs) { Copy-Item $logs (Join-Path $dest 'logs') -Recurse }
+
       - name: Upload the self-test logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: self-test-logs-${{ matrix.platform }}
-          path: |
-            ${{ runner.temp }}/self-test.json
-            ~/AppData/Local/SawtSakinah/logs
+          path: ${{ runner.temp }}/diagnostics
           if-no-files-found: ignore
           retention-days: 7
 
