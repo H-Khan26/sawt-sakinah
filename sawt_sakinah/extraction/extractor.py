@@ -135,13 +135,19 @@ def _is_cookie_failure(err: BaseException) -> bool:
     return False
 
 
-def _cookie_error(cookies: str) -> CookiesError:
+def _cookie_error(cookies: str, message: str) -> CookiesError:
+    """The user-facing error for cookies yt-dlp could not load (``message`` is its text)."""
     if cookies == "file":
         return CookiesError(
             "Couldn't read the cookies.txt file chosen in Settings. Export it again from "
             "your browser, or turn YouTube cookies off in Settings."
         )
     label = BROWSER_LABELS.get(cookies, cookies)
+    if "could not find" in message.lower():
+        return CookiesError(
+            f"Couldn't find {label} cookies on this computer. Check that {label} is "
+            "installed and signed in to YouTube, or choose another option in Settings."
+        )
     return CookiesError(
         f"Couldn't read your {label} cookies. Some browsers lock or encrypt them while "
         f"they run: close {label} and try again, or choose another browser or a "
@@ -163,7 +169,7 @@ def _map_download_error(
     low = msg.lower()
     if cookies is not None and _is_cookie_failure(err):
         _log.warning("yt-dlp could not load cookies for %s: %s", url, msg)
-        return _cookie_error(cookies)
+        return _cookie_error(cookies, msg)
     # Before the unavailable check: the "try again later" refusal starts "Video unavailable".
     if _BOT_CHECK.search(low):
         _log.warning("yt-dlp failed for %s: %s", url, msg)
