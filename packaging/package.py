@@ -50,11 +50,14 @@ def app_version() -> str:
     return re.search(r'^__version__\s*=\s*"([^"]+)"', text, re.M).group(1)
 
 
-def _zip_folder(dist: Path, notices: Optional[Path], archive: Path) -> None:
+def _check_folder(dist: Path, notices: Optional[Path]) -> None:
     if not (dist / "_internal").is_dir():
         raise SystemExit(f"{dist} is not a PyInstaller one-folder build (no _internal/)")
-    if notices is None:
-        raise SystemExit("--notices is required for a one-folder build")
+    if notices is None or not notices.is_file():
+        raise SystemExit("--notices must name THIRD_PARTY_LICENSES.txt for a one-folder build")
+
+
+def _zip_folder(dist: Path, notices: Path, archive: Path) -> None:
     shutil.copyfile(REPO / "LICENSE", dist / "LICENSE.txt")
     shutil.copyfile(notices, dist / NOTICES)
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
@@ -65,7 +68,7 @@ def _zip_folder(dist: Path, notices: Optional[Path], archive: Path) -> None:
                 zf.write(path, f"{TOP}/{path.relative_to(dist).as_posix()}")
 
 
-def _zip_app(app: Path, archive: Path) -> None:
+def _check_app(app: Path) -> None:
     contents = app / "Contents"
     for required in ("Info.plist", f"MacOS/{TOP}", f"Resources/{NOTICES}", "Resources/LICENSE.txt"):
         if not (contents / required).exists():
@@ -74,6 +77,9 @@ def _zip_app(app: Path, archive: Path) -> None:
         ["/usr/bin/codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)],
         check=True,
     )
+
+
+def _zip_app(app: Path, archive: Path) -> None:
     subprocess.run(  # noqa: S603
         ["/usr/bin/ditto", "-c", "-k", "--keepParent", str(app), str(archive)],
         check=True,
@@ -83,10 +89,16 @@ def _zip_app(app: Path, archive: Path) -> None:
 def package(
     dist: Path, version: str, platform: str, notices: Optional[Path], out: Path
 ) -> Path:
+    is_app = dist.suffix == ".app"
+    # Validate the input before the previous zip of the same name is replaced.
+    if is_app:
+        _check_app(dist)
+    else:
+        _check_folder(dist, notices)
     out.mkdir(parents=True, exist_ok=True)
     archive = out / f"{TOP}-{version}-{platform}.zip"
     archive.unlink(missing_ok=True)
-    if dist.suffix == ".app":
+    if is_app:
         _zip_app(dist, archive)
     else:
         _zip_folder(dist, notices, archive)
