@@ -173,13 +173,14 @@ def acquire(path: str | os.PathLike) -> Callable[[], None]:
     key = _key(Path(path))
     with _STATE_LOCK:
         _IN_USE[key] = _IN_USE.get(key, 0) + 1
-    released = threading.Event()
+    released = False
 
     def release() -> None:
+        nonlocal released
         with _STATE_LOCK:
-            if released.is_set():
+            if released:
                 return
-            released.set()
+            released = True
             count = _IN_USE.get(key, 0) - 1
             if count > 0:
                 _IN_USE[key] = count
