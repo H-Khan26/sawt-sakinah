@@ -116,7 +116,9 @@ class JobRegistry:
         """Register a job and schedule ``fn`` on the chosen pool; return its record.
 
         ``on_finish`` runs once the job ends in any way: succeeded, failed, or dropped from
-        the queue at shutdown. It does not run when ``submit`` raises.
+        the queue at shutdown. A job that ran calls it before its final state is recorded,
+        so a client that sees the job finished also sees its effects undone. It does not run
+        when ``submit`` raises, and it must be safe to call more than once.
 
         Raises:
             JobQueueFullError: If ``max_pending_jobs`` jobs are already pending or running.
@@ -130,33 +132,41 @@ class JobRegistry:
             self._jobs[job_id] = record
         executor = self._phrase_pool if pool == "phrase" else self._pool
         try:
-            future = executor.submit(self._run, job_id, fn)
+            future = executor.submit(self._run, job_id, fn, on_finish)
         except BaseException:
             with self._lock:
                 self._active -= 1
                 self._jobs.pop(job_id, None)
             raise
         if on_finish is not None:
-            # Done callbacks also fire for a future cancelled before it started.
-            future.add_done_callback(lambda _f: on_finish())
+            # A job cancelled before it started (shutdown) never reaches ``_run``.
+            future.add_done_callback(lambda f: on_finish() if f.cancelled() else None)
         return record.model_copy(deep=True)
 
-    def _run(self, job_id: str, fn: TaskFn) -> None:
+    def _run(
+        self, job_id: str, fn: TaskFn, on_finish: Optional[Callable[[], None]] = None
+    ) -> None:
+        outcome: Optional[dict] = None
         try:
             self._patch(job_id, state=JobState.running)
             try:
                 result = fn(lambda payload: self.update_progress(job_id, payload))
-                self._patch(job_id, state=JobState.succeeded, result=result or None)
+                outcome = {"state": JobState.succeeded, "result": result or None}
             except Exception as exc:  # noqa: BLE001 - record any failure for the client
-                self._patch(
-                    job_id,
-                    state=JobState.failed,
-                    error=str(exc),
-                    error_type=type(exc).__name__,
-                )
+                outcome = {
+                    "state": JobState.failed,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                }
         finally:
-            with self._lock:
-                self._active -= 1
+            try:
+                if on_finish is not None:
+                    on_finish()
+            finally:
+                if outcome is not None:
+                    self._patch(job_id, **outcome)
+                with self._lock:
+                    self._active -= 1
 
     def update_progress(self, job_id: str, payload: dict) -> None:
         self._patch(job_id, progress=payload)
