@@ -9,9 +9,9 @@ The service listens on localhost, so any web page the user visits can try to rea
   ``Sec-Fetch-Site: cross-site`` and any state-changing request whose ``Origin`` is not
   this service (or an explicitly allowed dev origin), requires the per-launch token when
   one is configured, and refuses oversized uploads from ``Content-Length`` before
-  Starlette spools the body. Every other request body is capped at ``MAX_BODY_BYTES``:
-  a larger ``Content-Length`` is refused up front, a body without one (chunked) is read
-  up to the cap before the app sees it, and a request with both headers is refused.
+  Starlette spools the body. Every other request body is capped at ``MAX_BODY_BYTES``,
+  also from ``Content-Length``. A body without one (chunked) is refused with 411, and a
+  request carrying both ``Content-Length`` and ``Transfer-Encoding`` with 400.
 
 The token is presented as the ``X-Sawt-Token`` header or as an HttpOnly, SameSite=Strict
 session cookie. The desktop window gets the cookie by first loading
@@ -31,7 +31,7 @@ from fastapi import FastAPI
 from starlette.datastructures import Headers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import cookie_parser
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ..config import CONFIG
 
@@ -107,6 +107,11 @@ class LocalGuard:
                 send, 400, "BadRequest", "Content-Length and Transfer-Encoding together"
             )
             return
+        # Every body is checked against its cap from Content-Length before it is read, so
+        # one without it (chunked) is refused; browsers always send it for these requests.
+        if chunked:
+            await _reject(send, 411, "LengthRequired", "the request body needs a Content-Length")
+            return
 
         if method == "POST" and path == UPLOAD_PATH:
             if length is None:
@@ -118,16 +123,14 @@ class LocalGuard:
                     send, 413, "FileTooLargeError", f"Upload exceeds the {limit} MB limit."
                 )
                 return
-        elif length is not None:
-            if int(length) > MAX_BODY_BYTES:
-                await _reject_too_large(send)
-                return
-        elif chunked:
-            messages = await _read_capped(receive, MAX_BODY_BYTES)
-            if messages is None:
-                await _reject_too_large(send)
-                return
-            receive = _replay(messages, receive)
+        elif length is not None and int(length) > MAX_BODY_BYTES:
+            await _reject(
+                send,
+                413,
+                "RequestTooLargeError",
+                f"The request body exceeds the {MAX_BODY_BYTES // (1024 * 1024)} MB limit.",
+            )
+            return
 
         await self.app(scope, receive, send)
 
@@ -185,46 +188,6 @@ class LocalGuard:
             }
         )
         await send({"type": "http.response.body", "body": b""})
-
-
-async def _read_capped(receive: Receive, limit: int) -> Optional[list[Message]]:
-    """Read the request body's messages, or return ``None`` once it exceeds ``limit``.
-
-    Stops at the last body chunk or at a disconnect, which is kept so the app sees it.
-    """
-    messages: list[Message] = []
-    size = 0
-    while True:
-        message = await receive()
-        messages.append(message)
-        if message["type"] != "http.request":
-            return messages
-        size += len(message.get("body", b""))
-        if size > limit:
-            return None
-        if not message.get("more_body", False):
-            return messages
-
-
-def _replay(messages: list[Message], receive: Receive) -> Receive:
-    """A ``receive`` that yields the buffered messages in order, then defers to the original."""
-    pending = list(messages)
-
-    async def replay() -> Message:
-        if pending:
-            return pending.pop(0)
-        return await receive()
-
-    return replay
-
-
-async def _reject_too_large(send: Send) -> None:
-    await _reject(
-        send,
-        413,
-        "RequestTooLargeError",
-        f"The request body exceeds the {MAX_BODY_BYTES // (1024 * 1024)} MB limit.",
-    )
 
 
 async def _reject(send: Send, status: int, error: str, detail: str) -> None:
