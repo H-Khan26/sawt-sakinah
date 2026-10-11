@@ -21,8 +21,8 @@ All project and cache data goes to a throwaway temp directory, never the user's.
 is downloaded (phrase detection is skipped). Each step is logged; the result is also
 written as JSON to ``--self-test-report`` when given: once before the checks start and
 again at the end, so a crash part-way still leaves a report. Its ``paths`` entry names the
-user-data and log directories, which CI reads to collect the logs on any platform. Exit
-code 0 on success, 1 on failure.
+user-data and log directories (``--data-dir`` moves both). Exit code 0 on success, 1 on
+failure.
 """
 
 from __future__ import annotations
