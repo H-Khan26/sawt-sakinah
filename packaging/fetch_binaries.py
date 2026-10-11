@@ -106,17 +106,35 @@ def _extract_members(archive: Path, members: dict[str, str], out_dir: Path) -> l
 
 
 _MACHO_64 = 0xFEEDFACF
+_FAT = 0xCAFEBABE  # universal binary, 32-bit fat_arch entries
+_FAT_64 = 0xCAFEBABF  # universal binary, 64-bit fat_arch_64 entries
 _CPU_ARM64 = 0x0100000C
 
 
+def _is_arm64_macho(head: bytes) -> bool:
+    """A thin arm64 Mach-O, or a universal binary with an arm64 slice."""
+    if len(head) < 8:
+        return False
+    if struct.unpack_from("<II", head) == (_MACHO_64, _CPU_ARM64):
+        return True
+    magic, count = struct.unpack_from(">II", head)
+    if magic not in (_FAT, _FAT_64) or not 0 < count <= 32:  # Java class files share _FAT
+        return False
+    entry = 20 if magic == _FAT else 32
+    if len(head) < 8 + count * entry:
+        return False
+    cputypes = [struct.unpack_from(">I", head, 8 + i * entry)[0] for i in range(count)]
+    return _CPU_ARM64 in cputypes
+
+
 def _check_binary(path: Path, platform: str) -> None:
-    """Raise when ``path`` is not an executable for ``platform`` (PE or arm64 Mach-O)."""
+    """Raise when ``path`` is not an executable for ``platform`` (PE, or arm64 Mach-O)."""
     with path.open("rb") as fh:
-        head = fh.read(8)
+        head = fh.read(8 + 32 * 32)
     if platform.startswith("windows"):
         ok = head[:2] == b"MZ"
     elif platform == "macos-arm64":
-        ok = len(head) == 8 and struct.unpack("<II", head) == (_MACHO_64, _CPU_ARM64)
+        ok = _is_arm64_macho(head)
     else:
         raise FetchError(f"no executable format known for platform {platform!r}")
     if not ok:
