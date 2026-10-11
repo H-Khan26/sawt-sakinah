@@ -136,6 +136,10 @@ export interface ProjectSummary {
   updated_at: string;
   status: ProjectStatus;
   export_count: number;
+  /** Why the project's file can't be loaded (too new or damaged), else `null`. When set,
+   * `name` may be a fallback, `duration_sec` is 0, `status` is all false and `source_kind`
+   * may be `"unknown"`; the project can only be deleted. */
+  unreadable: string | null;
 }
 
 /** Body of `GET /projects`, most-recently-edited first. */
@@ -307,7 +311,24 @@ export interface AppPreferences {
   show_deleted: boolean;
   /** Silence detector last chosen in the silence panel. */
   silence_detector: SilenceDetector;
+  /** Browser whose profile cookies YouTube imports use (one of `AppInfo.cookie_browsers`).
+   * Mutually exclusive with `cookies_file`; both `null` means cookies are off. */
+  cookies_browser: CookieBrowser | null;
+  /** Absolute path to a Netscape-format cookies.txt that YouTube imports read. Mutually
+   * exclusive with `cookies_browser`. */
+  cookies_file: string | null;
 }
+
+/** Browsers YouTube cookies can be read from. */
+export type CookieBrowser =
+  | "chrome"
+  | "edge"
+  | "firefox"
+  | "brave"
+  | "chromium"
+  | "vivaldi"
+  | "opera"
+  | "safari";
 
 /** Body of `PATCH /app/preferences`; any subset of the fields. */
 export type PreferencesPatch = Partial<AppPreferences>;
@@ -316,6 +337,8 @@ export type PreferencesPatch = Partial<AppPreferences>;
 export interface AppInfo {
   version: string;
   frozen: boolean;
+  /** Browsers offered for YouTube cookies on this OS, in display order. */
+  cookie_browsers: CookieBrowser[];
 }
 
 /** `GET /app/update` — the backend's cached release check (honours the preferences). */
@@ -351,8 +374,18 @@ export interface ModelDownloadProgress {
 
 // --- error envelope (service/app.py) ----------------------------------------
 
-/** Body of a typed sync failure: `{ error: ExceptionName, detail: str }`. */
+/** One entry of FastAPI's request-validation `detail` list. */
+export interface ValidationIssue {
+  loc: (string | number)[];
+  msg: string;
+  type: string;
+}
+
+/**
+ * Body of a failed request: a typed failure `{ error: ExceptionName, detail: str }`, or a
+ * FastAPI 422 whose `detail` lists validation issues (no `error`).
+ */
 export interface ApiErrorBody {
-  error: string;
-  detail: string;
+  error?: string;
+  detail: string | ValidationIssue[];
 }

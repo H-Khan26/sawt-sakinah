@@ -2,7 +2,13 @@ import { cn } from "@/lib/cn";
 import type { MarkerType } from "@/types/api";
 import type { HTMLAttributes } from "react";
 
-export type BadgeVariant = "neutral" | "accent" | "accent-secondary" | "info" | "success";
+export type BadgeVariant =
+  | "neutral"
+  | "accent"
+  | "accent-secondary"
+  | "info"
+  | "success"
+  | "danger";
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
@@ -14,6 +20,7 @@ const VARIANTS: Record<BadgeVariant, string> = {
   "accent-secondary": "bg-accent-secondary text-white",
   info: "bg-info text-white",
   success: "bg-success text-white",
+  danger: "bg-danger text-white",
 };
 
 /**

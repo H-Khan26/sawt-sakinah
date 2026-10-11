@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui";
 import type { BadgeVariant } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { formatRelativeTime, formatSourceHost } from "@/lib/format";
 import { formatClock } from "@/lib/time";
 import type { ProjectStatus, ProjectSummary } from "@/types/api";
@@ -15,6 +16,11 @@ function stageBadge(status: ProjectStatus): { label: string; variant: BadgeVaria
   return { label: "Processing", variant: "neutral" };
 }
 
+/**
+ * One library row. Click (or Enter/Space) opens the editor; the kebab menu renames or deletes.
+ * An unreadable project (its file is too new or damaged) shows the reason instead of the
+ * source line, does not open, and offers only Delete.
+ */
 export function ProjectCard({
   project,
   onRename,
@@ -28,6 +34,7 @@ export function ProjectCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const stage = stageBadge(project.status);
+  const unreadable = project.unreadable;
 
   // Close the kebab menu on outside click / Esc.
   useEffect(() => {
@@ -53,18 +60,23 @@ export function ProjectCard({
   };
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: card holds its own kebab button; nested buttons are invalid HTML, so the clickable card is a div with role="button".
+    // The card holds its own kebab button and nested buttons are invalid HTML, so the clickable
+    // card is a div with role="button".
     <div
-      role="button"
-      tabIndex={0}
-      onClick={open}
+      role={unreadable ? undefined : "button"}
+      tabIndex={unreadable ? undefined : 0}
+      onClick={unreadable ? undefined : open}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
+        if (!unreadable && (e.key === "Enter" || e.key === " ")) {
           e.preventDefault();
           open();
         }
       }}
-      className="group relative flex cursor-pointer flex-col gap-4 rounded-[20px] border border-[rgba(224,224,224,0.96)] bg-[rgba(252,251,248,0.96)] p-5 text-left shadow-sm transition-all duration-fast hover:border-[rgba(69,3,119,0.24)] hover:bg-[rgba(255,255,255,0.98)] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus sm:flex-row sm:items-start sm:justify-between sm:gap-6"
+      className={cn(
+        "group relative flex flex-col gap-4 rounded-[20px] border border-[rgba(224,224,224,0.96)] bg-[rgba(252,251,248,0.96)] p-5 text-left shadow-sm transition-all duration-fast sm:flex-row sm:items-start sm:justify-between sm:gap-6",
+        !unreadable &&
+          "cursor-pointer hover:border-[rgba(69,3,119,0.24)] hover:bg-[rgba(255,255,255,0.98)] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus",
+      )}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3 sm:gap-4">
@@ -81,18 +93,26 @@ export function ProjectCard({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
-          <span className="truncate">
-            {project.source_kind === "upload"
-              ? "Uploaded file"
-              : formatSourceHost(project.source_url ?? "")}
-          </span>
-          <span className="text-text-tertiary">·</span>
-          <span>{formatClock(project.duration_sec)}</span>
-        </div>
+        {unreadable ? (
+          <p className="mt-4 text-sm text-text-secondary">{unreadable}</p>
+        ) : (
+          <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
+            <span className="truncate">
+              {project.source_kind === "upload"
+                ? "Uploaded file"
+                : formatSourceHost(project.source_url ?? "")}
+            </span>
+            <span className="text-text-tertiary">·</span>
+            <span>{formatClock(project.duration_sec)}</span>
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Badge variant={stage.variant}>{stage.label}</Badge>
+          {unreadable ? (
+            <Badge variant="danger">Can't open</Badge>
+          ) : (
+            <Badge variant={stage.variant}>{stage.label}</Badge>
+          )}
           {project.export_count > 0 && (
             <span className="rounded-full bg-[rgba(69,3,119,0.06)] px-3 py-1 text-xs text-text-secondary">
               {project.export_count} export{project.export_count === 1 ? "" : "s"}
@@ -127,14 +147,16 @@ export function ProjectCard({
               role="menu"
               className="absolute right-0 z-10 mt-1 w-40 overflow-hidden rounded border border-[rgba(224,224,224,0.96)] bg-[rgba(252,251,248,0.98)] py-1 shadow-lg backdrop-blur-[8px]"
             >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={runItem(onRename)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-background-secondary"
-              >
-                <Pencil size={15} /> Rename
-              </button>
+              {!unreadable && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={runItem(onRename)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-background-secondary"
+                >
+                  <Pencil size={15} /> Rename
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"

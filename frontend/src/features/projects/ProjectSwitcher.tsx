@@ -9,7 +9,8 @@ import { RenameDialog } from "./RenameDialog";
  * In-editor project switcher: a collapsed button showing the current project name, expanding
  * to a popover that lists all projects (navigate between them), plus rows to start a new
  * project or return to the library. The current project's name is also the rename entry
- * point. Reads the name from props (the header pulls it from the project cache).
+ * point. Reads the name from props (the header pulls it from the project cache). Unreadable
+ * projects are listed but disabled, with the reason as their tooltip.
  */
 export function ProjectSwitcher({
   projectId,
@@ -87,15 +88,21 @@ export function ProjectSwitcher({
           <div className="max-h-64 overflow-auto py-1">
             {projects?.map((p) => {
               const active = p.id === projectId;
+              const unreadable = Boolean(p.unreadable) && !active;
               return (
                 <button
                   key={p.id}
                   type="button"
                   role="menuitem"
+                  disabled={unreadable}
+                  title={unreadable ? (p.unreadable ?? undefined) : undefined}
                   onClick={() => (active ? setOpen(false) : go(`/p/${p.id}`))}
                   className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-background-secondary",
-                    active ? "text-accent" : "text-text",
+                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
+                    unreadable
+                      ? "cursor-not-allowed text-text-tertiary"
+                      : "hover:bg-background-secondary",
+                    active ? "text-accent" : !unreadable && "text-text",
                   )}
                 >
                   <Check
@@ -103,6 +110,7 @@ export function ProjectSwitcher({
                     className={cn("shrink-0", active ? "opacity-100" : "opacity-0")}
                   />
                   <span className="truncate">{p.name}</span>
+                  {unreadable && <span className="ml-auto shrink-0 text-xs">Can't open</span>}
                 </button>
               );
             })}
