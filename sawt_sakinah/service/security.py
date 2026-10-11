@@ -115,11 +115,11 @@ class LocalGuard:
                 await _reject_too_large(send)
                 return
         elif "transfer-encoding" in headers:
-            body = await _read_capped(receive, MAX_BODY_BYTES)
-            if body is None:
+            messages = await _read_capped(receive, MAX_BODY_BYTES)
+            if messages is None:
                 await _reject_too_large(send)
                 return
-            receive = _replay(body, receive)
+            receive = _replay(messages, receive)
 
         await self.app(scope, receive, send)
 
@@ -179,33 +179,32 @@ class LocalGuard:
         await send({"type": "http.response.body", "body": b""})
 
 
-async def _read_capped(receive: Receive, limit: int) -> Optional[bytes]:
-    """Read the whole request body, or return ``None`` as soon as it exceeds ``limit``."""
-    chunks: list[bytes] = []
+async def _read_capped(receive: Receive, limit: int) -> Optional[list[Message]]:
+    """Read the request body's messages, or return ``None`` once it exceeds ``limit``.
+
+    Stops at the last body chunk or at a disconnect, which is kept so the app sees it.
+    """
+    messages: list[Message] = []
     size = 0
     while True:
         message = await receive()
+        messages.append(message)
         if message["type"] != "http.request":
-            break  # client disconnected; the app sees an empty body
-        chunk = message.get("body", b"")
-        size += len(chunk)
+            return messages
+        size += len(message.get("body", b""))
         if size > limit:
             return None
-        chunks.append(chunk)
         if not message.get("more_body", False):
-            break
-    return b"".join(chunks)
+            return messages
 
 
-def _replay(body: bytes, receive: Receive) -> Receive:
-    """A ``receive`` that yields the buffered body once, then defers to the original."""
-    sent = False
+def _replay(messages: list[Message], receive: Receive) -> Receive:
+    """A ``receive`` that yields the buffered messages in order, then defers to the original."""
+    pending = list(messages)
 
     async def replay() -> Message:
-        nonlocal sent
-        if not sent:
-            sent = True
-            return {"type": "http.request", "body": body, "more_body": False}
+        if pending:
+            return pending.pop(0)
         return await receive()
 
     return replay
