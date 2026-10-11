@@ -7,7 +7,9 @@ way the window does:
 1. helper programs: ffmpeg, ffprobe and Deno resolve to the bundled ``bin/`` copies (when
    frozen; a source checkout only reports where they resolved, and Deno is optional) and
    actually run;
-2. the bundled SPA and config are present (required when frozen);
+2. the bundled SPA and config are present (required when frozen), and the window
+   backend pywebview uses on this OS (WebView2 through pythonnet on Windows, WKWebView
+   through PyObjC on macOS) is bundled; no window is opened;
 3. ``/health`` answers with the token;
 4. a 12 s test clip (4 s tone, 4 s silence, 4 s tone) is generated with ffmpeg, uploaded
    (``POST /projects/upload``) and imported;
@@ -213,6 +215,40 @@ def _check_bundle(run: _Run) -> None:
             raise SelfTestError(f"the bundled SPA is missing: {static}")
 
 
+#: The window backend pywebview loads on each OS, by module name. The macOS framework
+#: bindings are imported for real (they only load the frameworks); the window modules
+#: are only located, because importing them starts GUI machinery.
+_GUI_IMPORTS = {"darwin": ("Foundation", "AppKit", "WebKit")}
+_GUI_MODULES = {
+    "darwin": ("webview", "webview.platforms.cocoa"),
+    "win32": ("webview", "webview.platforms.winforms", "webview.platforms.edgechromium", "clr"),
+}
+
+
+def _check_gui(run: _Run) -> None:
+    import importlib
+    import importlib.util
+
+    with run.step("gui") as detail:
+        missing = []
+        for name in _GUI_IMPORTS.get(sys.platform, ()):
+            try:
+                importlib.import_module(name)
+            except ImportError as exc:
+                missing.append(f"{name} ({exc})")
+        for name in _GUI_MODULES.get(sys.platform, ()):
+            try:
+                found = importlib.util.find_spec(name) is not None
+            except ImportError:
+                found = False
+            if not found:
+                missing.append(name)
+        detail["missing"] = missing
+        # A source checkout may run headless without the desktop extra.
+        if missing and runtime.FROZEN:
+            raise SelfTestError(f"window components missing: {', '.join(missing)}")
+
+
 def _make_clip(path: Path) -> None:
     from .proc import run as run_proc
 
@@ -324,6 +360,7 @@ def run_self_test(host: str = "127.0.0.1", report_path: Optional[str] = None) ->
     try:
         _check_tools(run)
         _check_bundle(run)
+        _check_gui(run)
 
         with run.step("service") as detail:
             from .service.settings import ServiceSettings

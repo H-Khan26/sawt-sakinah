@@ -1,13 +1,17 @@
 {
   "_comment": [
     "Helper programs bundled under bin/, pinned by URL and SHA-256. fetch_binaries.py",
-    "reads this file. Each archive lists the members to extract into bin/ and the license",
-    "files to copy into THIRD_PARTY/<name>/. 'licenses' entries with a url are fetched and",
-    "verified separately; 'notice' is written verbatim as SOURCE.txt.",
-    "FFmpeg: BtbN FFmpeg-Builds LGPL static build from the release/8.1 branch, taken from a",
-    "month-end autobuild tag (those are kept for about two years; daily tags for about two",
-    "weeks). Deno: official denoland/deno release (yt-dlp needs Deno >= 2.3).",
-    "macos-arm64 is added in Phase 2."
+    "reads this file. A tool has one archive (url, sha256, executables) or a list of",
+    "'archives' with those keys; 'executables' maps a bin/ name to an archive member.",
+    "'license_members' are copied from the (first) archive into THIRD_PARTY/<name>/;",
+    "'licenses' entries with a url are fetched and verified separately; 'notice' is",
+    "written verbatim as SOURCE.txt.",
+    "windows-x64 FFmpeg: BtbN FFmpeg-Builds LGPL static build from the release/8.1 branch,",
+    "taken from a month-end autobuild tag (kept for about two years; daily tags for about",
+    "two weeks). macos-arm64 FFmpeg: Martin Riedl's GPL v3 static release build of the",
+    "same 8.1 branch, from its versioned download path (old builds stay listed and online).",
+    "Deno: official denoland/deno release, the same version on every platform (yt-dlp",
+    "needs Deno >= 2.3). .github/workflows/upstream-check.yml reports newer releases."
   ],
   "platforms": {
     "windows-x64": {
@@ -59,6 +63,86 @@
         "license_name": "MIT",
         "notice": [
           "Deno (deno.exe), version 2.9.7. MIT License (LICENSE.md).",
+          "Source: https://github.com/denoland/deno/tree/v2.9.7",
+          "",
+          "yt-dlp runs it to solve YouTube's JavaScript challenges."
+        ]
+      }
+    },
+    "macos-arm64": {
+      "ffmpeg": {
+        "version": "8.1.2",
+        "archives": [
+          {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/ffmpeg.zip",
+            "sha256": "ef1aa60006c7b77ce170c1608c08d8e4ba1c30c5746f2ac986ded932d0ac2c3c",
+            "executables": {
+              "ffmpeg": "ffmpeg"
+            }
+          },
+          {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/ffprobe.zip",
+            "sha256": "c39787f4af7a3932502d2d48db6f6feaaa836b48a73ef78c32cc3285df61dfaf",
+            "executables": {
+              "ffprobe": "ffprobe"
+            }
+          }
+        ],
+        "license_members": {},
+        "licenses": {
+          "COPYING.GPLv3": {
+            "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.2/COPYING.GPLv3",
+            "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+          },
+          "BUILD-VERSIONS.txt": {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/versions.txt",
+            "sha256": "01958e92b4816be5b5f0721daaf553e08efdfe04be4355a9623ea647daecbeac"
+          },
+          "BUILD-SCRIPT-LICENSE.txt": {
+            "url": "https://git.martin-riedl.de/ffmpeg/build-script/raw/commit/bb1d6db29cee948f9685bcd69e6caf17d960662b/LICENSE",
+            "sha256": "312034a3970879c952eadd4136d186e148a4a1512de792d3bfca1bc40f91c830"
+          }
+        },
+        "license_name": "GPL-3.0-or-later",
+        "notice": [
+          "FFmpeg (ffmpeg, ffprobe), version 8.1.2, static build for macOS on Apple Silicon.",
+          "Built with --enable-gpl --enable-version3, so the programs are licensed under the",
+          "GNU General Public License v3 or later (COPYING.GPLv3). The statically linked",
+          "libraries (x264, x265, LAME, Opus and others) and the exact versions built in are",
+          "listed in BUILD-VERSIONS.txt (the provider's versions.txt for this build); each",
+          "keeps its own license.",
+          "",
+          "Corresponding source:",
+          "- FFmpeg: git tag n8.1.2 of https://git.ffmpeg.org/ffmpeg.git",
+          "  (https://git.ffmpeg.org/gitweb/ffmpeg.git/tag/refs/tags/n8.1.2), also released as",
+          "  https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz",
+          "- Build script that configured and built this binary, and that downloads the source",
+          "  of every library in BUILD-VERSIONS.txt (Apache-2.0, BUILD-SCRIPT-LICENSE.txt),",
+          "  at commit bb1d6db29cee948f9685bcd69e6caf17d960662b:",
+          "  https://git.martin-riedl.de/ffmpeg/build-script/src/commit/bb1d6db29cee948f9685bcd69e6caf17d960662b",
+          "",
+          "Binary: https://ffmpeg.martin-riedl.de/info/detail/macos/arm64/1783011502_8.1.2",
+          "",
+          "Sawt Sakinah runs these programs as separate processes and does not modify them."
+        ]
+      },
+      "deno": {
+        "version": "2.9.7",
+        "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-aarch64-apple-darwin.zip",
+        "sha256": "5cd46d6268f6f78f5d88bdc7159d20bd44cdaa4b3303474839f87ec6fe7ae25c",
+        "executables": {
+          "deno": "deno"
+        },
+        "license_members": {},
+        "licenses": {
+          "LICENSE.md": {
+            "url": "https://raw.githubusercontent.com/denoland/deno/v2.9.7/LICENSE.md",
+            "sha256": "f62497fffecc0852960c8d3e6934b9db86d16396e9b604072e923892cae3a588"
+          }
+        },
+        "license_name": "MIT",
+        "notice": [
+          "Deno (deno), version 2.9.7. MIT License (LICENSE.md).",
           "Source: https://github.com/denoland/deno/tree/v2.9.7",
           "",
           "yt-dlp runs it to solve YouTube's JavaScript challenges."

@@ -19,10 +19,13 @@ Detection returns data; only export writes audio. That rule shapes every module 
 
 ## Download
 
-Sawt Sakinah runs on your own computer, and your recordings stay on it.
+Sawt Sakinah runs on your own computer, and your recordings stay on it. Download the zip
+for your system from the
+[latest release](https://github.com/H-Khan26/sawt-sakinah/releases/latest).
 
-1. Download `SawtSakinah-<version>-windows-x64.zip` from the
-   [latest release](https://github.com/H-Khan26/sawt-sakinah/releases/latest).
+### Windows
+
+1. Download `SawtSakinah-<version>-windows-x64.zip`.
 2. Unzip it anywhere you like (for example `Documents\SawtSakinah`) and run
    `SawtSakinah.exe` in the unzipped folder.
 3. The app is not code-signed yet, so Windows SmartScreen stops the first launch. Choose
@@ -32,6 +35,27 @@ The window uses Microsoft Edge WebView2, which Windows 10 and 11 already include
 window stays blank, install the
 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
 
+### macOS (Apple Silicon)
+
+1. Download `SawtSakinah-<version>-macos-arm64.zip`. It runs on Macs with an Apple
+   Silicon chip (M1 or newer) and macOS 14 Sonoma or later.
+2. Open the zip (Finder unzips it) and move `SawtSakinah.app` to your Applications folder.
+3. The app is not signed or notarized by Apple yet, so macOS blocks the first launch.
+   Open the app once and close the warning. Then open **System Settings > Privacy &
+   Security**, scroll down to **Security**, click **Open Anyway** next to the message
+   about SawtSakinah, and confirm. Later launches open normally.
+
+If there is no **Open Anyway** button, remove the download quarantine in Terminal and
+open the app again:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/SawtSakinah.app
+```
+
+Intel Macs are not supported by the download; they can [run from source](#run-from-source).
+
+### Requirements
+
 The speech model for phrase detection is not in the zip. The app downloads it (about
 1.6 GB) the first time you run phrase detection, and keeps it for later. Phrase detection
 runs on the CPU and takes a few minutes per recording; silence detection and editing are
@@ -39,8 +63,8 @@ quick.
 
 | | Minimum | Recommended |
 |---|---|---|
-| System | Windows 10 22H2 or Windows 11, 64-bit (x64) | |
-| CPU | 4 cores, x86-64 with AVX2 | 8 cores or more |
+| System | Windows 10 22H2 or Windows 11, 64-bit (x64); or macOS 14 on Apple Silicon | |
+| CPU | 4 cores, x86-64 with AVX2, or any Apple Silicon chip | 8 cores or more |
 | Memory | 8 GB | 16 GB |
 | Disk | 5 GB free (app, speech model, projects) | |
 | GPU | Not used | |
@@ -53,18 +77,28 @@ workflow in this repository. With the [GitHub CLI](https://cli.github.com/):
 
 ```sh
 gh attestation verify SawtSakinah-<version>-windows-x64.zip -R H-Khan26/sawt-sakinah
+gh attestation verify SawtSakinah-<version>-macos-arm64.zip -R H-Khan26/sawt-sakinah
 ```
 
-Or compare the file's SHA-256 (`Get-FileHash <zip>` in PowerShell) with `SHA256SUMS` on
-the release page.
+Or compare the file's SHA-256 with `SHA256SUMS` on the release page: `Get-FileHash <zip>`
+in PowerShell, `shasum -a 256 <zip>` in the macOS Terminal.
 
 ### Your data and updates
 
-Projects, the speech model, settings and logs live in
-`%LOCALAPPDATA%\SawtSakinah`, outside the app folder. To update, delete the old app
-folder and unzip the new release in its place; your projects stay where they are.
+Projects, the speech model and settings live outside the app, so an update loses nothing:
+
+| | Windows | macOS |
+|---|---|---|
+| Projects, model, settings | `%LOCALAPPDATA%\SawtSakinah` | `~/Library/Application Support/SawtSakinah` |
+| Logs | `%LOCALAPPDATA%\SawtSakinah\logs` | `~/Library/Logs/SawtSakinah` |
+
+The app's settings have a button that opens the logs folder, for bug reports. To update,
+replace the old app with the new release: on Windows, delete the old folder and unzip the
+new one in its place; on macOS, move the new `SawtSakinah.app` into Applications over the
+old one (macOS may ask for **Open Anyway** again on its first launch).
 To keep everything somewhere else for one run (a test, for example), launch the app
-with the environment variable `SAWT_DATA_DIR` set to an absolute folder path.
+with the environment variable `SAWT_DATA_DIR` set to an absolute folder path; the
+logs then go to its `logs` folder on both systems.
 
 ### What goes over the network
 
@@ -134,7 +168,11 @@ make requirements-bundle   # hash-pinned release dependencies + PyInstaller
 make bundle                # SPA, ffmpeg/Deno download, PyInstaller, zip -> packaging/dist/
 ```
 
-`make lock` regenerates the pinned lock files in `packaging/` after a dependency change.
+On an Apple Silicon Mac, add `BUNDLE_PLATFORM=macos-arm64` to both commands to build
+`SawtSakinah.app` and its zip instead.
+
+`make lock` regenerates the pinned lock files in `packaging/` (Windows and macOS) after a
+dependency change.
 
 ## Repository layout
 
@@ -164,9 +202,11 @@ and frontend documents it links. Design records for larger changes are kept in
 
 [MIT](LICENSE). Bundled third-party assets keep their own licenses: the Silero VAD model
 (MIT, `sawt_sakinah/detection/assets/SILERO_LICENSE`) and the webfonts (SIL OFL,
-`frontend/public/fonts/`). The Windows release also ships FFmpeg (LGPL build), Deno (MIT)
-and the Python packages it runs on; `THIRD_PARTY_LICENSES.txt` in the zip lists each one
-with its license text and source link.
+`frontend/public/fonts/`). The releases also ship FFmpeg, Deno (MIT) and the Python
+packages the app runs on. The Windows FFmpeg is an LGPL build; the macOS one is a GPL v3
+build, which the app runs as a separate program. `THIRD_PARTY_LICENSES.txt` (next to
+`SawtSakinah.exe` on Windows, in `SawtSakinah.app/Contents/Resources` on macOS) lists each
+component with its license text and source link.
 
 ## Security
 

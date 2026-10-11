@@ -177,12 +177,41 @@ def new_token() -> str:
 # -- native UI helpers --------------------------------------------------------------------
 
 
+def _mac_alert(text: str, *, error: bool, ask: bool) -> bool:
+    """Show an alert through ``osascript``; True when the user chose Yes.
+
+    The text travels as an argument, so it needs no AppleScript quoting.
+    """
+    import subprocess
+
+    from .proc import run as run_proc
+
+    buttons = '{"No", "Yes"} default button "Yes"' if ask else '{"OK"} default button "OK"'
+    script = [
+        "on run argv",
+        "display alert (item 1 of argv) message (item 2 of argv) "
+        f"as {'critical' if error else 'warning'} buttons {buttons}",
+        "return button returned of result",
+        "end run",
+    ]
+    args = ["/usr/bin/osascript"]
+    for line in script:
+        args += ["-e", line]
+    try:
+        res = run_proc([*args, APP_TITLE, text], timeout=600)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return res.stdout.strip() == "Yes"
+
+
 def message_box(text: str, *, error: bool = True, ask: bool = False) -> bool:
-    """Show a native message box (Windows); True when the user answered Yes.
+    """Show a native message box (Windows, macOS); True when the user answered Yes.
 
     Elsewhere, and when no box can be shown, the text goes to the log only.
     """
     _log.log(logging.ERROR if error else logging.WARNING, "%s", text)
+    if sys.platform == "darwin":
+        return _mac_alert(text, error=error, ask=ask)
     if os.name != "nt":
         return False
     try:

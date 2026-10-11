@@ -1,6 +1,8 @@
 # Weekly canary: rebuild the Windows bundle against the newest yt-dlp, self-test it and
 # extract a short public YouTube video. Opens (or updates) an issue when anything fails.
 # Nothing is published; a passing run means a yt-dlp bump of the lock is safe to release.
+# Windows only: yt-dlp is pure Python, so one platform catches YouTube breakage, and the
+# macOS bundle is checked by every release build.
 name: Weekly rebuild
 
 on:

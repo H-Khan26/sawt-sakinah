@@ -6,6 +6,9 @@ once its service is up, publishes its port, launch token and process id in
 running instance to bring its window to the front (``POST /app/focus``, authenticated with
 the token), then exits.
 
+On macOS, Finder and the Dock already reopen the running app instead of starting a second
+copy; the lock covers launches that bypass them (``open -n``, running the binary directly).
+
 The OS drops the lock when the owning process dies, so a file left behind by a crash never
 blocks the next launch.
 """
@@ -15,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -115,8 +119,16 @@ class InstanceLock:
         starting). True when it acknowledged the request.
         """
         deadline = time.monotonic() + wait
+        logged = False
         while True:
             info = self.read_info()
+            if info is not None and isinstance(info.get("pid"), int):
+                # A fresh grant before every attempt: the previous one may have lapsed
+                # while a slow request timed out. Only the first refusal is logged.
+                problem = _hand_over_foreground(info["pid"])
+                if problem and not logged:
+                    _log.info("%s", problem)
+                    logged = True
             if info is not None and _request_focus(info):
                 return True
             if time.monotonic() >= deadline:
@@ -124,16 +136,54 @@ class InstanceLock:
             time.sleep(0.25)
 
 
-def _request_focus(info: dict) -> bool:
-    if os.name == "nt" and isinstance(info.get("pid"), int):
-        # This process was just launched by the user and may take the foreground; pass
-        # that right on so the running instance's window can come to the front.
-        try:
+def _hand_over_foreground(pid: int) -> Optional[str]:
+    """Let the running instance (``pid``) come to the front; best effort.
+
+    This process was just launched by the user and may take the foreground, so it passes
+    that right on: ``AllowSetForegroundWindow`` on Windows, activating the other app
+    through AppKit on macOS. Returns why that did not work, or ``None``.
+    """
+    try:
+        if os.name == "nt":
             import ctypes
 
-            ctypes.windll.user32.AllowSetForegroundWindow(info["pid"])
-        except (OSError, AttributeError):
-            pass
+            if not ctypes.windll.user32.AllowSetForegroundWindow(pid):
+                return f"Windows refused to let process {pid} take the foreground"
+        elif sys.platform == "darwin":
+            return _activate_mac_app(pid)
+    except Exception as exc:  # noqa: BLE001 - focusing is best effort
+        return f"could not hand the foreground to process {pid}: {exc}"
+    return None
+
+
+def _activate_mac_app(pid: int) -> Optional[str]:
+    """Activate the app with ``pid``, cooperatively on macOS 14 and later.
+
+    macOS 14 only lets the active app hand activation on: this process yields it to the
+    target and asks for the target's activation on its own behalf. The running instance
+    also activates itself when it handles ``POST /app/focus``. Older systems use the
+    plain activation call. Returns why activation failed, or ``None``.
+    """
+    from AppKit import NSApplication, NSApplicationActivateAllWindows, NSRunningApplication
+
+    target = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+    if target is None:
+        return f"no running app with process id {pid} to activate"
+    if hasattr(target, "activateFromApplication_options_"):
+        app = NSApplication.sharedApplication()
+        if hasattr(app, "yieldActivationToApplication_"):
+            app.yieldActivationToApplication_(target)
+        ok = target.activateFromApplication_options_(
+            NSRunningApplication.currentApplication(), NSApplicationActivateAllWindows
+        )
+    else:
+        ok = target.activateWithOptions_(NSApplicationActivateAllWindows)
+    if not ok:
+        return f"macOS declined to activate process {pid} (this launch is not active)"
+    return None
+
+
+def _request_focus(info: dict) -> bool:
     host = info.get("host") or "127.0.0.1"
     req = urllib.request.Request(
         f"http://{host}:{info['port']}{FOCUS_PATH}",
