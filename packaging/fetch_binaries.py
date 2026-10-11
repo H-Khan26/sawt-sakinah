@@ -1,12 +1,15 @@
 """Download the pinned helper programs (ffmpeg, ffprobe, Deno) for one platform.
 
-Reads ``packaging/binaries.json``, downloads each archive, verifies its SHA-256 (any
-mismatch aborts), extracts only the listed executables into ``<dest>/bin/`` and writes
-each tool's license texts and source notice into ``<dest>/THIRD_PARTY/<tool>/``.
-Verified downloads are kept in ``<dest>/downloads/`` and reused on the next run.
+Reads ``packaging/binaries.json``, downloads each archive (.zip or a tarball such as
+.tar.xz), verifies its SHA-256 (any mismatch aborts), extracts only the listed executables
+into ``<dest>/bin/``, checks that each is a program for the target platform (PE on Windows,
+arm64 Mach-O on macOS) and writes each tool's license texts and source notice into
+``<dest>/THIRD_PARTY/<tool>/``. Verified downloads are kept in ``<dest>/downloads/`` and
+reused on the next run. It runs on any OS, so a manifest change can be checked anywhere.
 
 Usage:
     python packaging/fetch_binaries.py windows-x64 packaging/build/vendor
+    python packaging/fetch_binaries.py macos-arm64 packaging/build/vendor
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ import json
 import os
 import shutil
 import stat
+import struct
 import sys
 import tarfile
 import time
@@ -101,6 +105,24 @@ def _extract_members(archive: Path, members: dict[str, str], out_dir: Path) -> l
     return written
 
 
+_MACHO_64 = 0xFEEDFACF
+_CPU_ARM64 = 0x0100000C
+
+
+def _check_binary(path: Path, platform: str) -> None:
+    """Raise when ``path`` is not an executable for ``platform`` (PE or arm64 Mach-O)."""
+    with path.open("rb") as fh:
+        head = fh.read(8)
+    if platform.startswith("windows"):
+        ok = head[:2] == b"MZ"
+    elif platform == "macos-arm64":
+        ok = len(head) == 8 and struct.unpack("<II", head) == (_MACHO_64, _CPU_ARM64)
+    else:
+        ok = True
+    if not ok:
+        raise FetchError(f"{path.name} is not a {platform} executable")
+
+
 def fetch(platform: str, dest: Path) -> None:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     try:
@@ -117,14 +139,18 @@ def fetch(platform: str, dest: Path) -> None:
 
     for tool, spec in tools.items():
         print(f"{tool} {spec['version']}")
-        archive = fetch_verified(spec["url"], spec["sha256"], cache)
-        for exe in _extract_members(archive, spec["executables"], bin_dir):
-            if os.name != "nt":
-                exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            print(f"  -> {exe}")
+        archives = []
+        for part in spec.get("archives") or [spec]:
+            archive = fetch_verified(part["url"], part["sha256"], cache)
+            archives.append(archive)
+            for exe in _extract_members(archive, part["executables"], bin_dir):
+                _check_binary(exe, platform)
+                if os.name != "nt":
+                    exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                print(f"  -> {exe}")
 
         license_dir = third_party / tool
-        _extract_members(archive, spec.get("license_members", {}), license_dir)
+        _extract_members(archives[0], spec.get("license_members", {}), license_dir)
         for name, lic in spec.get("licenses", {}).items():
             shutil.copyfile(fetch_verified(lic["url"], lic["sha256"], cache), license_dir / name)
         (license_dir / "SOURCE.txt").write_text("\n".join(spec["notice"]) + "\n", encoding="utf-8")
@@ -134,7 +160,7 @@ def fetch(platform: str, dest: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("platform", help="manifest platform key, e.g. windows-x64")
+    parser.add_argument("platform", help="manifest platform key: windows-x64 or macos-arm64")
     parser.add_argument("dest", type=Path, help="output directory (gets bin/ and THIRD_PARTY/)")
     args = parser.parse_args(argv)
     sys.stdout.reconfigure(line_buffering=True)  # keep progress and errors in order in CI logs
