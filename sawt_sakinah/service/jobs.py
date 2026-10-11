@@ -76,6 +76,14 @@ def _failure(error: str, exc: BaseException) -> dict:
     return {"state": JobState.failed, "error": error, "error_type": type(exc).__name__}
 
 
+# Final state of a job dropped from the queue at shutdown.
+_CANCELLED = {
+    "state": JobState.failed,
+    "error": "The job was cancelled at shutdown.",
+    "error_type": "JobCancelledError",
+}
+
+
 class JobRegistry:
     """Submit task bodies to thread pools and track their state/progress."""
 
@@ -124,9 +132,9 @@ class JobRegistry:
         """Register a job and schedule ``fn`` on the chosen pool; return its record.
 
         ``on_finish`` runs once the job ends in any way: succeeded, failed, or dropped from
-        the queue at shutdown. A job that ran calls it before its final state is recorded,
-        so a client that sees the job finished also sees its effects undone. It does not run
-        when ``submit`` raises, and it must be safe to call more than once.
+        the queue at shutdown. It runs before the final state is recorded, so a client that
+        sees the job finished also sees its effects undone. It does not run when ``submit``
+        raises, and it must be safe to call more than once.
 
         Raises:
             JobQueueFullError: If ``max_pending_jobs`` jobs are already pending or running.
@@ -146,33 +154,39 @@ class JobRegistry:
                 self._active -= 1
                 self._jobs.pop(job_id, None)
             raise
-        if on_finish is not None:
-            # A job cancelled before it started (shutdown) never reaches ``_run``.
-            future.add_done_callback(lambda f: on_finish() if f.cancelled() else None)
+        # A job cancelled before it started (dropped at shutdown) never reaches ``_run``.
+        future.add_done_callback(
+            lambda f: self._close(job_id, _CANCELLED, on_finish) if f.cancelled() else None
+        )
         return record.model_copy(deep=True)
 
     def _run(
         self, job_id: str, fn: TaskFn, on_finish: Optional[Callable[[], None]] = None
     ) -> None:
-        outcome: Optional[dict] = None
         try:
             self._patch(job_id, state=JobState.running)
             result = fn(lambda payload: self.update_progress(job_id, payload))
             outcome = {"state": JobState.succeeded, "result": result or None}
-        except Exception as exc:  # noqa: BLE001 - record any failure for the client
-            outcome = _failure(str(exc), exc)
-        except BaseException as exc:
-            # SystemExit / KeyboardInterrupt: record the job as failed, then let it propagate.
-            outcome = _failure(repr(exc), exc)
-            raise
-        finally:
+        except BaseException as exc:  # noqa: BLE001 - the job's Future is never read
+            if isinstance(exc, Exception):
+                outcome = _failure(str(exc), exc)
+            else:  # SystemExit, KeyboardInterrupt and the like
+                _log.exception("job %s stopped with %s", job_id, type(exc).__name__)
+                outcome = _failure(repr(exc), exc)
+        self._close(job_id, outcome, on_finish)
+
+    def _close(
+        self, job_id: str, outcome: dict, on_finish: Optional[Callable[[], None]]
+    ) -> None:
+        """Run ``on_finish``, record the job's final state and stop counting it as active."""
+        try:
             if on_finish is not None:
                 try:
                     on_finish()
-                except Exception:  # noqa: BLE001 - nothing reads the job's Future
+                except BaseException:  # noqa: BLE001 - nothing else would report it
                     _log.exception("on_finish failed for job %s", job_id)
-            if outcome is not None:
-                self._patch(job_id, **outcome)
+            self._patch(job_id, **outcome)
+        finally:
             with self._lock:
                 self._active -= 1
 
@@ -194,7 +208,7 @@ class JobRegistry:
             record.updated_at = _now()
 
     def shutdown(self) -> None:
-        """Drop queued jobs and return without waiting for running ones.
+        """Drop queued jobs (recorded as failed) and return without waiting for running ones.
 
         The interpreter still joins the worker threads at exit, so without
         ``cancel_futures`` every queued job would run first.
