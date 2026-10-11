@@ -76,23 +76,29 @@ def latest_btbn() -> str:
 def latest_riedl(attempts: int = 3) -> str:
     # Read the redirect itself (a GET that is not followed; the server often answers HEAD
     # with 404). The provider names each build's folder <id>_<version>.
+    # Only network errors are retried; any answer other than a redirect is final.
     url = urllib.parse.urlsplit(RIEDL_LATEST)
-    location = ""
     for attempt in range(attempts):
         if attempt:
             time.sleep(5 * attempt)
         conn = http.client.HTTPSConnection(url.netloc, timeout=30)
         try:
             conn.request("GET", url.path, headers={"User-Agent": USER_AGENT})
-            location = conn.getresponse().getheader("Location") or ""
+            res = conn.getresponse()
+            status, location = res.status, res.getheader("Location") or ""
         except OSError:
+            if attempt == attempts - 1:
+                raise
             continue
         finally:
             conn.close()
+        if status not in (301, 302, 303, 307, 308):
+            raise ValueError(f"{RIEDL_LATEST} answered {status}, not a redirect")
         match = re.search(r"/\d+_(\d+(?:\.\d+)*)/", location)
-        if match:
-            return match.group(1)
-    raise ValueError(f"unexpected redirect target {location!r}")
+        if not match:
+            raise ValueError(f"unexpected redirect target {location!r}")
+        return match.group(1)
+    raise AssertionError("unreachable")
 
 
 def _source(platform: str, tool: str) -> tuple[str, Callable[[], str]]:
@@ -108,7 +114,8 @@ def _source(platform: str, tool: str) -> tuple[str, Callable[[], str]]:
 def check() -> tuple[str, int]:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     rows, behind, failed = [], False, False
-    cache: dict[str, str] = {}
+    # Each source is contacted once per run; a failure is cached like a result.
+    cache: dict[str, str | Exception] = {}
     for platform, tools in manifest["platforms"].items():
         for tool, spec in tools.items():
             pinned = spec["version"]
@@ -116,7 +123,12 @@ def check() -> tuple[str, int]:
             try:
                 source, fetch = _source(platform, tool)
                 if source not in cache:
-                    cache[source] = fetch()
+                    try:
+                        cache[source] = fetch()
+                    except Exception as exc:  # noqa: BLE001 - reported on every row
+                        cache[source] = exc
+                if isinstance(cache[source], Exception):
+                    raise cache[source]
                 latest = cache[source]
                 is_behind = _version(latest) > _version(pinned)
                 status = "**behind**" if is_behind else "current"
