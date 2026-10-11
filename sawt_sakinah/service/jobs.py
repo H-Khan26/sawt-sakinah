@@ -111,8 +111,12 @@ class JobRegistry:
         *,
         project_id: Optional[str] = None,
         pool: str = "default",
+        on_finish: Optional[Callable[[], None]] = None,
     ) -> JobRecord:
         """Register a job and schedule ``fn`` on the chosen pool; return its record.
+
+        ``on_finish`` runs once the job ends in any way: succeeded, failed, or dropped from
+        the queue at shutdown. It does not run when ``submit`` raises.
 
         Raises:
             JobQueueFullError: If ``max_pending_jobs`` jobs are already pending or running.
@@ -126,12 +130,15 @@ class JobRegistry:
             self._jobs[job_id] = record
         executor = self._phrase_pool if pool == "phrase" else self._pool
         try:
-            executor.submit(self._run, job_id, fn)
+            future = executor.submit(self._run, job_id, fn)
         except BaseException:
             with self._lock:
                 self._active -= 1
                 self._jobs.pop(job_id, None)
             raise
+        if on_finish is not None:
+            # Done callbacks also fire for a future cancelled before it started.
+            future.add_done_callback(lambda _f: on_finish())
         return record.model_copy(deep=True)
 
     def _run(self, job_id: str, fn: TaskFn) -> None:

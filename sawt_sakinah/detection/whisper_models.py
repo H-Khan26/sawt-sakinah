@@ -167,21 +167,36 @@ def _key(path: Path) -> Path:
     return Path(os.path.normcase(os.path.abspath(path)))
 
 
-@contextmanager
-def in_use(path: str | os.PathLike) -> Iterator[None]:
-    """Mark a model directory as in use by a detection, so it can't be deleted meanwhile."""
+def acquire(path: str | os.PathLike) -> Callable[[], None]:
+    """Mark a model directory as in use, so it can't be deleted until the returned
+    release function runs. Releasing more than once has no further effect."""
     key = _key(Path(path))
     with _STATE_LOCK:
         _IN_USE[key] = _IN_USE.get(key, 0) + 1
-    try:
-        yield
-    finally:
+    released = threading.Event()
+
+    def release() -> None:
         with _STATE_LOCK:
+            if released.is_set():
+                return
+            released.set()
             count = _IN_USE.get(key, 0) - 1
             if count > 0:
                 _IN_USE[key] = count
             else:
                 _IN_USE.pop(key, None)
+
+    return release
+
+
+@contextmanager
+def in_use(path: str | os.PathLike) -> Iterator[None]:
+    """Mark a model directory as in use by a detection, so it can't be deleted meanwhile."""
+    release = acquire(path)
+    try:
+        yield
+    finally:
+        release()
 
 
 def delete(
@@ -447,6 +462,7 @@ __all__ = [
     "installed_path",
     "is_downloading",
     "list_models",
+    "acquire",
     "in_use",
     "delete",
     "cancel_downloads",

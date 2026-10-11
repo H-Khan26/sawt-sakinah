@@ -8,7 +8,8 @@ The user picks the model phrase detection uses with ``PATCH /app/preferences
   already pending or running for that model is returned as is (no second job); a model
   that is already installed is refused with 409 ``ModelAlreadyInstalledError``.
 * ``DELETE /models/{id}`` -> 204 (also discards a partial download); 409
-  ``ModelBusyError`` while it is downloading or a detection is using it.
+  ``ModelBusyError`` while it is downloading or a phrase detection is queued or running
+  with it.
 * An unknown id is 404 ``UnknownModelError``.
 """
 
