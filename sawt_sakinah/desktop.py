@@ -11,7 +11,8 @@
 4. starts the service on a free localhost port with a per-launch secret token, waits for
    ``/health`` to answer with that token, then opens a pywebview window that receives the
    token through ``/_session`` (see ``service/security.py``). Closing the window stops the
-   server and ends the process, even while a job is still running.
+   server: running jobs get a few seconds to stop and remove their partial outputs (see
+   ``service/jobs.py``), then the process ends, even if one is still running.
 
 A fatal startup error is logged and, in the bundle, shown in a message box instead of the
 app silently vanishing. ``--self-test`` runs the headless end-to-end check in
@@ -151,6 +152,9 @@ class Service:
             log_config=None,
             log_level="info",
             access_log=False,
+            # Bounds the wait for open connections at exit, so the app's own shutdown
+            # (closing streams, stopping jobs) always gets to run.
+            timeout_graceful_shutdown=1,
         )
         self.server = uvicorn.Server(config)
         self.thread = threading.Thread(target=self.server.run, name="uvicorn", daemon=True)
@@ -165,9 +169,11 @@ class Service:
         _log.info("service up at %s", self.url)
 
     def stop(self) -> None:
+        """Stop the server; returns within about 6 s even when a job won't stop (the
+        connection wait plus ``service.shutdown_grace_sec``, with margin)."""
         self.server.should_exit = True
         if self.thread.is_alive():
-            self.thread.join(timeout=5.0)
+            self.thread.join(timeout=6.0)
 
 
 def new_token() -> str:
@@ -413,7 +419,7 @@ def _exit_process(code: int) -> NoReturn:
 
     A job still running when the window closes (a Whisper transcription can't be
     interrupted) would otherwise keep a windowless process alive, running beside the next
-    launch. Helper subprocesses end on their own timeouts.
+    launch. The service's shutdown has already stopped the helper programs it started.
     """
     _log.info("Sawt Sakinah exiting (code %s)", code)
     for stream in (sys.stdout, sys.stderr):

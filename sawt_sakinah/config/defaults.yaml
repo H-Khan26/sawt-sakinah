@@ -122,6 +122,7 @@ service:
   max_pending_jobs: 32         # pending + running jobs accepted before new submissions get HTTP 429
   waveform_buckets: 2000       # downsample resolution for the waveform peaks endpoint
   stream_chunk_size: 65536     # byte chunk size for ranged media streaming responses
+  shutdown_grace_sec: 3        # on close, time running jobs get to stop and clean up
 
 # Desktop app: the update check against the project's GitHub releases.
 app:

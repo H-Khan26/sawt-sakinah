@@ -139,6 +139,7 @@ class ServiceConfig(_Section):
     max_pending_jobs: int
     waveform_buckets: int
     stream_chunk_size: int
+    shutdown_grace_sec: float
 
 
 class AppConfig(_Section):

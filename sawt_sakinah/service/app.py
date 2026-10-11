@@ -5,7 +5,8 @@ Run with::
     uvicorn sawt_sakinah.service.app:app
 
 The store and job registry are created in the lifespan and attached to ``app.state``
-(read via ``deps.py``). Startup sweeps what an interrupted run left in the projects folder.
+(read via ``deps.py``). Startup sweeps what an interrupted run left in the projects folder;
+shutdown closes media streams and stops running jobs within ``service.shutdown_grace_sec``.
 The extraction error hierarchy is mapped to HTTP status codes for the rare synchronous
 failure; async failures surface in ``JobRecord.error``/``error_type``.
 """
@@ -21,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
+from ..config import CONFIG
 from ..detection.whisper_models import ModelError, UnknownModelError, cancel_downloads
 from ..models import (
     AgeRestrictedError,
@@ -75,7 +77,8 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         cancel_downloads()  # model download threads would otherwise hold up process exit
-        app.state.jobs.shutdown()
+        store.streams.close()
+        app.state.jobs.shutdown(timeout=CONFIG.service.shutdown_grace_sec)
 
 
 def _make_handler(status: int):

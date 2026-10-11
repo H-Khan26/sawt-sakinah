@@ -36,10 +36,16 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 def _submit_new_project(jobs, store, project_id: str, kind: JobKind, fn):
-    """Submit the job that fills a freshly prepared project; drop the project if the job
-    queue refuses it, so no empty skeleton is left behind."""
+    """Submit the job that fills a freshly prepared project. The project folder is removed
+    if the queue refuses the job, or if the job ends (failed, stopped or dropped at
+    shutdown) without writing ``project.json``, so no empty skeleton is left behind."""
     try:
-        return jobs.submit(kind, fn, project_id=project_id)
+        return jobs.submit(
+            kind,
+            fn,
+            project_id=project_id,
+            on_finish=lambda: store.discard_unfinished(project_id),
+        )
     except JobQueueFullError:
         store.delete(project_id)
         raise
@@ -175,6 +181,8 @@ def patch_project(
 
 @router.delete("/{project_id}", status_code=204)
 def delete_project(project_id: str, store=Depends(get_store)) -> Response:
+    """Delete the project. Answers 409 (``ProjectInUseError``) when its files stay locked,
+    in which case nothing was removed."""
     validate_id(project_id, "project_id")
     if not store.delete(project_id):
         raise HTTPException(status_code=404, detail="project not found")
