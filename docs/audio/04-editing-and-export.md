@@ -67,6 +67,10 @@ segments, which it turns into `cut` operations and hands to the same render path
 - Preserve/refresh metadata (title, source URL). Optionally embed markers as chapters.
 - Quality knobs: bitrate / VBR quality, sample rate (carried from data model).
 - Return an export artifact record (path, format, duration, applied EDL reference).
+- The service renders to `exports/<id>.part.<ext>` and renames it to `<id>.<ext>` only
+  once ffmpeg and the probe succeed; a failed or interrupted export removes its partial
+  file, and the startup sweep removes any a hard exit left behind (see
+  [05-data-model-and-api.md](05-data-model-and-api.md)).
 
 ## Boundary
 
