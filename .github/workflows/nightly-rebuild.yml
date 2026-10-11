@@ -69,20 +69,20 @@ jobs:
         run: |
           $exe = Resolve-Path packaging/dist/SawtSakinah/SawtSakinah.exe
           $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
-          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"" -Wait -PassThru
+          # --data-dir keeps the app's logs (and all its data) in a known place on every OS.
+          $data = Join-Path $env:RUNNER_TEMP 'sawt-data'
+          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"", '--data-dir', "`"$data`"" -Wait -PassThru
           if (Test-Path $report) { Get-Content $report -Raw } else { Write-Host 'No self-test report was written.' }
           if ($p.ExitCode -ne 0) {
             Write-Host "::error::self-test failed with exit code $($p.ExitCode)"
-            # The report names the app's log directory on every platform.
-            $logs = $null
-            if (Test-Path $report) { try { $logs = (Get-Content $report -Raw | ConvertFrom-Json).paths.logs_dir } catch { } }
-            if ($logs -and (Test-Path $logs)) {
+            $logs = Join-Path $data 'logs'
+            if (Test-Path $logs) {
               Get-ChildItem $logs -File | ForEach-Object {
                 Write-Host "----- $($_.FullName)"
                 Get-Content $_.FullName -Tail 200
               }
             } else {
-              Write-Host '::notice::The self-test report names no log directory; no app logs to show.'
+              Write-Host '::notice::The app wrote no logs.'
             }
             exit 1
           }
@@ -100,8 +100,11 @@ jobs:
           $env:PATH = "$env:SAWT_VENDOR_DIR\bin;$env:PATH"
           $out = Join-Path $env:RUNNER_TEMP 'yt-smoke'
           $log = Join-Path $env:RUNNER_TEMP 'yt-smoke.log'
+          $global:LASTEXITCODE = $null
           python -m sawt_sakinah extract "https://www.youtube.com/watch?v=jNQXAC9IVRw" -o $out 2>&1 | Tee-Object -FilePath $log
           $code = $LASTEXITCODE
+          # No exit code means python never ran (missing or not launchable).
+          if ($null -eq $code) { Write-Host '::error::sawt extract did not run'; exit 1 }
           if ($code -eq 3) {
             $msg = 'YouTube refused the runner with its bot check, so the extraction was not exercised.'
             Write-Host "::warning::$msg"
@@ -112,8 +115,8 @@ jobs:
           Get-ChildItem $out | Format-Table Name, Length
           if (-not (Get-ChildItem $out -File)) { Write-Host '::error::no output file'; exit 1 }
 
-      # upload-artifact needs one common root, and the app's log directory (named in the
-      # self-test report) is outside the workspace, on another drive on Windows runners.
+      # upload-artifact needs one common root, so the report and the app's logs (under the
+      # self-test's --data-dir) are copied into one folder first.
       - name: Collect the logs
         if: failure()
         run: |
@@ -123,13 +126,11 @@ jobs:
             $src = Join-Path $env:RUNNER_TEMP $f
             if (Test-Path $src) { Copy-Item $src $dest }
           }
-          $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
-          $logs = $null
-          if (Test-Path $report) { try { $logs = (Get-Content $report -Raw | ConvertFrom-Json).paths.logs_dir } catch { } }
-          if ($logs -and (Test-Path $logs)) {
+          $logs = Join-Path $env:RUNNER_TEMP 'sawt-data/logs'
+          if (Test-Path $logs) {
             Copy-Item $logs (Join-Path $dest 'logs') -Recurse
           } else {
-            Write-Host '::notice::The self-test report names no log directory; app logs not collected.'
+            Write-Host '::notice::The app wrote no logs.'
           }
 
       - name: Upload the logs

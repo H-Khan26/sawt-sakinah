@@ -138,20 +138,20 @@ jobs:
         run: |
           $exe = Resolve-Path packaging/dist/SawtSakinah/SawtSakinah.exe
           $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
-          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"" -Wait -PassThru
+          # --data-dir keeps the app's logs (and all its data) in a known place on every OS.
+          $data = Join-Path $env:RUNNER_TEMP 'sawt-data'
+          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"", '--data-dir', "`"$data`"" -Wait -PassThru
           if (Test-Path $report) { Get-Content $report -Raw } else { Write-Host 'No self-test report was written.' }
           if ($p.ExitCode -ne 0) {
             Write-Host "::error::self-test failed with exit code $($p.ExitCode)"
-            # The report names the app's log directory on every platform.
-            $logs = $null
-            if (Test-Path $report) { try { $logs = (Get-Content $report -Raw | ConvertFrom-Json).paths.logs_dir } catch { } }
-            if ($logs -and (Test-Path $logs)) {
+            $logs = Join-Path $data 'logs'
+            if (Test-Path $logs) {
               Get-ChildItem $logs -File | ForEach-Object {
                 Write-Host "----- $($_.FullName)"
                 Get-Content $_.FullName -Tail 200
               }
             } else {
-              Write-Host '::notice::The self-test report names no log directory; no app logs to show.'
+              Write-Host '::notice::The app wrote no logs.'
             }
             exit 1
           }
@@ -180,23 +180,20 @@ jobs:
           compression-level: 0
           retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 14 || 3 }}
 
-      # upload-artifact needs one common root, and the app's log directory (named in the
-      # self-test report) is outside the workspace, on another drive on Windows runners.
+      # upload-artifact needs one common root, so the report and the app's logs (under the
+      # self-test's --data-dir) are copied into one folder first.
       - name: Collect the self-test logs
         if: failure()
         run: |
           $dest = Join-Path $env:RUNNER_TEMP 'diagnostics'
           New-Item -ItemType Directory -Force $dest | Out-Null
           $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
-          $logs = $null
-          if (Test-Path $report) {
-            Copy-Item $report $dest
-            try { $logs = (Get-Content $report -Raw | ConvertFrom-Json).paths.logs_dir } catch { }
-          }
-          if ($logs -and (Test-Path $logs)) {
+          if (Test-Path $report) { Copy-Item $report $dest }
+          $logs = Join-Path $env:RUNNER_TEMP 'sawt-data/logs'
+          if (Test-Path $logs) {
             Copy-Item $logs (Join-Path $dest 'logs') -Recurse
           } else {
-            Write-Host '::notice::The self-test report names no log directory; app logs not collected.'
+            Write-Host '::notice::The app wrote no logs.'
           }
 
       - name: Upload the self-test logs
