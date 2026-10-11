@@ -1,0 +1,83 @@
+# Weekly check of the bundled helper programs (ffmpeg, ffprobe, Deno) against upstream.
+# Dependabot cannot track the pins in packaging/binaries.json, so this keeps one tracking
+# issue open, with the current comparison as its body, while any pin is behind. Bumping
+# a pin stays a deliberate change: update binaries.json and run a release dry run.
+name: Upstream check
+
+on:
+  schedule:
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Compare the pins with upstream releases
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      behind: ${{ steps.compare.outputs.behind }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare
+        id: compare
+        env:
+          GH_TOKEN: ${{ github.token }} # read-only, for the GitHub releases API rate limit
+        run: |
+          code=0
+          python3 packaging/upstream_check.py --report upstream.md || code=$?
+          cat upstream.md >> "$GITHUB_STEP_SUMMARY"
+          case "$code" in
+            0) echo "behind=false" >> "$GITHUB_OUTPUT" ;;
+            1) echo "behind=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::an upstream source could not be read"; exit 1 ;;
+          esac
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: upstream-report
+          path: upstream.md
+          retention-days: 7
+
+  report:
+    name: Open or update the tracking issue
+    needs: check
+    if: needs.check.outputs.behind == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write # open or edit the tracking issue
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: upstream-report
+
+      - name: Open or update the tracking issue
+        run: |
+          title="Bundled ffmpeg or Deno has a newer upstream release"
+          {
+            echo "The weekly upstream check found pins in \`packaging/binaries.json\` behind upstream."
+            echo
+            cat upstream.md
+            echo
+            echo "Last checked: $RUN_URL"
+          } > body.md
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file body.md
+          else
+            gh issue create --title "$title" --body-file body.md
+          fi
