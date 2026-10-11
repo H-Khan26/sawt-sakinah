@@ -9,7 +9,8 @@ The service listens on localhost, so any web page the user visits can try to rea
   ``Sec-Fetch-Site: cross-site`` and any state-changing request whose ``Origin`` is not
   this service (or an explicitly allowed dev origin), requires the per-launch token when
   one is configured, and refuses oversized uploads from ``Content-Length`` before
-  Starlette spools the body.
+  Starlette spools the body. Every other request body is capped at ``MAX_BODY_BYTES``,
+  also from ``Content-Length``, and a body without one (chunked) is refused with 411.
 
 The token is presented as the ``X-Sawt-Token`` header or as an HttpOnly, SameSite=Strict
 session cookie. The desktop window gets the cookie by first loading
@@ -40,6 +41,9 @@ _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _DIGITS = re.compile(r"[0-9]+")
 # Headroom over the file cap for the multipart envelope (boundaries, part headers).
 _MULTIPART_OVERHEAD = 1024 * 1024
+# Cap for every body except the upload. Marker and EDL saves grow with the recording; this
+# leaves a wide margin for long recordings with thousands of markers.
+MAX_BODY_BYTES = 8 * 1024 * 1024
 
 
 def cookie_name(scope: Scope) -> str:
@@ -91,9 +95,19 @@ class LocalGuard:
                 await _reject(send, 401, "Unauthorized", "missing or invalid launch token")
                 return
 
+        length = headers.get("content-length")
+        chunked = "transfer-encoding" in headers
+        if length is not None and not _DIGITS.fullmatch(length):
+            await _reject(send, 400, "BadRequest", "invalid Content-Length")
+            return
+        # Every body is checked against its cap from Content-Length before it is read, so
+        # one without it (chunked) is refused; browsers always send it for these requests.
+        if chunked:
+            await _reject(send, 411, "LengthRequired", "the request body needs a Content-Length")
+            return
+
         if method == "POST" and path == UPLOAD_PATH:
-            length = headers.get("content-length")
-            if length is None or not _DIGITS.fullmatch(length):
+            if length is None:
                 await _reject(send, 411, "LengthRequired", "upload needs a Content-Length")
                 return
             if int(length) > self.max_body:
@@ -102,6 +116,14 @@ class LocalGuard:
                     send, 413, "FileTooLargeError", f"Upload exceeds the {limit} MB limit."
                 )
                 return
+        elif length is not None and int(length) > MAX_BODY_BYTES:
+            await _reject(
+                send,
+                413,
+                "RequestTooLargeError",
+                f"The request body exceeds the {MAX_BODY_BYTES // (1024 * 1024)} MB limit.",
+            )
+            return
 
         await self.app(scope, receive, send)
 

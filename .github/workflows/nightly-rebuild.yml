@@ -66,6 +66,9 @@ jobs:
       - name: Self-test the frozen app
         id: selftest
         timeout-minutes: 10
+        env:
+          # Keeps the app's logs (and all its data) in a known place on every OS.
+          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
         run: |
           $exe = Resolve-Path packaging/dist/SawtSakinah/SawtSakinah.exe
           $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
@@ -73,34 +76,76 @@ jobs:
           if (Test-Path $report) { Get-Content $report -Raw } else { Write-Host 'No self-test report was written.' }
           if ($p.ExitCode -ne 0) {
             Write-Host "::error::self-test failed with exit code $($p.ExitCode)"
-            Get-ChildItem (Join-Path $env:LOCALAPPDATA 'SawtSakinah\logs') -ErrorAction SilentlyContinue | ForEach-Object {
-              Write-Host "----- $($_.FullName)"
-              Get-Content $_.FullName -Tail 200
+            $logs = Join-Path $env:SAWT_DATA_DIR 'logs'
+            if (Test-Path $logs) {
+              Get-ChildItem $logs -File | ForEach-Object {
+                Write-Host "----- $($_.FullName)"
+                Get-Content $_.FullName -Tail 200
+              }
+            } else {
+              Write-Host '::notice::The app wrote no logs.'
             }
             exit 1
           }
 
       # Runs the same yt-dlp + Deno + ffmpeg combination from source: the bundled helper
-      # programs go on PATH, which is where a source checkout looks for them.
+      # programs go on PATH, which is where a source checkout looks for them. YouTube often
+      # answers datacenter IPs with its bot check (exit code 3, cli.EXIT_BOT_CHECK); that is
+      # reported as a warning, since it says nothing about yt-dlp. Any other failure fails.
       - name: YouTube extraction smoke test
         id: youtube
         timeout-minutes: 10
+        env:
+          # The extraction cache goes there too, not into the runner's profile.
+          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
         run: |
+          # yt-dlp's stderr goes into the log; it must not stop the step by itself.
+          $ErrorActionPreference = 'Continue'
           $env:PATH = "$env:SAWT_VENDOR_DIR\bin;$env:PATH"
           $out = Join-Path $env:RUNNER_TEMP 'yt-smoke'
-          python -m sawt_sakinah extract "https://www.youtube.com/watch?v=jNQXAC9IVRw" -o $out
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $log = Join-Path $env:RUNNER_TEMP 'yt-smoke.log'
+          $global:LASTEXITCODE = $null
+          python -m sawt_sakinah extract "https://www.youtube.com/watch?v=jNQXAC9IVRw" -o $out 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          # No exit code means python never ran (missing or not launchable).
+          if ($null -eq $code) { Write-Host '::error::sawt extract did not run'; exit 1 }
+          if ($code -eq 3) {
+            $msg = 'YouTube refused the runner with its bot check, so the extraction was not exercised.'
+            Write-Host "::warning::$msg"
+            "**YouTube smoke test inconclusive:** $msg" >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          if ($code) { exit $code }
           Get-ChildItem $out | Format-Table Name, Length
           if (-not (Get-ChildItem $out -File)) { Write-Host '::error::no output file'; exit 1 }
+
+      # upload-artifact needs one common root, so the report and the app's logs (under
+      # SAWT_DATA_DIR) are copied into one folder first.
+      - name: Collect the logs
+        if: failure()
+        env:
+          # Where the self-test step had the app write its logs.
+          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
+        run: |
+          $dest = Join-Path $env:RUNNER_TEMP 'diagnostics'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          foreach ($f in 'self-test.json', 'yt-smoke.log') {
+            $src = Join-Path $env:RUNNER_TEMP $f
+            if (Test-Path $src) { Copy-Item $src $dest }
+          }
+          $logs = Join-Path $env:SAWT_DATA_DIR 'logs'
+          if (Test-Path $logs) {
+            Copy-Item $logs (Join-Path $dest 'logs') -Recurse
+          } else {
+            Write-Host '::notice::The app wrote no logs.'
+          }
 
       - name: Upload the logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rebuild-logs
-          path: |
-            ${{ runner.temp }}/self-test.json
-            ~/AppData/Local/SawtSakinah/logs
+          path: ${{ runner.temp }}/diagnostics
           if-no-files-found: ignore
           retention-days: 14
 

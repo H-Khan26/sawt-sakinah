@@ -14,6 +14,7 @@ deliberately the simplest thing that gives handles, state, and progress.
 
 from __future__ import annotations
 
+import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -24,6 +25,9 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from ..config import CONFIG
+from ..models import JobCancelledError
+
+_log = logging.getLogger(__name__)
 
 # A task body receives a progress callback and returns an optional JSON-able result dict.
 TaskFn = Callable[[Callable[[dict], None]], Optional[dict]]
@@ -66,6 +70,16 @@ class JobRecord(BaseModel):
     error_type: Optional[str] = None
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
+
+
+def _failure(error: str, exc: BaseException) -> dict:
+    """The ``_patch`` fields recording a failed job."""
+    return {"state": JobState.failed, "error": error, "error_type": type(exc).__name__}
+
+
+def _cancelled() -> dict:
+    """The final state of a job dropped from the queue at shutdown."""
+    return _failure("The job was cancelled at shutdown.", JobCancelledError())
 
 
 class JobRegistry:
@@ -111,8 +125,14 @@ class JobRegistry:
         *,
         project_id: Optional[str] = None,
         pool: str = "default",
+        on_finish: Optional[Callable[[], None]] = None,
     ) -> JobRecord:
         """Register a job and schedule ``fn`` on the chosen pool; return its record.
+
+        ``on_finish`` runs once the job ends in any way: succeeded, failed, or dropped from
+        the queue at shutdown. It runs before the final state is recorded, so a client that
+        sees the job finished also sees its effects undone. It does not run when ``submit``
+        raises, and it must be safe to call more than once.
 
         Raises:
             JobQueueFullError: If ``max_pending_jobs`` jobs are already pending or running.
@@ -126,27 +146,44 @@ class JobRegistry:
             self._jobs[job_id] = record
         executor = self._phrase_pool if pool == "phrase" else self._pool
         try:
-            executor.submit(self._run, job_id, fn)
+            future = executor.submit(self._run, job_id, fn, on_finish)
         except BaseException:
             with self._lock:
                 self._active -= 1
                 self._jobs.pop(job_id, None)
             raise
+        # A job cancelled before it started (dropped at shutdown) never reaches ``_run``.
+        future.add_done_callback(
+            lambda f: self._close(job_id, _cancelled(), on_finish) if f.cancelled() else None
+        )
         return record.model_copy(deep=True)
 
-    def _run(self, job_id: str, fn: TaskFn) -> None:
+    def _run(
+        self, job_id: str, fn: TaskFn, on_finish: Optional[Callable[[], None]] = None
+    ) -> None:
         try:
             self._patch(job_id, state=JobState.running)
-            try:
-                result = fn(lambda payload: self.update_progress(job_id, payload))
-                self._patch(job_id, state=JobState.succeeded, result=result or None)
-            except Exception as exc:  # noqa: BLE001 - record any failure for the client
-                self._patch(
-                    job_id,
-                    state=JobState.failed,
-                    error=str(exc),
-                    error_type=type(exc).__name__,
-                )
+            result = fn(lambda payload: self.update_progress(job_id, payload))
+            outcome = {"state": JobState.succeeded, "result": result or None}
+        except BaseException as exc:  # noqa: BLE001 - the job's Future is never read
+            if isinstance(exc, Exception):
+                outcome = _failure(str(exc), exc)
+            else:  # SystemExit, KeyboardInterrupt and the like
+                _log.exception("job %s stopped with %s", job_id, type(exc).__name__)
+                outcome = _failure(repr(exc), exc)
+        self._close(job_id, outcome, on_finish)
+
+    def _close(
+        self, job_id: str, outcome: dict, on_finish: Optional[Callable[[], None]]
+    ) -> None:
+        """Run ``on_finish``, record the job's final state and stop counting it as active."""
+        try:
+            if on_finish is not None:
+                try:
+                    on_finish()
+                except BaseException:  # noqa: BLE001 - nothing else would report it
+                    _log.exception("on_finish failed for job %s", job_id)
+            self._patch(job_id, **outcome)
         finally:
             with self._lock:
                 self._active -= 1
@@ -169,7 +206,7 @@ class JobRegistry:
             record.updated_at = _now()
 
     def shutdown(self) -> None:
-        """Drop queued jobs and return without waiting for running ones.
+        """Drop queued jobs (recorded as failed) and return without waiting for running ones.
 
         The interpreter still joins the worker threads at exit, so without
         ``cancel_futures`` every queued job would run first.

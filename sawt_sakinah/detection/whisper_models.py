@@ -90,10 +90,13 @@ class _RemoteFile:
     blob_id: str  # git blob sha1; the content hash for non-LFS files
 
 
-# Model directories with a download in flight (and its cancel flag) or a detection using them.
+# Model directories with a download in flight (and its cancel flag), a detection using them
+# or their files being removed. The lock guards only these maps, never file work.
 _STATE_LOCK = threading.Lock()
 _DOWNLOADING: dict[Path, threading.Event] = {}
 _IN_USE: dict[Path, int] = {}
+_DELETING: set[Path] = set()
+_IN_USE_TEXT = "is in use by a running or queued phrase detection."
 
 
 # -- catalog ----------------------------------------------------------------------------
@@ -167,21 +170,42 @@ def _key(path: Path) -> Path:
     return Path(os.path.normcase(os.path.abspath(path)))
 
 
-@contextmanager
-def in_use(path: str | os.PathLike) -> Iterator[None]:
-    """Mark a model directory as in use by a detection, so it can't be deleted meanwhile."""
+def acquire(path: str | os.PathLike) -> Callable[[], None]:
+    """Mark a model directory as in use, so it can't be deleted until the returned
+    release function runs. Releasing more than once has no further effect.
+
+    Raises :class:`ModelBusyError` while the model's files are being deleted.
+    """
     key = _key(Path(path))
     with _STATE_LOCK:
+        if key in _DELETING:
+            raise ModelBusyError("This speech model is being deleted.")
         _IN_USE[key] = _IN_USE.get(key, 0) + 1
-    try:
-        yield
-    finally:
+    released = False
+
+    def release() -> None:
+        nonlocal released
         with _STATE_LOCK:
+            if released:
+                return
+            released = True
             count = _IN_USE.get(key, 0) - 1
             if count > 0:
                 _IN_USE[key] = count
             else:
                 _IN_USE.pop(key, None)
+
+    return release
+
+
+@contextmanager
+def in_use(path: str | os.PathLike) -> Iterator[None]:
+    """Mark a model directory as in use by a detection, so it can't be deleted meanwhile."""
+    release = acquire(path)
+    try:
+        yield
+    finally:
+        release()
 
 
 def delete(
@@ -192,19 +216,29 @@ def delete(
     """Remove the model directory (installed or partial). Returns the removed path.
 
     ``on_remove`` runs just before the files go (e.g. to drop a cached loaded model).
-    Raises :class:`ModelBusyError` while the model is downloading or in use.
+    Raises :class:`ModelBusyError` while the model is downloading, in use or already being
+    deleted. The files are removed without holding the state lock, so detections and the
+    job registry are not held up; meanwhile the model counts as busy.
     """
     path = model_dir(model_id, root)
     key = _key(path)
+    label = get_entry(model_id).label
     with _STATE_LOCK:
         if key in _DOWNLOADING:
-            raise ModelBusyError(f"{get_entry(model_id).label} is downloading.")
+            raise ModelBusyError(f"{label} is downloading.")
         if _IN_USE.get(key):
-            raise ModelBusyError(f"{get_entry(model_id).label} is in use by a detection.")
+            raise ModelBusyError(f"{label} {_IN_USE_TEXT}")
+        if key in _DELETING:
+            raise ModelBusyError(f"{label} is already being deleted.")
+        _DELETING.add(key)
+    try:
         if on_remove is not None:
             on_remove(path)
         if path.exists():
             shutil.rmtree(path)
+    finally:
+        with _STATE_LOCK:
+            _DELETING.discard(key)
     return path
 
 
@@ -410,7 +444,9 @@ def download(
         if key in _DOWNLOADING:
             raise ModelBusyError(f"{entry.label} is already downloading.")
         if _IN_USE.get(key):
-            raise ModelBusyError(f"{entry.label} is in use by a detection.")
+            raise ModelBusyError(f"{entry.label} {_IN_USE_TEXT}")
+        if key in _DELETING:
+            raise ModelBusyError(f"{entry.label} is being deleted.")
         _DOWNLOADING[key] = cancel
     try:
         if is_installed(model_id, root):
@@ -447,6 +483,7 @@ __all__ = [
     "installed_path",
     "is_downloading",
     "list_models",
+    "acquire",
     "in_use",
     "delete",
     "cancel_downloads",

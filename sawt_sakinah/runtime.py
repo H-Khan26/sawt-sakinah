@@ -11,6 +11,12 @@ location, and passes absolute paths down to the detection and editing layers.
 
 In a source checkout the bundle root is the repo, helper programs come from ``PATH`` and
 the data directories keep their pre-bundle locations, so the dev workflow is unchanged.
+
+``SAWT_DATA_DIR`` (an absolute path) moves every per-user directory (data, logs, cache,
+models, config) under that path for the process, also in the bundle: it is set by whoever
+launches the app (CI, a tester), unlike the ``.env`` and ``SAWT_CONFIG_FILE`` files the
+bundle ignores. The directories are created when first used. CI uses it to give the
+self-test a known log location.
 """
 
 from __future__ import annotations
@@ -35,6 +41,24 @@ _PACKAGE_DIR = Path(__file__).resolve().parent
 
 class ToolNotFoundError(FileNotFoundError):
     """A helper program (ffmpeg, ffprobe, Deno) could not be found."""
+
+
+DATA_DIR_ENV = "SAWT_DATA_DIR"
+
+
+def _env_data_dir() -> Optional[Path]:
+    """``SAWT_DATA_DIR`` when it holds an absolute path; a relative one is ignored here and
+    reported by :func:`data_dir_env_error`."""
+    value = os.environ.get(DATA_DIR_ENV)
+    return Path(value) if value and Path(value).is_absolute() else None
+
+
+def data_dir_env_error() -> Optional[str]:
+    """A user-facing message when ``SAWT_DATA_DIR`` is set but not absolute, else ``None``."""
+    value = os.environ.get(DATA_DIR_ENV)
+    if value and not Path(value).is_absolute():
+        return f"{DATA_DIR_ENV} must be an absolute path; it is set to {value!r}."
+    return None
 
 
 # -- bundle (read-only) -----------------------------------------------------------------
@@ -71,7 +95,10 @@ def _legacy_data_root() -> Path:
 def data_dir() -> Path:
     """Per-user data root: ``%LOCALAPPDATA%\\SawtSakinah`` on Windows and
     ``~/Library/Application Support/SawtSakinah`` on macOS when frozen; the pre-bundle
-    ``sawt_sakinah`` location in a source checkout."""
+    ``sawt_sakinah`` location in a source checkout; ``SAWT_DATA_DIR`` when set."""
+    override = _env_data_dir()
+    if override is not None:
+        return override
     if FROZEN:
         from platformdirs import user_data_dir
 
@@ -81,6 +108,9 @@ def data_dir() -> Path:
 
 def config_dir() -> Path:
     """Per-user config directory (holds ``config.yaml`` overrides and preferences)."""
+    override = _env_data_dir()
+    if override is not None:
+        return override
     if FROZEN:
         from platformdirs import user_config_dir
 
@@ -93,7 +123,7 @@ def projects_dir() -> Path:
 
 
 def cache_dir() -> Path:
-    if FROZEN or os.environ.get("LOCALAPPDATA"):
+    if _env_data_dir() is not None or FROZEN or os.environ.get("LOCALAPPDATA"):
         return data_dir() / "cache"
     return Path.home() / ".cache" / "sawt_sakinah"
 

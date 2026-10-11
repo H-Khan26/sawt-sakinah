@@ -15,7 +15,8 @@
 
 A fatal startup error is logged and, in the bundle, shown in a message box instead of the
 app silently vanishing. ``--self-test`` runs the headless end-to-end check in
-``selftest.py`` instead of opening a window.
+``selftest.py`` instead of opening a window. ``SAWT_DATA_DIR`` moves every per-user file
+(data, logs, config) for the run (see :mod:`sawt_sakinah.runtime`).
 
 In a source checkout the SPA must be built first (``cd frontend && npm run build``) so the
 service can serve it at ``/``. Requires the ``service`` and ``desktop`` extras::
@@ -422,6 +423,9 @@ def launch(args: argparse.Namespace) -> int:
 
 def _launch(args: argparse.Namespace, self_test: bool, show_boxes: bool, log_file: Path) -> int:
     try:
+        data_dir_error = runtime.data_dir_env_error()
+        if data_dir_error is not None:
+            raise StartupError(data_dir_error)
         _report_user_config(show_boxes)
         if self_test:
             from .selftest import run_self_test

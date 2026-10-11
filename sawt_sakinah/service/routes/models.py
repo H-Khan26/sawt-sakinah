@@ -8,7 +8,8 @@ The user picks the model phrase detection uses with ``PATCH /app/preferences
   already pending or running for that model is returned as is (no second job); a model
   that is already installed is refused with 409 ``ModelAlreadyInstalledError``.
 * ``DELETE /models/{id}`` -> 204 (also discards a partial download); 409
-  ``ModelBusyError`` while it is downloading or a detection is using it.
+  ``ModelBusyError`` while it is downloading or a phrase detection is queued or running
+  with it.
 * An unknown id is 404 ``UnknownModelError``.
 """
 
@@ -102,5 +103,7 @@ def delete_model(
     with _LOCK:
         if _active_download(jobs, _downloads(request), model_id) is not None:
             raise whisper_models.ModelBusyError(f"{entry.label} is downloading.")
-        whisper_models.delete(model_id, settings.models_dir, on_remove=evict_model)
+    # Outside _LOCK so listing models isn't held up by a multi-GB removal. A download
+    # submitted meanwhile is refused by whichever of the two marks the model first.
+    whisper_models.delete(model_id, settings.models_dir, on_remove=evict_model)
     return Response(status_code=204)

@@ -21,6 +21,8 @@ from .errors import (
     UnsupportedMediaError,
     NoAudioStreamError,
     FileTooLargeError,
+    YouTubeBotCheckError,
+    JobCancelledError,
 )
 
 __all__ = [
@@ -44,4 +46,6 @@ __all__ = [
     "UnsupportedMediaError",
     "NoAudioStreamError",
     "FileTooLargeError",
+    "YouTubeBotCheckError",
+    "JobCancelledError",
 ]

@@ -48,14 +48,23 @@ def detect_phrases_endpoint(
     # Pin the job to a concrete model and fail fast (409 ModelNotInstalledError) when it
     # isn't downloaded, rather than queueing a job that can only fail.
     model_id = request.params.model_size or selected_model()
-    whisper_models.installed_path(model_id, settings.models_dir)
     params = request.params.model_copy(update={"model_size": model_id})
     request = request.model_copy(update={"params": params})
-    # Dedicated single-worker pool: concurrent Whisper on one device OOMs.
-    job = jobs.submit(
-        JobKind.detect_phrases,
-        phrases_worker(store, settings, project_id, request),
-        project_id=project_id,
-        pool="phrase",
-    )
+    # The model counts as in use from now until the job ends, so it can't be deleted while
+    # the job waits in the queue. Marked before the install check, so a delete can't slip
+    # in between.
+    release = whisper_models.acquire(whisper_models.model_dir(model_id, settings.models_dir))
+    try:
+        whisper_models.installed_path(model_id, settings.models_dir)
+        # Dedicated single-worker pool: concurrent Whisper on one device OOMs.
+        job = jobs.submit(
+            JobKind.detect_phrases,
+            phrases_worker(store, settings, project_id, request),
+            project_id=project_id,
+            pool="phrase",
+            on_finish=release,
+        )
+    except BaseException:
+        release()
+        raise
     return JobAccepted(job_id=job.id)

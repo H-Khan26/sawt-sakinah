@@ -1,4 +1,4 @@
-"""Typed extraction errors.
+"""Typed errors: extraction failures, plus the job error recorded for a cancelled job.
 
 The extraction layer maps yt-dlp's generic ``DownloadError`` (and the upload importer's
 failure modes) onto these so callers (and the API) can branch on a stable error type
@@ -50,3 +50,12 @@ class LiveStreamError(ExtractionError):
 
 class VideoUnavailableError(ExtractionError):
     """The video was removed, deleted, or is otherwise unavailable."""
+
+
+class JobCancelledError(Exception):
+    """A queued job was dropped before it ran (the app was shutting down)."""
+
+
+class YouTubeBotCheckError(ExtractionError):
+    """YouTube refused the download because it suspects automated access (its bot check,
+    or the transient "content isn't available, try again later" block)."""
