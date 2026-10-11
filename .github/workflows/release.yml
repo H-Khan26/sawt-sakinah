@@ -89,11 +89,13 @@ jobs:
             lock: packaging/requirements-windows.txt
             build_lock: packaging/requirements-build.txt
             app: packaging/dist/SawtSakinah
+            exe: packaging/dist/SawtSakinah/SawtSakinah.exe
           - os: macos-15 # arm64 (Apple Silicon)
             platform: macos-arm64
             lock: packaging/requirements-macos.txt
             build_lock: packaging/requirements-build-macos.txt
             app: packaging/dist/SawtSakinah.app
+            exe: packaging/dist/SawtSakinah.app/Contents/MacOS/SawtSakinah
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -145,42 +147,17 @@ jobs:
       - name: PyInstaller
         run: python -m PyInstaller --noconfirm --clean --distpath packaging/dist --workpath packaging/build/pyinstaller packaging/sawt_sakinah.spec
 
-      - name: Self-test the frozen app (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      # Git Bash runs the Windows exe directly and waits for it like any other program.
+      - name: Self-test the frozen app
         timeout-minutes: 10
         env:
-          # Keeps the app's logs (and all its data) in a known place on every OS.
-          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
-        run: |
-          $exe = Resolve-Path packaging/dist/SawtSakinah/SawtSakinah.exe
-          $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
-          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"" -Wait -PassThru
-          if (Test-Path $report) { Get-Content $report -Raw } else { Write-Host 'No self-test report was written.' }
-          if ($p.ExitCode -ne 0) {
-            Write-Host "::error::self-test failed with exit code $($p.ExitCode)"
-            $logs = Join-Path $env:SAWT_DATA_DIR 'logs'
-            if (Test-Path $logs) {
-              Get-ChildItem $logs -File | ForEach-Object {
-                Write-Host "----- $($_.FullName)"
-                Get-Content $_.FullName -Tail 200
-              }
-            } else {
-              Write-Host '::notice::The app wrote no logs.'
-            }
-            exit 1
-          }
-
-      - name: Self-test the frozen app (macOS)
-        if: runner.os == 'macOS'
-        timeout-minutes: 10
-        env:
+          EXE: ${{ matrix.exe }}
           # Keeps the app's logs (and all its data) in a known place on every OS.
           SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
         run: |
           report="$RUNNER_TEMP/self-test.json"
           code=0
-          "$APP/Contents/MacOS/SawtSakinah" --self-test --self-test-report "$report" || code=$?
+          "$EXE" --self-test --self-test-report "$report" || code=$?
           if [ -f "$report" ]; then cat "$report"; else echo 'No self-test report was written.'; fi
           if [ "$code" -ne 0 ]; then
             echo "::error::self-test failed with exit code $code"
