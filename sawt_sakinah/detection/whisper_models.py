@@ -94,6 +94,7 @@ class _RemoteFile:
 _STATE_LOCK = threading.Lock()
 _DOWNLOADING: dict[Path, threading.Event] = {}
 _IN_USE: dict[Path, int] = {}
+_IN_USE_TEXT = "is in use by a running or queued phrase detection."
 
 
 # -- catalog ----------------------------------------------------------------------------
@@ -216,7 +217,7 @@ def delete(
         if key in _DOWNLOADING:
             raise ModelBusyError(f"{get_entry(model_id).label} is downloading.")
         if _IN_USE.get(key):
-            raise ModelBusyError(f"{get_entry(model_id).label} is in use by a detection.")
+            raise ModelBusyError(f"{get_entry(model_id).label} {_IN_USE_TEXT}")
         if on_remove is not None:
             on_remove(path)
         if path.exists():
@@ -426,7 +427,7 @@ def download(
         if key in _DOWNLOADING:
             raise ModelBusyError(f"{entry.label} is already downloading.")
         if _IN_USE.get(key):
-            raise ModelBusyError(f"{entry.label} is in use by a detection.")
+            raise ModelBusyError(f"{entry.label} {_IN_USE_TEXT}")
         _DOWNLOADING[key] = cancel
     try:
         if is_installed(model_id, root):
