@@ -15,8 +15,8 @@
 
 A fatal startup error is logged and, in the bundle, shown in a message box instead of the
 app silently vanishing. ``--self-test`` runs the headless end-to-end check in
-``selftest.py`` instead of opening a window. ``--data-dir PATH`` keeps every per-user file
-(data, logs, config) under ``PATH`` for this run (see :mod:`sawt_sakinah.runtime`).
+``selftest.py`` instead of opening a window. ``SAWT_DATA_DIR`` moves every per-user file
+(data, logs, config) for the run (see :mod:`sawt_sakinah.runtime`).
 
 In a source checkout the SPA must be built first (``cd frontend && npm run build``) so the
 service can serve it at ``/``. Requires the ``service`` and ``desktop`` extras::
@@ -27,7 +27,6 @@ service can serve it at ``/``. Requires the ``service`` and ``desktop`` extras::
 Usage:
     python -m sawt_sakinah.desktop [--host 127.0.0.1] [--port N]
                                    [--self-test] [--self-test-report PATH]
-                                   [--data-dir PATH]
 """
 
 from __future__ import annotations
@@ -362,18 +361,6 @@ def _report_user_config(show_box: bool) -> None:
         _log.warning("%s", text)
 
 
-def _data_dir_arg(value: str) -> Path:
-    """``--data-dir`` must be absolute; the directory is created if missing."""
-    path = Path(value)
-    if not path.is_absolute():
-        raise argparse.ArgumentTypeError(f"must be an absolute path: {value}")
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise argparse.ArgumentTypeError(f"cannot create {value}: {exc}") from exc
-    return path
-
-
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--host", default="127.0.0.1", help="bind host (default: local-only)")
     parser.add_argument(
@@ -389,14 +376,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         metavar="PATH",
         default=None,
         help="also write the self-test result as JSON to PATH",
-    )
-    parser.add_argument(
-        runtime.DATA_DIR_OPTION,
-        dest="data_dir",
-        metavar="PATH",
-        type=_data_dir_arg,
-        default=None,
-        help="keep data, logs and config under this absolute PATH for this run",
     )
 
 
@@ -426,9 +405,6 @@ def launch(args: argparse.Namespace) -> int:
     """
     from .applog import LOG_FILE, setup_logging
 
-    # Normally already applied from the command line when runtime was imported.
-    if getattr(args, "data_dir", None) is not None:
-        runtime.set_data_dir(args.data_dir)
     self_test = bool(getattr(args, "self_test", False))
     log_file = setup_logging("self-test.log" if self_test else LOG_FILE)
     # Never block an unattended self-test on a modal box.
@@ -447,6 +423,9 @@ def launch(args: argparse.Namespace) -> int:
 
 def _launch(args: argparse.Namespace, self_test: bool, show_boxes: bool, log_file: Path) -> int:
     try:
+        data_dir_error = runtime.data_dir_env_error()
+        if data_dir_error is not None:
+            raise StartupError(data_dir_error)
         _report_user_config(show_boxes)
         if self_test:
             from .selftest import run_self_test

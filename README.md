@@ -63,6 +63,8 @@ the release page.
 Projects, the speech model, settings and logs live in
 `%LOCALAPPDATA%\SawtSakinah`, outside the app folder. To update, delete the old app
 folder and unzip the new release in its place; your projects stay where they are.
+To keep everything somewhere else for one run (a test, for example), launch the app
+with the environment variable `SAWT_DATA_DIR` set to an absolute folder path.
 
 ### What goes over the network
 

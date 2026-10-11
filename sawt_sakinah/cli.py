@@ -22,6 +22,7 @@ import os
 import sys
 from typing import Optional, Sequence
 
+from . import runtime
 from .config import CONFIG
 from .desktop import add_arguments as add_desktop_arguments
 
@@ -115,4 +116,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    # The desktop command reports this itself, in its log and (frozen) a message box.
+    data_dir_error = runtime.data_dir_env_error()
+    if data_dir_error is not None and args.command != "desktop":
+        print(f"error: {data_dir_error}", file=sys.stderr)
+        return 2
     return args.func(args)

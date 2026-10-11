@@ -12,10 +12,11 @@ location, and passes absolute paths down to the detection and editing layers.
 In a source checkout the bundle root is the repo, helper programs come from ``PATH`` and
 the data directories keep their pre-bundle locations, so the dev workflow is unchanged.
 
-``--data-dir <absolute path>`` on the process's command line (or :func:`set_data_dir`)
-moves every per-user directory (data, logs, cache, models, config) under that path for
-this process. It is read when this module is imported, before the config loads, so it
-also covers ``config.yaml``. CI uses it to give the self-test a known log location.
+``SAWT_DATA_DIR`` (an absolute path) moves every per-user directory (data, logs, cache,
+models, config) under that path for the process, also in the bundle: it is set by whoever
+launches the app (CI, a tester), unlike the ``.env`` and ``SAWT_CONFIG_FILE`` files the
+bundle ignores. The directories are created when first used. CI uses it to give the
+self-test a known log location.
 """
 
 from __future__ import annotations
@@ -42,33 +43,22 @@ class ToolNotFoundError(FileNotFoundError):
     """A helper program (ffmpeg, ffprobe, Deno) could not be found."""
 
 
-DATA_DIR_OPTION = "--data-dir"
-_DATA_DIR_OVERRIDE: Optional[Path] = None
+DATA_DIR_ENV = "SAWT_DATA_DIR"
 
 
-def data_dir_from_argv(argv: list[str]) -> Optional[Path]:
-    """The ``--data-dir`` value in ``argv`` when it is an absolute path, else ``None``."""
-    value: Optional[str] = None
-    for i, arg in enumerate(argv):
-        if arg == "--":
-            break
-        if arg == DATA_DIR_OPTION and i + 1 < len(argv):
-            value = argv[i + 1]
-        elif arg.startswith(DATA_DIR_OPTION + "="):
-            value = arg.split("=", 1)[1]
+def _env_data_dir() -> Optional[Path]:
+    """``SAWT_DATA_DIR`` when it holds an absolute path; a relative one is ignored here and
+    reported by :func:`data_dir_env_error`."""
+    value = os.environ.get(DATA_DIR_ENV)
     return Path(value) if value and Path(value).is_absolute() else None
 
 
-def set_data_dir(path: str | os.PathLike) -> Path:
-    """Keep all per-user data, logs, cache, models and config under ``path`` (absolute;
-    created if missing) for the rest of this process."""
-    global _DATA_DIR_OVERRIDE
-    target = Path(path)
-    if not target.is_absolute():
-        raise ValueError(f"the data directory must be an absolute path: {path}")
-    target.mkdir(parents=True, exist_ok=True)
-    _DATA_DIR_OVERRIDE = target
-    return target
+def data_dir_env_error() -> Optional[str]:
+    """A user-facing message when ``SAWT_DATA_DIR`` is set but not absolute, else ``None``."""
+    value = os.environ.get(DATA_DIR_ENV)
+    if value and not Path(value).is_absolute():
+        return f"{DATA_DIR_ENV} must be an absolute path; it is set to {value!r}."
+    return None
 
 
 # -- bundle (read-only) -----------------------------------------------------------------
@@ -105,9 +95,10 @@ def _legacy_data_root() -> Path:
 def data_dir() -> Path:
     """Per-user data root: ``%LOCALAPPDATA%\\SawtSakinah`` on Windows and
     ``~/Library/Application Support/SawtSakinah`` on macOS when frozen; the pre-bundle
-    ``sawt_sakinah`` location in a source checkout; the ``--data-dir`` path when given."""
-    if _DATA_DIR_OVERRIDE is not None:
-        return _DATA_DIR_OVERRIDE
+    ``sawt_sakinah`` location in a source checkout; ``SAWT_DATA_DIR`` when set."""
+    override = _env_data_dir()
+    if override is not None:
+        return override
     if FROZEN:
         from platformdirs import user_data_dir
 
@@ -117,8 +108,9 @@ def data_dir() -> Path:
 
 def config_dir() -> Path:
     """Per-user config directory (holds ``config.yaml`` overrides and preferences)."""
-    if _DATA_DIR_OVERRIDE is not None:
-        return _DATA_DIR_OVERRIDE
+    override = _env_data_dir()
+    if override is not None:
+        return override
     if FROZEN:
         from platformdirs import user_config_dir
 
@@ -131,7 +123,7 @@ def projects_dir() -> Path:
 
 
 def cache_dir() -> Path:
-    if _DATA_DIR_OVERRIDE is not None or FROZEN or os.environ.get("LOCALAPPDATA"):
+    if _env_data_dir() is not None or FROZEN or os.environ.get("LOCALAPPDATA"):
         return data_dir() / "cache"
     return Path.home() / ".cache" / "sawt_sakinah"
 
@@ -221,13 +213,3 @@ __all__ = [
     "tool_path",
     "resolve_executable",
 ]
-
-
-# Applied at import, before the config loads. A path that can't be created is left to the
-# desktop command's own argument check, which reports it.
-_ARGV_DATA_DIR = data_dir_from_argv(sys.argv[1:])
-if _ARGV_DATA_DIR is not None:
-    try:
-        set_data_dir(_ARGV_DATA_DIR)
-    except OSError:
-        pass
