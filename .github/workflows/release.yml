@@ -135,16 +135,17 @@ jobs:
 
       - name: Self-test the frozen app
         timeout-minutes: 10
+        env:
+          # Keeps the app's logs (and all its data) in a known place on every OS.
+          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
         run: |
           $exe = Resolve-Path packaging/dist/SawtSakinah/SawtSakinah.exe
           $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
-          # --data-dir keeps the app's logs (and all its data) in a known place on every OS.
-          $data = Join-Path $env:RUNNER_TEMP 'sawt-data'
-          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"", '--data-dir', "`"$data`"" -Wait -PassThru
+          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"" -Wait -PassThru
           if (Test-Path $report) { Get-Content $report -Raw } else { Write-Host 'No self-test report was written.' }
           if ($p.ExitCode -ne 0) {
             Write-Host "::error::self-test failed with exit code $($p.ExitCode)"
-            $logs = Join-Path $data 'logs'
+            $logs = Join-Path $env:SAWT_DATA_DIR 'logs'
             if (Test-Path $logs) {
               Get-ChildItem $logs -File | ForEach-Object {
                 Write-Host "----- $($_.FullName)"
@@ -180,16 +181,19 @@ jobs:
           compression-level: 0
           retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 14 || 3 }}
 
-      # upload-artifact needs one common root, so the report and the app's logs (under the
-      # self-test's --data-dir) are copied into one folder first.
+      # upload-artifact needs one common root, so the report and the app's logs (under
+      # SAWT_DATA_DIR) are copied into one folder first.
       - name: Collect the self-test logs
         if: failure()
+        env:
+          # Where the self-test step had the app write its logs.
+          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
         run: |
           $dest = Join-Path $env:RUNNER_TEMP 'diagnostics'
           New-Item -ItemType Directory -Force $dest | Out-Null
           $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
           if (Test-Path $report) { Copy-Item $report $dest }
-          $logs = Join-Path $env:RUNNER_TEMP 'sawt-data/logs'
+          $logs = Join-Path $env:SAWT_DATA_DIR 'logs'
           if (Test-Path $logs) {
             Copy-Item $logs (Join-Path $dest 'logs') -Recurse
           } else {

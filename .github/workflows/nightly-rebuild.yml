@@ -66,16 +66,17 @@ jobs:
       - name: Self-test the frozen app
         id: selftest
         timeout-minutes: 10
+        env:
+          # Keeps the app's logs (and all its data) in a known place on every OS.
+          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
         run: |
           $exe = Resolve-Path packaging/dist/SawtSakinah/SawtSakinah.exe
           $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
-          # --data-dir keeps the app's logs (and all its data) in a known place on every OS.
-          $data = Join-Path $env:RUNNER_TEMP 'sawt-data'
-          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"", '--data-dir', "`"$data`"" -Wait -PassThru
+          $p = Start-Process -FilePath $exe -ArgumentList '--self-test', '--self-test-report', "`"$report`"" -Wait -PassThru
           if (Test-Path $report) { Get-Content $report -Raw } else { Write-Host 'No self-test report was written.' }
           if ($p.ExitCode -ne 0) {
             Write-Host "::error::self-test failed with exit code $($p.ExitCode)"
-            $logs = Join-Path $data 'logs'
+            $logs = Join-Path $env:SAWT_DATA_DIR 'logs'
             if (Test-Path $logs) {
               Get-ChildItem $logs -File | ForEach-Object {
                 Write-Host "----- $($_.FullName)"
@@ -94,6 +95,9 @@ jobs:
       - name: YouTube extraction smoke test
         id: youtube
         timeout-minutes: 10
+        env:
+          # The extraction cache goes there too, not into the runner's profile.
+          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
         run: |
           # yt-dlp's stderr goes into the log; it must not stop the step by itself.
           $ErrorActionPreference = 'Continue'
@@ -115,10 +119,13 @@ jobs:
           Get-ChildItem $out | Format-Table Name, Length
           if (-not (Get-ChildItem $out -File)) { Write-Host '::error::no output file'; exit 1 }
 
-      # upload-artifact needs one common root, so the report and the app's logs (under the
-      # self-test's --data-dir) are copied into one folder first.
+      # upload-artifact needs one common root, so the report and the app's logs (under
+      # SAWT_DATA_DIR) are copied into one folder first.
       - name: Collect the logs
         if: failure()
+        env:
+          # Where the self-test step had the app write its logs.
+          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
         run: |
           $dest = Join-Path $env:RUNNER_TEMP 'diagnostics'
           New-Item -ItemType Directory -Force $dest | Out-Null
@@ -126,7 +133,7 @@ jobs:
             $src = Join-Path $env:RUNNER_TEMP $f
             if (Test-Path $src) { Copy-Item $src $dest }
           }
-          $logs = Join-Path $env:RUNNER_TEMP 'sawt-data/logs'
+          $logs = Join-Path $env:SAWT_DATA_DIR 'logs'
           if (Test-Path $logs) {
             Copy-Item $logs (Join-Path $dest 'logs') -Recurse
           } else {
