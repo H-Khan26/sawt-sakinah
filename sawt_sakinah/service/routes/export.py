@@ -71,5 +71,10 @@ def download_export(
     base = _safe_base(artifact.name or project.name or "export")
     filename = f"{base}-{artifact.created_at:%Y%m%d}.{artifact.format}"
     return ranged_file_response(
-        path, request.headers.get("range"), media_type_for(path), filename=filename
+        path,
+        request.headers.get("range"),
+        media_type_for(path),
+        filename=filename,
+        streams=store.streams,
+        key=project_id,
     )

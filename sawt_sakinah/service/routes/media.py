@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from ...fileio import replace_file
 from ..deps import get_settings, get_store
 from ..ranges import media_type_for, ranged_file_response
 from ..waveform import compute_peaks
@@ -32,7 +32,11 @@ def get_audio(project_id: str, request: Request, store=Depends(get_store)):
     if not local.exists():
         raise HTTPException(status_code=404, detail="audio not found")
     return ranged_file_response(
-        local, request.headers.get("range"), media_type_for(local)
+        local,
+        request.headers.get("range"),
+        media_type_for(local),
+        streams=store.streams,
+        key=project_id,
     )
 
 
@@ -70,15 +74,8 @@ def _cache_peaks(cache: Path, peaks: dict) -> None:
         fd, tmp_name = tempfile.mkstemp(dir=str(cache.parent), suffix=".json.tmp")
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(peaks, fh)
-        for attempt in range(5):
-            try:
-                os.replace(tmp_name, cache)
-                tmp_name = None  # renamed away; nothing to clean up
-                return
-            except PermissionError:
-                if attempt == 4:
-                    raise
-                time.sleep(0.1)
+        replace_file(tmp_name, cache)
+        tmp_name = None  # renamed away; nothing to clean up
     except OSError:
         pass  # leave the cache absent; peaks are recomputed next time
     finally:

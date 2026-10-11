@@ -5,8 +5,9 @@ Run with::
     uvicorn sawt_sakinah.service.app:app
 
 The store and job registry are created in the lifespan and attached to ``app.state``
-(read via ``deps.py``). The extraction error hierarchy is mapped to HTTP status codes for
-the rare synchronous failure; async failures surface in ``JobRecord.error``/``error_type``.
+(read via ``deps.py``). Startup sweeps what an interrupted run left in the projects folder.
+The extraction error hierarchy is mapped to HTTP status codes for the rare synchronous
+failure; async failures surface in ``JobRecord.error``/``error_type``.
 """
 
 from __future__ import annotations
@@ -29,6 +30,9 @@ from ..models import (
     LiveStreamError,
     NoAudioStreamError,
     PrivateVideoError,
+    ProjectInUseError,
+    ProjectTooNewError,
+    ProjectUnreadableError,
     RegionLockedError,
     UnsupportedMediaError,
     VideoUnavailableError,
@@ -54,13 +58,18 @@ _ERROR_STATUS: list[tuple[type[Exception], int]] = [
     (JobQueueFullError, 429),
     (UnknownModelError, 404),
     (ModelError, 409),  # not installed, already installed, busy
+    (ProjectInUseError, 409),
+    (ProjectTooNewError, 409),
+    (ProjectUnreadableError, 422),
 ]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings: ServiceSettings = app.state.settings
-    app.state.store = ProjectStore(settings.projects_dir)
+    store = ProjectStore(settings.projects_dir)
+    store.sweep()
+    app.state.store = store
     app.state.jobs = JobRegistry(settings.max_workers, settings.phrase_workers)
     try:
         yield

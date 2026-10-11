@@ -53,9 +53,21 @@ class VideoUnavailableError(ExtractionError):
 
 
 class JobCancelledError(Exception):
-    """A queued job was dropped before it ran (the app was shutting down)."""
+    """A job was stopped, or dropped before it ran, because the app was shutting down."""
 
 
 class YouTubeBotCheckError(ExtractionError):
     """YouTube refused the download because it suspects automated access (its bot check,
     or the transient "content isn't available, try again later" block)."""
+
+
+class ProjectInUseError(Exception):
+    """A project's files are still open (e.g. by playback), so it can't be deleted now."""
+
+
+class ProjectUnreadableError(Exception):
+    """A project's ``project.json`` can't be loaded; the message says why, for the user."""
+
+
+class ProjectTooNewError(ProjectUnreadableError):
+    """A project was saved by a newer app version (its ``schema_version`` is ahead)."""
