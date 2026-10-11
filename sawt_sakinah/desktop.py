@@ -184,6 +184,8 @@ def _mac_alert(text: str, *, error: bool, ask: bool) -> bool:
     """
     import subprocess
 
+    from .proc import run as run_proc
+
     buttons = '{"No", "Yes"} default button "Yes"' if ask else '{"OK"} default button "OK"'
     script = [
         "on run argv",
@@ -196,15 +198,7 @@ def _mac_alert(text: str, *, error: bool, ask: bool) -> bool:
     for line in script:
         args += ["-e", line]
     try:
-        res = subprocess.run(  # noqa: S603
-            [*args, APP_TITLE, text],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdin=subprocess.DEVNULL,
-            timeout=600,
-        )
+        res = run_proc([*args, APP_TITLE, text], timeout=600)
     except (OSError, subprocess.SubprocessError):
         return False
     return res.stdout.strip() == "Yes"
