@@ -44,6 +44,12 @@ DEFAULT_STEM = "source"
 #: practice means YouTube changed something the bundled yt-dlp does not handle yet.
 GENERIC_FAILURE = "YouTube may have changed. Check for an app update."
 
+# YouTube's refusals of a client it suspects is automated (typically a datacenter IP):
+# "Sign in to confirm you're not a bot" and "This content isn't available, try again
+# later". Both are transient blocks, not a missing video. The age gate ("Sign in to
+# confirm your age") does not match.
+_BOT_CHECK = re.compile(r"not a bot|(?:isn['\u2019]t|is not) available,? try again later")
+
 _NETWORK_HINTS = (
     "getaddrinfo",
     "urlopen error",
@@ -99,6 +105,17 @@ def _map_download_error(err: Exception, url: str) -> ExtractionError:
     """
     msg = str(err)
     low = msg.lower()
+    # Before the unavailable check: the "try again later" refusal starts "Video unavailable".
+    if _BOT_CHECK.search(low):
+        _log.warning("yt-dlp failed for %s: %s", url, msg)
+        if "not a bot" in low:
+            return YouTubeBotCheckError(
+                "YouTube asked to confirm this is not a bot and refused the download. "
+                "Try again later."
+            )
+        return YouTubeBotCheckError(
+            "YouTube is refusing downloads from this network for now. Try again later."
+        )
     if "private video" in low:
         return PrivateVideoError(msg)
     if re.search(r"\bage\b|age[- ]restrict", low) and (
@@ -112,11 +129,6 @@ def _map_download_error(err: Exception, url: str) -> ExtractionError:
     if "unavailable" in low or "has been removed" in low or "been terminated" in low:
         return VideoUnavailableError(msg)
     _log.warning("yt-dlp failed for %s: %s", url, msg)
-    if "not a bot" in low:
-        return YouTubeBotCheckError(
-            "YouTube asked to confirm this is not a bot and refused the download. "
-            "Try again later."
-        )
     if any(hint in low for hint in _NETWORK_HINTS):
         return ExtractionError("Could not reach YouTube. Check your internet connection.")
     return ExtractionError(GENERIC_FAILURE)

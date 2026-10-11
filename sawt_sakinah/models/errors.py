@@ -53,4 +53,5 @@ class VideoUnavailableError(ExtractionError):
 
 
 class YouTubeBotCheckError(ExtractionError):
-    """YouTube asked to confirm the request is not from a bot and refused the download."""
+    """YouTube refused the download because it suspects automated access (its bot check,
+    or the transient "content isn't available, try again later" block)."""
