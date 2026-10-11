@@ -6,6 +6,9 @@ once its service is up, publishes its port, launch token and process id in
 running instance to bring its window to the front (``POST /app/focus``, authenticated with
 the token), then exits.
 
+On macOS, Finder and the Dock already reopen the running app instead of starting a second
+copy; the lock covers launches that bypass them (``open -n``, running the binary directly).
+
 The OS drops the lock when the owning process dies, so a file left behind by a crash never
 blocks the next launch.
 """
@@ -15,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -124,16 +128,31 @@ class InstanceLock:
             time.sleep(0.25)
 
 
-def _request_focus(info: dict) -> bool:
-    if os.name == "nt" and isinstance(info.get("pid"), int):
-        # This process was just launched by the user and may take the foreground; pass
-        # that right on so the running instance's window can come to the front.
-        try:
+def _hand_over_foreground(pid: int) -> None:
+    """Let the running instance (``pid``) come to the front; best effort.
+
+    This process was just launched by the user and may take the foreground, so it passes
+    that right on: ``AllowSetForegroundWindow`` on Windows, activating the other app
+    through AppKit on macOS.
+    """
+    try:
+        if os.name == "nt":
             import ctypes
 
-            ctypes.windll.user32.AllowSetForegroundWindow(info["pid"])
-        except (OSError, AttributeError):
-            pass
+            ctypes.windll.user32.AllowSetForegroundWindow(pid)
+        elif sys.platform == "darwin":
+            from AppKit import NSApplicationActivateAllWindows, NSRunningApplication
+
+            app = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+            if app is not None:
+                app.activateWithOptions_(NSApplicationActivateAllWindows)
+    except Exception as exc:  # noqa: BLE001 - focusing is best effort
+        _log.info("could not hand the foreground to process %s: %s", pid, exc)
+
+
+def _request_focus(info: dict) -> bool:
+    if isinstance(info.get("pid"), int):
+        _hand_over_foreground(info["pid"])
     host = info.get("host") or "127.0.0.1"
     req = urllib.request.Request(
         f"http://{host}:{info['port']}{FOCUS_PATH}",

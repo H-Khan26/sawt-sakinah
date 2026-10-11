@@ -5,6 +5,12 @@ The bundle (a PyInstaller one-folder build) is read-only. It holds the code, the
 ``bin/``. Everything the app writes goes to per-user directories outside it, so replacing
 the app folder with a newer release loses nothing.
 
+On Windows the bundle root is ``SawtSakinah/_internal``. On macOS the bundle is
+``SawtSakinah.app`` and its root (``sys._MEIPASS``) is ``Contents/Frameworks``: binaries
+such as ``bin/ffmpeg`` live there, data such as ``frontend/dist`` lives in
+``Contents/Resources`` and is reached through symlinks PyInstaller creates in
+``Contents/Frameworks``.
+
 This is the only module that knows that layout. Every other module asks it for paths and
 helper programs instead of guessing from ``PATH``, the working directory or its own file
 location, and passes absolute paths down to the detection and editing layers.
@@ -66,9 +72,15 @@ def data_dir_env_error() -> Optional[str]:
 
 def bundle_root() -> Path:
     """The read-only root: the unpacked bundle when frozen, else the repo checkout."""
-    if FROZEN:
-        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
-    return _PACKAGE_DIR.parent
+    if not FROZEN:
+        return _PACKAGE_DIR.parent
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return Path(meipass)
+    exe_dir = Path(sys.executable).resolve().parent
+    if exe_dir.name == "MacOS" and exe_dir.parent.name == "Contents":
+        return exe_dir.parent / "Frameworks"  # macOS .app layout
+    return exe_dir
 
 
 def static_dir() -> Path:
@@ -107,7 +119,8 @@ def data_dir() -> Path:
 
 
 def config_dir() -> Path:
-    """Per-user config directory (holds ``config.yaml`` overrides and preferences)."""
+    """Per-user config directory (holds ``config.yaml`` overrides and preferences); the
+    same as :func:`data_dir` on Windows and macOS."""
     override = _env_data_dir()
     if override is not None:
         return override
@@ -133,6 +146,10 @@ def models_dir() -> Path:
 
 
 def logs_dir() -> Path:
+    """Log files: ``~/Library/Logs/SawtSakinah`` in the macOS app (where Console.app looks),
+    else (and whenever ``SAWT_DATA_DIR`` is set) ``logs`` under the data directory."""
+    if FROZEN and sys.platform == "darwin" and _env_data_dir() is None:
+        return Path.home() / "Library" / "Logs" / APP_NAME
     return data_dir() / "logs"
 
 
