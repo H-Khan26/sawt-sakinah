@@ -10,8 +10,8 @@ The service listens on localhost, so any web page the user visits can try to rea
   this service (or an explicitly allowed dev origin), requires the per-launch token when
   one is configured, and refuses oversized uploads from ``Content-Length`` before
   Starlette spools the body. Every other request body is capped at ``MAX_BODY_BYTES``:
-  a larger ``Content-Length`` is refused up front, and a body without one (chunked) is
-  read up to the cap before the app sees it.
+  a larger ``Content-Length`` is refused up front, a body without one (chunked) is read
+  up to the cap before the app sees it, and a request with both headers is refused.
 
 The token is presented as the ``X-Sawt-Token`` header or as an HttpOnly, SameSite=Strict
 session cookie. The desktop window gets the cookie by first loading
@@ -96,8 +96,16 @@ class LocalGuard:
                 return
 
         length = headers.get("content-length")
+        chunked = "transfer-encoding" in headers
         if length is not None and not _DIGITS.fullmatch(length):
             await _reject(send, 400, "BadRequest", "invalid Content-Length")
+            return
+        # Transfer-Encoding overrides Content-Length (RFC 9112), so a request with both
+        # could carry more than its Content-Length claims; refuse the ambiguity.
+        if chunked and length is not None:
+            await _reject(
+                send, 400, "BadRequest", "Content-Length and Transfer-Encoding together"
+            )
             return
 
         if method == "POST" and path == UPLOAD_PATH:
@@ -114,7 +122,7 @@ class LocalGuard:
             if int(length) > MAX_BODY_BYTES:
                 await _reject_too_large(send)
                 return
-        elif "transfer-encoding" in headers:
+        elif chunked:
             messages = await _read_capped(receive, MAX_BODY_BYTES)
             if messages is None:
                 await _reject_too_large(send)
