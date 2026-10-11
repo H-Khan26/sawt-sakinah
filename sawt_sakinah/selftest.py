@@ -19,7 +19,10 @@ way the window does:
 
 All project and cache data goes to a throwaway temp directory, never the user's. No model
 is downloaded (phrase detection is skipped). Each step is logged; the result is also
-written as JSON to ``--self-test-report`` when given. Exit code 0 on success, 1 on failure.
+written as JSON to ``--self-test-report`` when given: once before the checks start and
+again at the end, so a crash part-way still leaves a report. Its ``paths`` entry names the
+user-data and log directories, which CI reads to collect the logs on any platform. Exit
+code 0 on success, 1 on failure.
 """
 
 from __future__ import annotations
@@ -116,6 +119,17 @@ def _multipart(field: str, filename: str, payload: bytes, mime: str) -> tuple[by
     return head + payload + tail, f"multipart/form-data; boundary={boundary}"
 
 
+def _user_paths() -> dict[str, Optional[str]]:
+    """The app's user-data and log directories (``None`` when one can't be resolved)."""
+    paths: dict[str, Optional[str]] = {}
+    for name, resolve in (("data_dir", runtime.data_dir), ("logs_dir", runtime.logs_dir)):
+        try:
+            paths[name] = str(resolve())
+        except Exception:  # noqa: BLE001 - the report must still be written
+            paths[name] = None
+    return paths
+
+
 class _Run:
     """Collects step results for the report."""
 
@@ -127,6 +141,7 @@ class _Run:
             "platform": sys.platform,
             "python": sys.version.split()[0],
             "started_at": datetime.now(timezone.utc).isoformat(),
+            "paths": _user_paths(),
             "tools": {},
             "steps": [],
             "error": None,
@@ -303,6 +318,7 @@ def run_self_test(host: str = "127.0.0.1", report_path: Optional[str] = None) ->
     from .desktop import Service, new_token, pick_port
 
     run = _Run()
+    _write_report(run.report, report_path)  # replaced by the final report below
     workdir = Path(tempfile.mkdtemp(prefix="sawt-selftest-"))
     service: Optional[Service] = None
     try:

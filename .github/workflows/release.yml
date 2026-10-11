@@ -142,10 +142,16 @@ jobs:
           if (Test-Path $report) { Get-Content $report -Raw } else { Write-Host 'No self-test report was written.' }
           if ($p.ExitCode -ne 0) {
             Write-Host "::error::self-test failed with exit code $($p.ExitCode)"
-            $logs = Join-Path $env:LOCALAPPDATA 'SawtSakinah\logs'
-            Get-ChildItem $logs -ErrorAction SilentlyContinue | ForEach-Object {
-              Write-Host "----- $($_.FullName)"
-              Get-Content $_.FullName -Tail 200
+            # The report names the app's log directory on every platform.
+            $logs = $null
+            if (Test-Path $report) { try { $logs = (Get-Content $report -Raw | ConvertFrom-Json).paths.logs_dir } catch { } }
+            if ($logs -and (Test-Path $logs)) {
+              Get-ChildItem $logs -File | ForEach-Object {
+                Write-Host "----- $($_.FullName)"
+                Get-Content $_.FullName -Tail 200
+              }
+            } else {
+              Write-Host '::notice::The self-test report names no log directory; no app logs to show.'
             }
             exit 1
           }
@@ -174,17 +180,24 @@ jobs:
           compression-level: 0
           retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 14 || 3 }}
 
-      # upload-artifact needs one common root; the temp dir and the user profile are on
-      # different drives on hosted runners.
+      # upload-artifact needs one common root, and the app's log directory (named in the
+      # self-test report) is outside the workspace, on another drive on Windows runners.
       - name: Collect the self-test logs
         if: failure()
         run: |
           $dest = Join-Path $env:RUNNER_TEMP 'diagnostics'
           New-Item -ItemType Directory -Force $dest | Out-Null
           $report = Join-Path $env:RUNNER_TEMP 'self-test.json'
-          if (Test-Path $report) { Copy-Item $report $dest }
-          $logs = Join-Path $env:LOCALAPPDATA 'SawtSakinah\logs'
-          if (Test-Path $logs) { Copy-Item $logs (Join-Path $dest 'logs') -Recurse }
+          $logs = $null
+          if (Test-Path $report) {
+            Copy-Item $report $dest
+            try { $logs = (Get-Content $report -Raw | ConvertFrom-Json).paths.logs_dir } catch { }
+          }
+          if ($logs -and (Test-Path $logs)) {
+            Copy-Item $logs (Join-Path $dest 'logs') -Recurse
+          } else {
+            Write-Host '::notice::The self-test report names no log directory; app logs not collected.'
+          }
 
       - name: Upload the self-test logs
         if: failure()
