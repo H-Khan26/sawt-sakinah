@@ -7,7 +7,8 @@ Two ways to run the tool locally, mirroring its two usage shapes:
 * ``sawt desktop``  -- the same app in a native window (``--self-test`` runs the headless
   end-to-end check instead). Requires the ``service`` and ``desktop`` extras.
 * ``sawt extract``  -- one-shot, no server: a YouTube URL straight to a silence-trimmed
-  file via :func:`sawt_sakinah.pipeline.youtube_to_clean_audio`.
+  file via :func:`sawt_sakinah.pipeline.youtube_to_clean_audio`. Exits with
+  ``EXIT_BOT_CHECK`` (3) when YouTube refuses the download with its bot check.
 
 Also reachable as ``python -m sawt_sakinah`` (see ``__main__.py``), which is how the
 Makefile invokes it so it never depends on the console script being on PATH.
@@ -18,10 +19,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from typing import Optional, Sequence
 
 from .config import CONFIG
 from .desktop import add_arguments as add_desktop_arguments
+
+# ``sawt extract`` exit code for YouTube's bot check, which CI treats as inconclusive.
+EXIT_BOT_CHECK = 3
 
 
 def _serve(args: argparse.Namespace) -> int:
@@ -57,16 +62,21 @@ def _desktop(args: argparse.Namespace) -> int:
 
 def _extract(args: argparse.Namespace) -> int:
     """One-shot extract + silence-trim; prints the path of the cleaned file."""
+    from .models import YouTubeBotCheckError
     from .pipeline import youtube_to_clean_audio
 
-    out = youtube_to_clean_audio(
-        args.url,
-        output_dir=args.output_dir,
-        threshold_db=args.threshold_db,
-        min_silence_duration=args.min_silence_duration,
-        keep_silence=args.keep_silence,
-        keep_intermediate=args.keep_intermediate,
-    )
+    try:
+        out = youtube_to_clean_audio(
+            args.url,
+            output_dir=args.output_dir,
+            threshold_db=args.threshold_db,
+            min_silence_duration=args.min_silence_duration,
+            keep_silence=args.keep_silence,
+            keep_intermediate=args.keep_intermediate,
+        )
+    except YouTubeBotCheckError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_BOT_CHECK
     print(out)
     return 0
 

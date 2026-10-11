@@ -26,6 +26,7 @@ from ..models.errors import (
     PrivateVideoError,
     RegionLockedError,
     VideoUnavailableError,
+    YouTubeBotCheckError,
 )
 from . import cache as _cache
 from .finalize import emit as _emit
@@ -112,7 +113,7 @@ def _map_download_error(err: Exception, url: str) -> ExtractionError:
         return VideoUnavailableError(msg)
     _log.warning("yt-dlp failed for %s: %s", url, msg)
     if "not a bot" in low:
-        return ExtractionError(
+        return YouTubeBotCheckError(
             "YouTube asked to confirm this is not a bot and refused the download. "
             "Try again later."
         )

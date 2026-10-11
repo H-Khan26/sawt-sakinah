@@ -33,6 +33,7 @@ const ERROR_TITLES: Record<string, string> = {
   VideoUnavailableError: "This video isn't available",
   LiveStreamError: "Live streams can't be processed",
   RegionLockedError: "This video is region-locked",
+  YouTubeBotCheckError: "YouTube refused the download",
   ExtractionError: "Extraction failed",
 };
 

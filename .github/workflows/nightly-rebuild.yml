@@ -82,8 +82,8 @@ jobs:
 
       # Runs the same yt-dlp + Deno + ffmpeg combination from source: the bundled helper
       # programs go on PATH, which is where a source checkout looks for them. YouTube often
-      # answers datacenter IPs with its bot check; that is reported as a warning, since it
-      # says nothing about yt-dlp. Any other failure fails the run.
+      # answers datacenter IPs with its bot check (exit code 3, cli.EXIT_BOT_CHECK); that is
+      # reported as a warning, since it says nothing about yt-dlp. Any other failure fails.
       - name: YouTube extraction smoke test
         id: youtube
         timeout-minutes: 10
@@ -95,15 +95,13 @@ jobs:
           $log = Join-Path $env:RUNNER_TEMP 'yt-smoke.log'
           python -m sawt_sakinah extract "https://www.youtube.com/watch?v=jNQXAC9IVRw" -o $out 2>&1 | Tee-Object -FilePath $log
           $code = $LASTEXITCODE
-          if ($code) {
-            if (Select-String -Path $log -Pattern 'not a bot' -SimpleMatch -Quiet) {
-              $msg = 'YouTube refused the runner with its bot check, so the extraction was not exercised.'
-              Write-Host "::warning::$msg"
-              "**YouTube smoke test inconclusive:** $msg" >> $env:GITHUB_STEP_SUMMARY
-              exit 0
-            }
-            exit $code
+          if ($code -eq 3) {
+            $msg = 'YouTube refused the runner with its bot check, so the extraction was not exercised.'
+            Write-Host "::warning::$msg"
+            "**YouTube smoke test inconclusive:** $msg" >> $env:GITHUB_STEP_SUMMARY
+            exit 0
           }
+          if ($code) { exit $code }
           Get-ChildItem $out | Format-Table Name, Length
           if (-not (Get-ChildItem $out -File)) { Write-Host '::error::no output file'; exit 1 }
 

@@ -50,3 +50,7 @@ class LiveStreamError(ExtractionError):
 
 class VideoUnavailableError(ExtractionError):
     """The video was removed, deleted, or is otherwise unavailable."""
+
+
+class YouTubeBotCheckError(ExtractionError):
+    """YouTube asked to confirm the request is not from a bot and refused the download."""
