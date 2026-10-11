@@ -9,8 +9,9 @@ this script and keeps a tracking issue open while any pin is behind. Sources:
 - FFmpeg for macOS (Martin Riedl): the version in the URL that the provider's
   ``latest release`` redirect points to.
 
-Writes a Markdown report to ``--report`` and prints it. Exit code 0 when every pin is
-current, 1 when any is behind, 2 when an upstream source could not be read.
+Writes a Markdown report to ``--report`` and prints it. Exit code 1 when any pin is
+behind (sources that could not be read show as errors in the report), else 2 when a
+source could not be read, else 0.
 
 Usage:
     python packaging/upstream_check.py --report upstream.md
@@ -24,6 +25,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -67,20 +69,26 @@ def latest_btbn() -> str:
     return max(versions, key=_version)
 
 
-def latest_riedl() -> str:
-    # Read the redirect itself; the provider names the build's folder <id>_<version>.
+def latest_riedl(attempts: int = 3) -> str:
+    # Read the redirect itself (a GET that is not followed; the server often answers HEAD
+    # with 404). The provider names each build's folder <id>_<version>.
     url = urllib.parse.urlsplit(RIEDL_LATEST)
-    conn = http.client.HTTPSConnection(url.netloc, timeout=30)
-    try:
-        conn.request("HEAD", url.path, headers={"User-Agent": "sawt-sakinah-upstream-check"})
-        res = conn.getresponse()
-        location = res.getheader("Location") or ""
-    finally:
-        conn.close()
-    match = re.search(r"/\d+_(\d+(?:\.\d+)*)/", location)
-    if not match:
-        raise ValueError(f"unexpected redirect target {location!r}")
-    return match.group(1)
+    location = ""
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(5 * attempt)
+        conn = http.client.HTTPSConnection(url.netloc, timeout=30)
+        try:
+            conn.request("GET", url.path, headers={"User-Agent": "sawt-sakinah-upstream-check"})
+            location = conn.getresponse().getheader("Location") or ""
+        except OSError:
+            continue
+        finally:
+            conn.close()
+        match = re.search(r"/\d+_(\d+(?:\.\d+)*)/", location)
+        if match:
+            return match.group(1)
+    raise ValueError(f"unexpected redirect target {location!r}")
 
 
 def _source(platform: str, tool: str) -> tuple[str, Callable[[], str]]:
@@ -124,7 +132,7 @@ def check() -> tuple[str, int]:
             "`python packaging/fetch_binaries.py <platform> <dir>` and a release dry run.",
         ]
     )
-    return report, 2 if failed else 1 if behind else 0
+    return report, 1 if behind else 2 if failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:

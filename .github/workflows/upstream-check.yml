@@ -36,6 +36,9 @@ jobs:
           code=0
           python3 packaging/upstream_check.py --report upstream.md || code=$?
           cat upstream.md >> "$GITHUB_STEP_SUMMARY"
+          if grep -q '| error: ' upstream.md; then
+            echo "::warning::an upstream source could not be read; see the report"
+          fi
           case "$code" in
             0) echo "behind=false" >> "$GITHUB_OUTPUT" ;;
             1) echo "behind=true" >> "$GITHUB_OUTPUT" ;;
@@ -49,9 +52,8 @@ jobs:
           retention-days: 7
 
   report:
-    name: Open or update the tracking issue
+    name: Open, update or close the tracking issue
     needs: check
-    if: needs.check.outputs.behind == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -65,9 +67,18 @@ jobs:
         with:
           name: upstream-report
 
-      - name: Open or update the tracking issue
+      - name: Open, update or close the tracking issue
+        env:
+          BEHIND: ${{ needs.check.outputs.behind }}
         run: |
           title="Bundled ffmpeg or Deno has a newer upstream release"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ "$BEHIND" != "true" ]; then
+            if [ -n "$number" ]; then
+              gh issue close "$number" --comment "Every pin is current again: $RUN_URL"
+            fi
+            exit 0
+          fi
           {
             echo "The weekly upstream check found pins in \`packaging/binaries.json\` behind upstream."
             echo
@@ -75,7 +86,6 @@ jobs:
             echo
             echo "Last checked: $RUN_URL"
           } > body.md
-          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
             gh issue edit "$number" --body-file body.md
           else

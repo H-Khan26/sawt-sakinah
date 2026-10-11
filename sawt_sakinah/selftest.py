@@ -10,7 +10,7 @@ way the window does:
 2. the bundled SPA and config are present (required when frozen), and the window
    backend pywebview uses on this OS (WebView2 through pythonnet on Windows, WKWebView
    through PyObjC on macOS) is bundled; no window is opened;
-3.``/health`` answers with the token;
+3. ``/health`` answers with the token;
 4. a 12 s test clip (4 s tone, 4 s silence, 4 s tone) is generated with ffmpeg, uploaded
    (``POST /projects/upload``) and imported;
 5. silence detection runs with the ``vad`` detector (it must not fall back to the energy
