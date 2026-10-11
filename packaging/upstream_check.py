@@ -4,8 +4,8 @@ Dependabot cannot track ffmpeg and Deno, so the weekly ``upstream-check`` workfl
 this script and keeps a tracking issue open while any pin is behind. Sources:
 
 - Deno: the latest denoland/deno GitHub release.
-- FFmpeg for Windows (BtbN): the newest release-branch LGPL build in BtbN's ``latest``
-  release, compared by FFmpeg version (``n8.1.3-9-g...`` counts as 8.1.3).
+- FFmpeg for Windows (BtbN): the newest release-branch LGPL build in BtbN's newest
+  ``autobuild-*`` release, compared by FFmpeg version (``n8.1.3-9-g...`` counts as 8.1.3).
 - FFmpeg for macOS (Martin Riedl): the version in the URL that the provider's
   ``latest release`` redirect points to.
 
@@ -33,20 +33,18 @@ from typing import Callable
 
 MANIFEST = Path(__file__).resolve().parent / "binaries.json"
 GITHUB_API = "https://api.github.com"
+USER_AGENT = "sawt-sakinah-upstream-check"
 RIEDL_LATEST = "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip"
 BTBN_ASSET = re.compile(r"^ffmpeg-n(\d+(?:\.\d+)+)-.*-win64-lgpl-\d+\.\d+\.zip$")
 
 
-def _request(url: str, method: str = "GET") -> urllib.request.Request:
-    headers = {"User-Agent": "sawt-sakinah-upstream-check"}
+def _github_json(path: str):
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"}
     token = os.environ.get("GH_TOKEN")
-    if token and url.startswith(GITHUB_API):
+    if token:
         headers["Authorization"] = f"Bearer {token}"
-    return urllib.request.Request(url, method=method, headers=headers)
-
-
-def _github_json(path: str) -> dict:
-    with urllib.request.urlopen(_request(f"{GITHUB_API}{path}"), timeout=30) as res:  # noqa: S310
+    req = urllib.request.Request(f"{GITHUB_API}{path}", headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as res:  # noqa: S310
         return json.load(res)
 
 
@@ -62,11 +60,17 @@ def latest_deno() -> str:
 
 
 def latest_btbn() -> str:
-    assets = _github_json("/repos/BtbN/FFmpeg-Builds/releases/tags/latest")["assets"]
-    versions = [m.group(1) for a in assets if (m := BTBN_ASSET.match(a["name"]))]
-    if not versions:
-        raise ValueError("no release-branch win64 LGPL build in BtbN's latest release")
-    return max(versions, key=_version)
+    # The "latest" release names its builds by branch only (n9.0-latest); the dated
+    # autobuild releases carry the full version (n9.0.2-25-g...).
+    releases = _github_json("/repos/BtbN/FFmpeg-Builds/releases?per_page=10")
+    for release in releases:
+        if not release["tag_name"].startswith("autobuild-"):
+            continue
+        names = [a["name"] for a in release["assets"]]
+        versions = [m.group(1) for name in names if (m := BTBN_ASSET.match(name))]
+        if versions:
+            return max(versions, key=_version)
+    raise ValueError("no release-branch win64 LGPL build in BtbN's recent autobuild releases")
 
 
 def latest_riedl(attempts: int = 3) -> str:
@@ -79,7 +83,7 @@ def latest_riedl(attempts: int = 3) -> str:
             time.sleep(5 * attempt)
         conn = http.client.HTTPSConnection(url.netloc, timeout=30)
         try:
-            conn.request("GET", url.path, headers={"User-Agent": "sawt-sakinah-upstream-check"})
+            conn.request("GET", url.path, headers={"User-Agent": USER_AGENT})
             location = conn.getresponse().getheader("Location") or ""
         except OSError:
             continue
