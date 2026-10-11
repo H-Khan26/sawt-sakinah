@@ -111,7 +111,7 @@ The service listens on localhost, so any web page the user opens can try to reac
   200 only with a valid token. `make dev` runs without a token.
 - **Upload size**: `POST /projects/upload` is refused from its `Content-Length` before the
   body is read.
-- **Body size**: every other request body is capped at 1 MiB (413
+- **Body size**: every other request body is capped at 8 MiB (413
   `RequestTooLargeError`), checked from its `Content-Length` before the body is read. A
   body without `Content-Length` (chunked) gets 411, and a request with both
   `Content-Length` and `Transfer-Encoding` gets 400.

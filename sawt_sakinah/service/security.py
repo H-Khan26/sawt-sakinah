@@ -42,8 +42,9 @@ _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _DIGITS = re.compile(r"[0-9]+")
 # Headroom over the file cap for the multipart envelope (boundaries, part headers).
 _MULTIPART_OVERHEAD = 1024 * 1024
-# Cap for every body except the upload: JSON edits, markers and preferences are far below it.
-MAX_BODY_BYTES = 1024 * 1024
+# Cap for every body except the upload. Marker and EDL saves grow with the recording; this
+# leaves a wide margin for long recordings with thousands of markers.
+MAX_BODY_BYTES = 8 * 1024 * 1024
 
 
 def cookie_name(scope: Scope) -> str:
