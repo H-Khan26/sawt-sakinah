@@ -119,12 +119,16 @@ class InstanceLock:
         starting). True when it acknowledged the request.
         """
         deadline = time.monotonic() + wait
-        handed_over = False
+        logged = False
         while True:
             info = self.read_info()
-            if info is not None and not handed_over and isinstance(info.get("pid"), int):
-                _hand_over_foreground(info["pid"])
-                handed_over = True
+            if info is not None and isinstance(info.get("pid"), int):
+                # A fresh grant before every attempt: the previous one may have lapsed
+                # while a slow request timed out. Only the first refusal is logged.
+                problem = _hand_over_foreground(info["pid"])
+                if problem and not logged:
+                    _log.info("%s", problem)
+                    logged = True
             if info is not None and _request_focus(info):
                 return True
             if time.monotonic() >= deadline:
@@ -132,38 +136,39 @@ class InstanceLock:
             time.sleep(0.25)
 
 
-def _hand_over_foreground(pid: int) -> None:
+def _hand_over_foreground(pid: int) -> Optional[str]:
     """Let the running instance (``pid``) come to the front; best effort.
 
     This process was just launched by the user and may take the foreground, so it passes
     that right on: ``AllowSetForegroundWindow`` on Windows, activating the other app
-    through AppKit on macOS.
+    through AppKit on macOS. Returns why that did not work, or ``None``.
     """
     try:
         if os.name == "nt":
             import ctypes
 
-            ctypes.windll.user32.AllowSetForegroundWindow(pid)
+            if not ctypes.windll.user32.AllowSetForegroundWindow(pid):
+                return f"Windows refused to let process {pid} take the foreground"
         elif sys.platform == "darwin":
-            _activate_mac_app(pid)
+            return _activate_mac_app(pid)
     except Exception as exc:  # noqa: BLE001 - focusing is best effort
-        _log.info("could not hand the foreground to process %s: %s", pid, exc)
+        return f"could not hand the foreground to process {pid}: {exc}"
+    return None
 
 
-def _activate_mac_app(pid: int) -> None:
+def _activate_mac_app(pid: int) -> Optional[str]:
     """Activate the app with ``pid``, cooperatively on macOS 14 and later.
 
     macOS 14 only lets the active app hand activation on: this process yields it to the
     target and asks for the target's activation on its own behalf. The running instance
     also activates itself when it handles ``POST /app/focus``. Older systems use the
-    plain activation call.
+    plain activation call. Returns why activation failed, or ``None``.
     """
     from AppKit import NSApplication, NSApplicationActivateAllWindows, NSRunningApplication
 
     target = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
     if target is None:
-        _log.info("no running app with process id %s to activate", pid)
-        return
+        return f"no running app with process id {pid} to activate"
     if hasattr(target, "activateFromApplication_options_"):
         app = NSApplication.sharedApplication()
         if hasattr(app, "yieldActivationToApplication_"):
@@ -174,7 +179,8 @@ def _activate_mac_app(pid: int) -> None:
     else:
         ok = target.activateWithOptions_(NSApplicationActivateAllWindows)
     if not ok:
-        _log.info("macOS declined to activate process %s (this launch is not active)", pid)
+        return f"macOS declined to activate process {pid} (this launch is not active)"
+    return None
 
 
 def _request_focus(info: dict) -> bool:
