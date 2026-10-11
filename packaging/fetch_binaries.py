@@ -118,7 +118,7 @@ def _check_binary(path: Path, platform: str) -> None:
     elif platform == "macos-arm64":
         ok = len(head) == 8 and struct.unpack("<II", head) == (_MACHO_64, _CPU_ARM64)
     else:
-        ok = True
+        raise FetchError(f"no executable format known for platform {platform!r}")
     if not ok:
         raise FetchError(f"{path.name} is not a {platform} executable")
 
