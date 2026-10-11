@@ -165,3 +165,7 @@ and frontend documents it links. Design records for larger changes are kept in
 `frontend/public/fonts/`). The Windows release also ships FFmpeg (LGPL build), Deno (MIT)
 and the Python packages it runs on; `THIRD_PARTY_LICENSES.txt` in the zip lists each one
 with its license text and source link.
+
+## Security
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
