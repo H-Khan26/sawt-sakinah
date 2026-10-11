@@ -119,8 +119,12 @@ class InstanceLock:
         starting). True when it acknowledged the request.
         """
         deadline = time.monotonic() + wait
+        handed_over = False
         while True:
             info = self.read_info()
+            if info is not None and not handed_over and isinstance(info.get("pid"), int):
+                _hand_over_foreground(info["pid"])
+                handed_over = True
             if info is not None and _request_focus(info):
                 return True
             if time.monotonic() >= deadline:
@@ -141,18 +145,39 @@ def _hand_over_foreground(pid: int) -> None:
 
             ctypes.windll.user32.AllowSetForegroundWindow(pid)
         elif sys.platform == "darwin":
-            from AppKit import NSApplicationActivateAllWindows, NSRunningApplication
-
-            app = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
-            if app is not None:
-                app.activateWithOptions_(NSApplicationActivateAllWindows)
+            _activate_mac_app(pid)
     except Exception as exc:  # noqa: BLE001 - focusing is best effort
         _log.info("could not hand the foreground to process %s: %s", pid, exc)
 
 
+def _activate_mac_app(pid: int) -> None:
+    """Activate the app with ``pid``, cooperatively on macOS 14 and later.
+
+    macOS 14 only lets the active app hand activation on: this process yields it to the
+    target and asks for the target's activation on its own behalf. The running instance
+    also activates itself when it handles ``POST /app/focus``. Older systems use the
+    plain activation call.
+    """
+    from AppKit import NSApplication, NSApplicationActivateAllWindows, NSRunningApplication
+
+    target = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+    if target is None:
+        _log.info("no running app with process id %s to activate", pid)
+        return
+    if hasattr(target, "activateFromApplication_options_"):
+        app = NSApplication.sharedApplication()
+        if hasattr(app, "yieldActivationToApplication_"):
+            app.yieldActivationToApplication_(target)
+        ok = target.activateFromApplication_options_(
+            NSRunningApplication.currentApplication(), NSApplicationActivateAllWindows
+        )
+    else:
+        ok = target.activateWithOptions_(NSApplicationActivateAllWindows)
+    if not ok:
+        _log.info("macOS declined to activate process %s (this launch is not active)", pid)
+
+
 def _request_focus(info: dict) -> bool:
-    if isinstance(info.get("pid"), int):
-        _hand_over_foreground(info["pid"])
     host = info.get("host") or "127.0.0.1"
     req = urllib.request.Request(
         f"http://{host}:{info['port']}{FOCUS_PATH}",
