@@ -24,7 +24,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.8.3",
     "@resvg/resvg-js": "2.6.2",
-    "@tanstack/react-query-devtools": "^5.51.23",
+    "@tanstack/react-query-devtools": "^5.104.1",
     "@types/node": "^20.14.15",
     "@types/react": "^18.3.4",
     "@types/react-dom": "^18.3.0",
