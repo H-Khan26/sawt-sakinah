@@ -68,13 +68,13 @@ export interface IconBar {
   rx: number;
 }
 
-/** App icon arch in its 100×100 tile; `inset` gives the concentric gold hairline. */
-export function iconArchPath(inset = 0): string {
+/** App icon arch in its 100×100 tile; `inset` gives the concentric gold hairline, `foot` raises its foot. */
+export function iconArchPath(inset = 0, foot = inset): string {
   return twoCentredArchPath({
     left: 24 + inset,
     right: 76 - inset,
     spring: 46,
-    bottom: 86 - inset,
+    bottom: 86 - foot,
     offset: 4,
   });
 }
@@ -86,13 +86,13 @@ export const ICON_BARS: readonly IconBar[] = [
   { x: 60, y: 52, width: 7, height: 22, rx: 3.5 },
 ];
 
-/** Tileless mark arch (favicon and small icon sizes) in a 100×118 box; `inset` gives the inner arch. */
-export function markArchPath(inset = 0): string {
+/** Tileless mark arch (favicon, small icon sizes) in a 100×118 box; `inset` and `foot` as for the icon. */
+export function markArchPath(inset = 0, foot = inset): string {
   return twoCentredArchPath({
     left: 8 + inset,
     right: 92 - inset,
     spring: 52,
-    bottom: 116 - inset,
+    bottom: 116 - foot,
     offset: 8,
   });
 }
