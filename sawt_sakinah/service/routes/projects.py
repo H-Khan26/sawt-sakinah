@@ -3,6 +3,7 @@ EDL / marker updates."""
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -25,9 +26,11 @@ from ..schemas import (
 )
 from ..workers import extract_worker, import_worker, split_worker
 from ...models import EditDecisionList
-from ...models.errors import FileTooLargeError, UnsupportedMediaError
+from ...models.errors import FileTooLargeError, ProjectInUseError, UnsupportedMediaError
 from ...prayer import derive_structure
 from .common import validate_id
+
+_log = logging.getLogger(__name__)
 
 # Read uploads in 1 MiB chunks so a large file never loads wholesale into memory.
 _UPLOAD_CHUNK = 1024 * 1024
@@ -47,8 +50,17 @@ def _submit_new_project(jobs, store, project_id: str, kind: JobKind, fn):
             on_finish=lambda: store.discard_unfinished(project_id),
         )
     except JobQueueFullError:
-        store.delete(project_id)
+        _discard_skeleton(store, project_id)
         raise
+
+
+def _discard_skeleton(store, project_id: str) -> None:
+    """Remove a project folder that never got a job; a locked folder (a scanner on
+    Windows) is left to the startup sweep rather than masking the caller's error."""
+    try:
+        store.delete(project_id)
+    except ProjectInUseError as exc:
+        _log.warning("could not remove the unused project %s: %s", project_id, exc)
 
 
 @router.post("", response_model=CreateProjectResponse, status_code=202)
@@ -108,7 +120,7 @@ async def upload_project(
                     )
                 fh.write(chunk)
     except FileTooLargeError:
-        store.delete(project_id)  # drops the whole skeleton, including the partial staging file
+        _discard_skeleton(store, project_id)  # the skeleton, including the staging file
         raise
     finally:
         await file.close()

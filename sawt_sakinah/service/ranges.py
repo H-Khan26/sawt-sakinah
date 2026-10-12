@@ -1,11 +1,12 @@
 """HTTP Range support for audio streaming/seeking.
 
-No ``Range`` header -> a ``200`` with the whole file. With a ``Range`` header -> a ``206``
-that seeks and yields fixed-size chunks; an unsatisfiable range yields ``416``. Used by the
-audio and export-download endpoints so the frontend's waveform/player can seek without
-downloading the whole file. Both bodies read through a tracked handle when given an
+No ``Range`` header -> a ``200`` with the whole file (Starlette's ``FileResponse``, with its
+conditional headers). With a ``Range`` header -> a ``206`` that seeks and yields fixed-size
+chunks; an unsatisfiable range yields ``416``. Used by the audio and export-download
+endpoints so the frontend's waveform/player can seek without downloading the whole file. The
+``206`` body reads through a tracked handle when given an
 :class:`~sawt_sakinah.service.projects.OpenStreams`, so deleting a project can close the
-streams that still hold its files open.
+streams that a player still holds open.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from typing import TYPE_CHECKING, Iterator, Optional
 from urllib.parse import quote
 
 from fastapi import Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from ..config import CONFIG
 
@@ -135,13 +136,9 @@ def ranged_file_response(
         headers["Content-Disposition"] = _content_disposition(filename)
 
     if not range_header:
-        headers["Content-Length"] = str(size)
-        return StreamingResponse(
-            _read_range(path, 0, size, streams, key),
-            status_code=200,
-            media_type=media_type,
-            headers=headers,
-        )
+        # Starlette's FileResponse adds ETag/Last-Modified and uses sendfile; a whole-file
+        # download is short-lived, so it is not tracked for deletes (a delete retries).
+        return FileResponse(path, media_type=media_type, headers=headers)
 
     parsed = _parse_range(range_header, size)
     if parsed is None:

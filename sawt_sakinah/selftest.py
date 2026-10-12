@@ -286,7 +286,14 @@ def _plant_leftovers(projects_dir: Path) -> dict[str, Path]:
         json.dumps({"schema_version": 999, "id": _NEWER_PROJECT}), encoding="utf-8"
     )
     old = time.time() - _STALE
-    for path in (unfinished / "audio" / "source.webm.part", unfinished / "audio", unfinished, part):
+    for path in (
+        unfinished / "audio" / "source.webm.part",
+        unfinished / "audio",
+        unfinished,
+        part,
+        trash / "source.mp3",
+        trash,
+    ):
         os.utime(path, (old, old))
     return {"trash": trash, "unfinished": unfinished, "part": part, "keeper": keeper}
 

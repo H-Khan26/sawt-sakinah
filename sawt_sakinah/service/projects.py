@@ -55,7 +55,9 @@ TRASH_PREFIX = ".deleting-"
 STALE_AFTER_SEC = 600.0
 # Rename attempts for a delete: about 1.5 s of retries for streams to let go.
 _DELETE_ATTEMPTS = 6
-_PROJECT_ID = re.compile(r"[0-9a-f]{8,64}")
+#: Shape of a project id (``uuid4().hex``) or source digest; the routes validate against it
+#: too, so a crafted id can never name a path outside the root.
+PROJECT_ID = re.compile(r"[0-9a-f]{8,64}")
 
 DAMAGED_MESSAGE = "Its project file is damaged and can't be read."
 IN_USE_MESSAGE = "The project is still in use. Close its playback and try again."
@@ -97,10 +99,14 @@ class OpenStreams:
 
         Raises ``FileNotFoundError`` while ``key`` is blocked.
         """
+        if self.blocked(key):
+            raise FileNotFoundError(path)
+        # Opened outside the lock: a slow open (a scanner) must not stall other streams.
+        fh = open(path, "rb")  # noqa: SIM115 - closed below or by close()
         with self._lock:
-            if key in self._blocked:
+            if key in self._blocked:  # a delete started meanwhile
+                fh.close()
                 raise FileNotFoundError(path)
-            fh = open(path, "rb")  # noqa: SIM115 - closed below or by close()
             self._open.setdefault(key, set()).add(fh)
         try:
             yield fh
@@ -187,11 +193,14 @@ class ProjectStore:
         return project
 
     @staticmethod
-    def _read_raw(path: Path) -> dict:
+    def _read_raw(path: Path, *, retry: bool = True) -> dict:
         """Parse and migrate ``path``. Raises ``FileNotFoundError`` when it is gone and
-        :class:`ProjectUnreadableError` when it can't be used."""
+        :class:`ProjectUnreadableError` when it can't be used. With ``retry`` a briefly
+        locked file is retried; the library listing passes ``False`` so one locked file
+        can't stall it."""
+        read = lambda: path.read_text(encoding="utf-8")  # noqa: E731
         try:
-            text = retry_locked(lambda: path.read_text(encoding="utf-8"))
+            text = retry_locked(read) if retry else read()
         except FileNotFoundError:
             raise
         except OSError as exc:
@@ -310,13 +319,13 @@ class ProjectStore:
         if not self.root.exists():
             return summaries
         for child in self.root.iterdir():
-            if not child.is_dir() or not _PROJECT_ID.fullmatch(child.name):
+            if not child.is_dir() or not PROJECT_ID.fullmatch(child.name):
                 continue
             jpath = child / "project.json"
             if not jpath.exists():
                 continue
             try:
-                raw = self._read_raw(jpath)
+                raw = self._read_raw(jpath, retry=False)
                 src = raw.get("audio_source") or {}
                 summaries.append(
                     ProjectSummary(
@@ -392,8 +401,8 @@ class ProjectStore:
 
         Removes ``.deleting-*`` directories, project directories that never got a
         ``project.json`` (an import or split that did not finish) and partial files
-        (``*.part``, ``*.tmp``) inside projects. Skeletons and partial files modified in
-        the last ``stale_after`` seconds are kept. Returns counts per kind.
+        (``*.part``, ``*.tmp``) inside projects. Anything modified in the last
+        ``stale_after`` seconds is kept. Returns counts per kind.
         """
         counts = {"deleting": 0, "incomplete": 0, "partial": 0}
         if not self.root.is_dir():
@@ -404,9 +413,10 @@ class ProjectStore:
                 if not child.is_dir():
                     continue
                 if child.name.startswith(TRASH_PREFIX):
-                    shutil.rmtree(child)
-                    counts["deleting"] += 1
-                elif not _PROJECT_ID.fullmatch(child.name):
+                    if _newest_mtime(child) < cutoff:
+                        shutil.rmtree(child)
+                        counts["deleting"] += 1
+                elif not PROJECT_ID.fullmatch(child.name):
                     continue
                 elif not (child / "project.json").exists():
                     if _newest_mtime(child) < cutoff:
