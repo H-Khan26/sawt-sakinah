@@ -1,0 +1,232 @@
+/* Ornament colours: every fill and stroke comes from a theme token. */
+
+/* Dome rosette and lamp ring (DomeRosette, LampRing): each fills its positioned stage, whose
+   top-left corner is the origin of the builders' pixel coordinates. */
+.dome-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.dome-art * {
+  vector-effect: non-scaling-stroke;
+}
+.dome-art .d-line {
+  fill: none;
+  stroke: var(--dome-line);
+  stroke-width: 1;
+  opacity: var(--dome-line-opacity);
+}
+.dome-art .d-soft {
+  fill: none;
+  stroke: var(--dome-line);
+  stroke-width: 1;
+  opacity: var(--dome-soft-opacity);
+}
+.dome-art .d-win {
+  fill: var(--dome-window);
+  stroke: none;
+  opacity: var(--dome-window-opacity);
+}
+.dome-art .d-fill2 {
+  fill: var(--dome-ground-2);
+}
+.dome-art .ring-light {
+  opacity: var(--dome-ring-light);
+}
+.dome-art .center-light {
+  opacity: var(--dome-center-light);
+}
+.dome-art .lamp {
+  fill: var(--lamp-fill);
+  stroke: var(--lamp-stroke);
+  stroke-width: 1;
+}
+.dome-art .lamp-glow {
+  opacity: var(--lamp-glow);
+}
+.dome-art .ring-light,
+.dome-art .center-light,
+.dome-art .lamp-glow {
+  transition: opacity 0.6s;
+}
+
+/* Mihrab niche (Niche). */
+.orn-niche {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.orn-niche .n-body {
+  fill: var(--niche-fill);
+  stroke: var(--niche-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.orn-niche .n-inner {
+  fill: none;
+  stroke: var(--niche-inner);
+  stroke-width: 1;
+  opacity: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+.orn-niche .n-wave {
+  fill: var(--niche-wave);
+}
+.orn-niche.current .n-body {
+  fill: var(--niche-current);
+  stroke: var(--niche-current-line);
+}
+.orn-niche.current .n-inner {
+  stroke: var(--niche-current-line);
+  opacity: 0.9;
+}
+.orn-niche.current .n-wave {
+  fill: var(--niche-wave-current);
+}
+[data-theme="night"] .orn-niche.current {
+  filter: drop-shadow(0 -6px 18px color-mix(in srgb, var(--niche-current-line) 22%, transparent));
+}
+
+/* Rub el Hizb star (RubElHizb). */
+.orn-star {
+  display: inline-block;
+  flex: none;
+  overflow: visible;
+}
+.orn-star .s-body {
+  fill: none;
+  stroke: var(--color-gold);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.orn-star .s-num {
+  fill: var(--color-accent);
+  font-family: "Amiri", serif;
+  font-weight: 700;
+}
+.orn-star.filled .s-body {
+  fill: var(--color-accent);
+}
+.orn-star.filled .s-num {
+  fill: var(--color-on-accent);
+}
+[data-theme="night"] .orn-star.filled {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-gold) 70%, transparent));
+}
+
+/* Sura cartouche (Cartouche). */
+.orn-cartouche {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 360px;
+  max-width: 60%;
+  padding: 10px 64px;
+  color: var(--color-on-accent);
+  text-align: center;
+}
+.orn-cartouche > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.orn-cartouche .c-body {
+  fill: var(--color-accent);
+  stroke: var(--color-gold);
+  stroke-width: 1;
+}
+.orn-cartouche .c-inner {
+  fill: none;
+  stroke: var(--color-gold);
+  stroke-width: 0.6;
+}
+.orn-cartouche-content {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cetvel double rule (CetvelFrame): 1.5 px and 0.6 px gold lines whose centres sit 5 px apart. */
+.orn-cetvel {
+  border: 1.5px solid var(--color-gold);
+  padding: 3.95px;
+}
+.orn-cetvel-inner {
+  border: 0.6px solid var(--color-gold);
+}
+
+/* Star lattice (Lattice). */
+.orn-lattice {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: var(--lattice-opacity);
+}
+.orn-lattice .l-line {
+  fill: none;
+  stroke: var(--color-gold);
+  stroke-width: 1;
+}
+.orn-lattice .l-dot {
+  fill: var(--color-accent);
+  /* Keeps the spec's 42% line to 18% dot ratio under the shared opacity. */
+  opacity: 0.43;
+}
+
+/* Ribbon tab (RibbonTab). */
+.orn-ribbon-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 20px 14px;
+  color: var(--color-text-secondary);
+}
+.orn-ribbon-tab:hover {
+  color: var(--color-text);
+}
+.orn-ribbon-tab > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.orn-ribbon-tab .r-body {
+  fill: var(--color-accent);
+}
+.orn-ribbon-tab.active,
+.orn-ribbon-tab.active:hover {
+  color: var(--color-on-accent);
+}
+.orn-ribbon-tab > span {
+  position: relative;
+}
+
+/* Library view toggle glyphs (ArchToggleIcon, ListIcon). */
+.orn-glyph {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dome-art .ring-light,
+  .dome-art .center-light,
+  .dome-art .lamp-glow {
+    transition: none;
+  }
+}

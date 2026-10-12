@@ -1,4 +1,4 @@
-/** Small display formatters for the project library, switcher and settings. */
+/** Small display formatters for the project library, switcher, settings and ornament numerals. */
 
 /** A download size in decimal units: `850 MB`, `1.6 GB`. */
 export function formatBytes(bytes: number): string {
@@ -36,4 +36,9 @@ export function formatSourceHost(url: string): string {
   } catch {
     return url;
   }
+}
+
+/** A number in Arabic-Indic digits (`12` -> `١٢`), for star numerals set in Amiri. */
+export function toArabicIndic(n: number): string {
+  return String(n).replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
 }
