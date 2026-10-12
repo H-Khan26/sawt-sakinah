@@ -144,8 +144,11 @@ export function useDescent() {
     el.style.setProperty("--h", `${height}px`);
     el.style.setProperty("--H1", `${m.headerHeight}px`);
     el.style.setProperty("--chand", `${m.chandelier}px`);
-    if (prev && opening.current && prev.run !== stage.current.run && top > 0) {
-      const run = stage.current.run;
+    const run = stage.current.run;
+    if (!prev && opening.current === "library") {
+      // The library opened before the container had a size; it opens descended once it has one.
+      el.scrollTop = run;
+    } else if (prev && opening.current && prev.run !== run && top > 0) {
       // Past the descent the content keeps its offset under the header; within it, the progress.
       el.scrollTop = top >= prev.run ? top + run - prev.run : (top / prev.run) * run;
     }
@@ -163,17 +166,18 @@ export function useDescent() {
     const s = stage.current;
     if (!el || !s) return;
     stopTween();
-    const from = el.scrollTop;
-    const to = s.run;
-    if (reducedMotion.matches || Math.abs(to - from) < 1) {
-      el.scrollTop = to;
+    if (reducedMotion.matches || Math.abs(s.run - el.scrollTop) < 1) {
+      el.scrollTop = s.run;
       render();
       return;
     }
+    // Tweens the progress rather than the offset, so a resize mid-descent still ends descended.
+    const from = el.scrollTop / s.run;
     const start = performance.now();
     const step = (now: number) => {
       const t = Math.min(1, (now - start) / DESCENT_MS);
-      el.scrollTop = from + (to - from) * ease(t);
+      const run = stage.current?.run ?? s.run;
+      el.scrollTop = (from + (1 - from) * ease(t)) * run;
       render();
       tween.current = t < 1 ? requestAnimationFrame(step) : 0;
     };

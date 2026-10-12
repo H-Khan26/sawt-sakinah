@@ -120,18 +120,6 @@
   );
 }
 
-.sanct-lattice {
-  --lattice-fade: calc(var(--H1) + var(--chand));
-  mask-image: linear-gradient(
-    transparent calc(var(--lattice-fade) - 30px),
-    black calc(var(--lattice-fade) + 150px)
-  );
-  -webkit-mask-image: linear-gradient(
-    transparent calc(var(--lattice-fade) - 30px),
-    black calc(var(--lattice-fade) + 150px)
-  );
-}
-
 @media (prefers-reduced-motion: reduce) {
   .sanct-band,
   .sanct-enter {

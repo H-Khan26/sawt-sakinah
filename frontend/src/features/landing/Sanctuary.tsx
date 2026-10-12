@@ -10,6 +10,10 @@ const HIDDEN_DOME = { transform: { x: 0, y: 0, scale: 0 }, opacity: 0 };
 const HIDDEN_LAMPS = lampRingGeometry({ progress: 0, width: 0, height: 0, headerHeight: 0, R0: 0 });
 const HIDDEN = { opacity: 0 };
 
+/** The wall's lattice fades in below the lamps' light, from just above the chandelier's reach. */
+const LATTICE_FROM = "calc(var(--H1) + var(--chand) - 30px)";
+const LATTICE_TO = "calc(var(--H1) + var(--chand) + 150px)";
+
 export interface SanctuaryProps {
   /** Buttons in the stage's top-right corner, over the dome and the header. */
   corner: ReactNode;
@@ -73,7 +77,7 @@ export function Sanctuary({ corner, children }: SanctuaryProps) {
       </header>
       <div className="sanct-spacer" />
       <div className="sanct-wall">
-        <Lattice className="sanct-lattice" />
+        <Lattice maskFrom={LATTICE_FROM} maskTo={LATTICE_TO} />
         {children}
       </div>
     </section>
