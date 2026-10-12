@@ -96,6 +96,15 @@ The app's settings have a button that opens the logs folder, for bug reports. To
 replace the old app with the new release: on Windows, delete the old folder and unzip the
 new one in its place; on macOS, move the new `SawtSakinah.app` into Applications over the
 old one (macOS may ask for **Open Anyway** again on its first launch).
+YouTube changes sometimes break the app's YouTube downloader
+([yt-dlp](https://github.com/yt-dlp/yt-dlp)) before a new release is out. With **Keep the
+YouTube downloader up to date** turned on in the settings, the app checks PyPI once a day
+for the newest yt-dlp nightly build, downloads it into the `plugins` folder of its data
+directory (checked against the SHA-256 that PyPI publishes) and uses it from the next
+launch. If the downloaded copy fails its checks, the app falls back to the copy it came
+with; turning the option off does the same at the next launch and deletes the download.
+The settings show which yt-dlp version is in use.
+
 To keep everything somewhere else for one run (a test, for example), launch the app
 with the environment variable `SAWT_DATA_DIR` set to an absolute folder path; the
 logs then go to its `logs` folder on both systems.
@@ -106,6 +115,8 @@ logs then go to its `logs` folder on both systems.
 - **Hugging Face**, to download the speech model once.
 - **GitHub API**, to check for a newer release. This is on by default and can be turned
   off in the app's settings.
+- **PyPI**, once a day, only if you turn on **Keep the YouTube downloader up to date** in
+  the settings (it is off by default).
 
 There is no telemetry, no account and no analytics.
 
