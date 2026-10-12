@@ -1,7 +1,8 @@
 /* The Sanctuary (Sanctuary.tsx). useDescent sets on the scroll container:
    --h      the container's height (the stage),
    --H1     the header's height once descended (92–136 px),
-   --chand  the chandelier's reach below the header (lamps and the pool of light),
+   --chand  the chandelier's reach below the header (lamps and the pool of light);
+   and on the stage, per frame:
    --band   the dome band's visible height, from --h on the landing down to --H1,
    --land-op the landing caption's opacity. */
 
@@ -12,6 +13,8 @@
   overscroll-behavior: contain;
   /* Content added above the view (the update notice) must not move the descent. */
   overflow-anchor: none;
+  /* Focus and paging scroll content clear of the header and its hanging lamps. */
+  scroll-padding-top: calc(var(--H1) + 24px);
   scrollbar-width: thin;
   background: var(--color-background);
   outline: none;

@@ -16,7 +16,7 @@
  */
 import type { DomeRosetteHandle, LampRingHandle } from "@/components/ornament";
 import { descentLayout, descentMetrics, lampRingGeometry } from "@/ornament/chandelier";
-import { ease } from "@/ornament/ease";
+import { clamp, ease } from "@/ornament/ease";
 import { num } from "@/ornament/num";
 import { useViewPrefs } from "@/stores/viewPrefs";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
@@ -50,10 +50,13 @@ interface Stage {
    * is re-measured, so the place in the descent is kept from here.
    */
   top: number;
+  /** Clamped progress last drawn at this size; scrolling that doesn't change it draws nothing. */
+  drawn: number;
 }
 
 export function useDescent() {
   const scroller = useRef<HTMLElement>(null);
+  const header = useRef<HTMLElement>(null);
   const dome = useRef<DomeRosetteHandle>(null);
   const lamps = useRef<LampRingHandle>(null);
   const stacked = useRef<HTMLDivElement>(null);
@@ -70,15 +73,22 @@ export function useDescent() {
   if (opening.current === null && hydrated) opening.current = landingPref ? "landing" : "library";
   const decided = opening.current;
 
-  /** Lays out every layer for the current scroll position. */
-  const render = useCallback(() => {
+  /**
+   * Lays out every layer for the current scroll position. Skips the frame when the clamped
+   * progress hasn't changed (e.g. scrolling the list below the header) unless `force`d.
+   */
+  const render = useCallback((force = false) => {
     const el = scroller.current;
+    const head = header.current;
     const s = stage.current;
-    if (!el || !s || !opening.current) return;
+    if (!el || !head || !s || !opening.current) return;
     const top = el.scrollTop;
     if (el.clientHeight === s.height) s.top = top;
+    const progress = clamp(s.run > 0 ? top / s.run : 1);
+    if (!force && progress === s.drawn) return;
+    s.drawn = progress;
     const input = {
-      progress: s.run > 0 ? top / s.run : 1,
+      progress,
       width: s.width,
       height: s.height,
       headerHeight: s.headerHeight,
@@ -86,8 +96,9 @@ export function useDescent() {
       reduceMotion: reducedMotion.matches,
     };
     const layout = descentLayout(input);
-    el.style.setProperty("--band", `${num(layout.bandHeight, 2)}px`);
-    el.style.setProperty("--land-op", num(layout.landingOpacity));
+    // On the header, not the container, so only the stage restyles.
+    head.style.setProperty("--band", `${num(layout.bandHeight, 2)}px`);
+    head.style.setProperty("--land-op", num(layout.landingOpacity));
     if (landing.current) {
       landing.current.style.visibility = layout.landingOpacity < 0.01 ? "hidden" : "";
     }
@@ -128,6 +139,7 @@ export function useDescent() {
       R0: m.R0,
       run: height - m.headerHeight,
       top,
+      drawn: Number.NaN,
     };
     el.style.setProperty("--h", `${height}px`);
     el.style.setProperty("--H1", `${m.headerHeight}px`);
@@ -190,7 +202,7 @@ export function useDescent() {
 
   // Re-applies the frame after any render of the shell, so its initial props never stick.
   useLayoutEffect(() => {
-    render();
+    render(true);
   });
 
   useEffect(() => {
@@ -204,6 +216,7 @@ export function useDescent() {
         render();
       });
     };
+    const redraw = () => render(true);
     // Enter, Space and ↓ at the top run the descent, whether the container or nothing has focus.
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -220,7 +233,7 @@ export function useDescent() {
     el.addEventListener("touchstart", stopTween, { passive: true });
     el.addEventListener("pointerdown", stopTween);
     window.addEventListener("keydown", onKeyDown);
-    reducedMotion.addEventListener("change", render);
+    reducedMotion.addEventListener("change", redraw);
     return () => {
       cancelAnimationFrame(frame);
       stopTween();
@@ -229,7 +242,7 @@ export function useDescent() {
       el.removeEventListener("touchstart", stopTween);
       el.removeEventListener("pointerdown", stopTween);
       window.removeEventListener("keydown", onKeyDown);
-      reducedMotion.removeEventListener("change", render);
+      reducedMotion.removeEventListener("change", redraw);
     };
   }, [decided, descend, render, stopTween]);
 
@@ -237,6 +250,6 @@ export function useDescent() {
     /** How this mount opens, or null while the preferences load. */
     opening: decided,
     descend,
-    refs: { scroller, dome, lamps, stacked, horizontal, landing },
+    refs: { scroller, header, dome, lamps, stacked, horizontal, landing },
   };
 }

@@ -44,7 +44,7 @@ export function Sanctuary({ corner, children }: SanctuaryProps) {
       className="sanct"
       data-open={opening ?? undefined}
     >
-      <header className="sanct-stage">
+      <header ref={refs.header} className="sanct-stage">
         <div className="sanct-band">
           {opening && (
             <>
