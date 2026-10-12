@@ -320,7 +320,19 @@ export interface AppPreferences {
   cookies_file: string | null;
   /** Keep yt-dlp up to date from PyPI (opt-in; off by default). */
   ytdlp_update: boolean;
+  /** Colour theme; `system` follows the OS light/dark setting. */
+  theme: ThemePreference;
+  /** Open on the dome landing at launch ("Open under the dome"). */
+  landing: boolean;
+  /** How the library lists recordings. */
+  library_view: LibraryView;
 }
+
+/** The stored theme choice. */
+export type ThemePreference = "system" | "day" | "night";
+
+/** Library layout: niches in an arcade, or a ruled list. */
+export type LibraryView = "icons" | "list";
 
 /** Browsers YouTube cookies can be read from. */
 export type CookieBrowser =

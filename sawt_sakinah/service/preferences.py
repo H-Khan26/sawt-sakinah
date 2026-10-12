@@ -33,6 +33,8 @@ from .schemas import (
 _LOCK = threading.Lock()
 _NULLABLE = frozenset({"dismissed_update", "cookies_browser", "cookies_file"})
 _MAX_VERSION_LEN = 64
+THEMES = frozenset({"system", "day", "night"})
+LIBRARY_VIEWS = frozenset({"icons", "list"})
 
 
 def _check_whisper_model(value: str) -> str:
@@ -45,6 +47,18 @@ def _check_silence_detector(value: str) -> str:
     if value not in SILENCE_DETECTORS:
         allowed = ", ".join(sorted(SILENCE_DETECTORS))
         raise ValueError(f"silence_detector must be one of: {allowed}")
+    return value
+
+
+def _check_color_theme(value: str) -> str:
+    if value not in THEMES:
+        raise ValueError(f"theme must be one of: {', '.join(sorted(THEMES))}")
+    return value
+
+
+def _check_library_view(value: str) -> str:
+    if value not in LIBRARY_VIEWS:
+        raise ValueError(f"library_view must be one of: {', '.join(sorted(LIBRARY_VIEWS))}")
     return value
 
 
@@ -65,6 +79,9 @@ class Preferences(BaseModel):
     cookies_browser: Optional[str] = None
     cookies_file: Optional[str] = None
     ytdlp_update: bool = False  # opt-in yt-dlp self-update (ytdlp_updates.py)
+    theme: str = "system"  # "system" follows the OS colour scheme
+    landing: bool = True  # open on the dome landing at launch
+    library_view: str = "icons"
 
     @field_validator("whisper_model")
     @classmethod
@@ -98,6 +115,16 @@ class Preferences(BaseModel):
     def _check_dismissed(cls, v: Optional[str]) -> Optional[str]:
         return _check_version(v)
 
+    @field_validator("theme")
+    @classmethod
+    def _check_theme(cls, v: str) -> str:
+        return _check_color_theme(v)
+
+    @field_validator("library_view")
+    @classmethod
+    def _check_view(cls, v: str) -> str:
+        return _check_library_view(v)
+
 
 class PreferencesPatch(BaseModel):
     """Body of ``PATCH /app/preferences``: any subset of :class:`Preferences`.
@@ -115,6 +142,9 @@ class PreferencesPatch(BaseModel):
     cookies_browser: Optional[str] = None
     cookies_file: Optional[str] = None
     ytdlp_update: Optional[bool] = None
+    theme: Optional[str] = None
+    landing: Optional[bool] = None
+    library_view: Optional[str] = None
 
     @field_validator("whisper_model")
     @classmethod
@@ -140,6 +170,16 @@ class PreferencesPatch(BaseModel):
     @classmethod
     def _check_dismissed(cls, v: Optional[str]) -> Optional[str]:
         return _check_version(v)
+
+    @field_validator("theme")
+    @classmethod
+    def _check_theme(cls, v: Optional[str]) -> Optional[str]:
+        return v if v is None else _check_color_theme(v)
+
+    @field_validator("library_view")
+    @classmethod
+    def _check_view(cls, v: Optional[str]) -> Optional[str]:
+        return v if v is None else _check_library_view(v)
 
     @model_validator(mode="after")
     def _no_nulls(self) -> "PreferencesPatch":

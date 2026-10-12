@@ -1,47 +1,68 @@
 /**
- * Hex mirrors of the waveform-related CSS custom properties in `src/index.css`.
+ * Waveform and region colours resolved from the tokens in `src/theme/tokens.css`.
  *
- * wavesurfer draws to a `<canvas>` and cannot resolve CSS custom properties, so the
- * palette is duplicated here as literal values. **Keep these in sync with the
- * `--waveform-*` / `--silence-*` / `--marker-*` tokens** — they are the same colors, split
- * across two representations only because canvas can't read the vars.
+ * wavesurfer draws to a `<canvas>`, which cannot resolve CSS custom properties, so the values are
+ * read from the computed style of `<html>` for the theme in effect. {@link useThemeColors}
+ * re-reads them when the resolved theme changes; consumers re-apply them to the renderer.
  */
-export const waveformColors = {
-  /** Played portion + cursor. Mirrors `--waveform-played` / `--color-accent`. */
-  played: "#450377",
-  /** Unplayed portion. Mirrors `--waveform-unplayed`. */
-  unplayed: "#cbd5e1",
-  /** Playback cursor. Mirrors `--waveform-cursor`. */
-  cursor: "#450377",
-  /** Hover-scrub line + label. Mirrors `--color-accent-secondary`. */
-  hover: "#9667ba",
-} as const;
+import { type ResolvedTheme, useResolvedTheme } from "@/theme/theme";
 
-/** Silence-region palette (consumed in Phase 5). Mirrors the `--silence-*` tokens. */
-export const silenceColors = {
-  fill: "rgba(150, 103, 186, 0.18)",
-  fillSelected: "rgba(150, 103, 186, 0.38)",
-  barSelected: "#450377",
-} as const;
+export interface ThemeColors {
+  waveformColors: {
+    /** Bars before the playhead (`--waveform-played`). */
+    played: string;
+    /** Bars after the playhead (`--waveform-unplayed`). */
+    unplayed: string;
+    /** Playback cursor (`--waveform-cursor`). */
+    cursor: string;
+  };
+  /** Detected silence bands (`--silence-fill*`). */
+  silenceColors: { fill: string; fillSelected: string };
+  /** Committed manual cuts (`--cut-stripe*`). */
+  cutColors: { fill: string; fillSelected: string };
+  /** The pending in/out range (`--selection-fill`). */
+  selectionColors: { fill: string };
+  /** Marker guide lines (`--marker-line`). */
+  markerColors: { line: string };
+}
+
+/** Resolve the waveform and region tokens for the theme currently applied to `<html>`. */
+export function readThemeColors(): ThemeColors {
+  const style = getComputedStyle(document.documentElement);
+  const read = (name: string) => style.getPropertyValue(name).trim();
+  return {
+    waveformColors: {
+      played: read("--waveform-played"),
+      unplayed: read("--waveform-unplayed"),
+      cursor: read("--waveform-cursor"),
+    },
+    silenceColors: {
+      fill: read("--silence-fill"),
+      fillSelected: read("--silence-fill-selected"),
+    },
+    cutColors: {
+      fill: read("--cut-stripe"),
+      fillSelected: read("--cut-stripe-selected"),
+    },
+    selectionColors: { fill: read("--selection-fill") },
+    markerColors: { line: read("--marker-line") },
+  };
+}
+
+/** Resolved colours per theme; token values are fixed per theme, so one read each suffices. */
+const cache = new Map<ResolvedTheme, ThemeColors>();
 
 /**
- * Manual-cut region palette (red, derived from `--color-error` #ef4444). Committed cuts
- * that don't correspond to a detected silence render in this color. Mirrors `--cut-*`.
+ * The theme's waveform and region colours. Returns the same object until the resolved theme
+ * changes, so it is safe as an effect dependency.
  */
-export const cutColors = {
-  fill: "rgba(239, 68, 68, 0.20)",
-  fillSelected: "rgba(239, 68, 68, 0.40)",
-} as const;
-
-/**
- * Pending in/out selection palette (gold, derived from `--color-warning` #f59e0b). The
- * not-yet-committed cut range renders in this color. Mirrors `--selection-fill`.
- */
-export const selectionColors = {
-  fill: "rgba(245, 158, 11, 0.30)",
-} as const;
-
-/** Marker palette (consumed in Phase 6). Mirrors `--marker-line`. */
-export const markerColors = {
-  line: "#450377",
-} as const;
+export function useThemeColors(): ThemeColors {
+  const resolved = useResolvedTheme((s) => s.resolved);
+  let colors = cache.get(resolved);
+  if (!colors) {
+    colors = readThemeColors();
+    // Only keep a complete read; an empty value means the stylesheet hasn't loaded yet.
+    if (colors.waveformColors.played) cache.set(resolved, colors);
+  }
+  return colors;
+}

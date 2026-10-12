@@ -1,5 +1,5 @@
 /**
- * App settings: the speech-model catalog (download, remove, choose the active model), the
+ * App settings: the appearance (theme and the dome landing), the speech-model catalog (download, remove, choose the active model), the
  * YouTube cookies source, the update checks (app and yt-dlp), a shortcut to the logs folder,
  * and what the app talks to over the network. Everything here is backend state (`/models`,
  * `/app/*`); the parent mounts this only while open. A download keeps running server-side
@@ -15,13 +15,23 @@ import {
   useSelectModel,
   useUpdateStatus,
 } from "@/api/hooks";
-import { Badge, Button, Input, Modal, WaveformLoader } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Input,
+  Modal,
+  SegmentedControl,
+  type SegmentedOption,
+  WaveformLoader,
+} from "@/components/ui";
 import { ModelDownloadProgress } from "@/features/models/ModelDownload";
 import { useModelDownload } from "@/features/models/useModelDownload";
 import { CheckForUpdatesLink } from "@/features/updates/UpdateBanner";
 import { YtdlpUpdateSection } from "@/features/updates/YtdlpUpdateSection";
 import { formatMegabytes } from "@/lib/format";
-import type { CookieBrowser, SpeechModel } from "@/types/api";
+import { useViewPrefs } from "@/stores/viewPrefs";
+import { useTheme } from "@/theme/theme";
+import type { CookieBrowser, SpeechModel, ThemePreference } from "@/types/api";
 import { FolderOpen } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 
@@ -31,6 +41,36 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <h2 className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{title}</h2>
       {children}
     </section>
+  );
+}
+
+const THEME_OPTIONS: SegmentedOption<ThemePreference>[] = [
+  { value: "system", label: "System" },
+  { value: "day", label: "Day" },
+  { value: "night", label: "Night" },
+];
+
+/** Theme choice and whether the app opens on the dome landing. Both persist as preferences. */
+function AppearanceSection() {
+  const { theme, setTheme } = useTheme();
+  const landing = useViewPrefs((s) => s.landing);
+  const setLanding = useViewPrefs((s) => s.setLanding);
+
+  return (
+    <Section title="Appearance">
+      <div>
+        <SegmentedControl label="Theme" options={THEME_OPTIONS} value={theme} onChange={setTheme} />
+      </div>
+      <label className="flex items-center gap-2 text-sm text-text-secondary">
+        <input
+          type="checkbox"
+          className="accent-accent h-4 w-4 cursor-pointer"
+          checked={landing}
+          onChange={(e) => setLanding(e.target.checked)}
+        />
+        Open under the dome
+      </label>
+    </Section>
   );
 }
 
@@ -379,6 +419,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="border-b border-border px-5 py-3 font-serif text-lg">Settings</div>
 
       <div className="flex flex-col gap-6 px-5 py-4">
+        <AppearanceSection />
         <SpeechModelSection />
         <CookiesSection />
         <UpdatesSection />

@@ -10,7 +10,7 @@ import type { TimeMap } from "@/features/waveform/timeMap";
  * - cut      -> id `cut:start:end`  (see `cutKey`)
  * - pending  -> id `selection`      (the not-yet-committed range)
  */
-import { cutColors, selectionColors, silenceColors } from "@/lib/themeColors";
+import type { ThemeColors } from "@/lib/themeColors";
 import type { EditOperation, SilenceSegment } from "@/types/api";
 import type RegionsPlugin from "wavesurfer.js/plugins/regions";
 import { cutKey } from "./cutEdl";
@@ -29,6 +29,8 @@ export interface EditRegionsState {
   selectionEnd: number | null;
   /** Source -> edited mapping. Region ids stay in source keys; coordinates are projected. */
   timeMap: TimeMap;
+  /** The theme's region colours. */
+  colors: ThemeColors;
 }
 
 /**
@@ -38,7 +40,9 @@ export interface EditRegionsState {
  * omitted and any silence that collapses to zero width (e.g. a removed one) is skipped.
  */
 export function reconcileEditRegions(regions: RegionsPlugin, state: EditRegionsState): void {
-  const { silences, manualCuts, selectedIds, selectionStart, selectionEnd, timeMap } = state;
+  const { silences, manualCuts, selectedIds, selectionStart, selectionEnd, timeMap, colors } =
+    state;
+  const { silenceColors, cutColors, selectionColors } = colors;
   regions.clearRegions();
 
   for (const seg of silences) {

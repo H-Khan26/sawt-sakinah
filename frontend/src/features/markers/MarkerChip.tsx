@@ -6,7 +6,7 @@
  */
 import { Badge, badgeVariantForMarker } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { markerColors } from "@/lib/themeColors";
+import { useThemeColors } from "@/lib/themeColors";
 import type { Marker } from "@/types/api";
 
 /** Auto markers below this confidence are shown as tentative. */
@@ -24,6 +24,7 @@ export function MarkerChip({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const { markerColors } = useThemeColors();
   const variant = badgeVariantForMarker(marker.type);
   const tentative = marker.source === "auto" && marker.confidence < LOW_CONFIDENCE;
 
