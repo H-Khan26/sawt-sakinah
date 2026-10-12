@@ -6,7 +6,7 @@ import { useState } from "react";
 const MAX_NAME = 200;
 
 /**
- * Rename a project. Trims and validates locally (non-empty, <=200 chars) before firing, so
+ * Rename a recording. Trims and validates locally (non-empty, <=200 chars) before firing, so
  * we avoid the backend's 400 round-trip. The mutation is optimistic with rollback, so we can
  * close immediately; a failure surfaces as a toast and the name reverts.
  */
@@ -34,18 +34,18 @@ export function RenameDialog({
     }
     rename.mutate(
       { id: projectId, name: trimmed },
-      { onError: () => toast("Couldn't rename the project.", "error") },
+      { onError: () => toast("Couldn't rename the recording.", "error") },
     );
     onClose();
   };
 
   return (
-    <Modal open onClose={onClose} ariaLabel="Rename project">
+    <Modal open onClose={onClose} ariaLabel="Rename recording">
       <form onSubmit={onSubmit}>
-        <div className="border-b border-border px-5 py-3 font-serif text-lg">Rename project</div>
+        <div className="border-b border-border px-5 py-3 font-serif text-lg">Rename recording</div>
         <div className="px-5 py-4">
           <Input
-            label="Project name"
+            label="Recording name"
             value={name}
             maxLength={MAX_NAME}
             onChange={(e) => setName(e.target.value)}
