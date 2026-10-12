@@ -9,13 +9,7 @@ export function SettingsButton() {
   return (
     <>
       <Tooltip content="Settings" side="bottom">
-        <Button
-          size="sm"
-          variant="dome"
-          onClick={() => setOpen(true)}
-          aria-label="Open settings"
-          className="h-[34px] w-[34px] px-0"
-        >
+        <Button size="icon" variant="dome" onClick={() => setOpen(true)} aria-label="Open settings">
           <SlidersHorizontal size={18} strokeWidth={1.6} />
         </Button>
       </Tooltip>

@@ -4,7 +4,7 @@ import { forwardRef } from "react";
 import { WaveformLoader } from "./WaveformLoader";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "dome";
-export type ButtonSize = "sm" | "md";
+export type ButtonSize = "sm" | "md" | "icon";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -35,6 +35,8 @@ const VARIANTS: Record<ButtonVariant, string> = {
 const SIZES: Record<ButtonSize, string> = {
   sm: "h-8 px-3 text-sm",
   md: "h-10 px-4 text-base",
+  /** Square, unpadded, for a lone icon. */
+  icon: "h-[34px] w-[34px] text-sm",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

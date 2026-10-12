@@ -13,13 +13,7 @@ export function ThemeSwitch() {
 
   return (
     <Tooltip content={label} side="bottom">
-      <Button
-        size="sm"
-        variant="dome"
-        onClick={() => setTheme(next)}
-        aria-label={label}
-        className="h-[34px] w-[34px] px-0"
-      >
+      <Button size="icon" variant="dome" onClick={() => setTheme(next)} aria-label={label}>
         {next === "night" ? (
           <Moon size={18} strokeWidth={1.6} />
         ) : (
