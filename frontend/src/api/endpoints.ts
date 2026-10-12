@@ -19,6 +19,7 @@ import type {
   SplitRequest,
   UpdateStatus,
   WaveformPeaks,
+  YtdlpStatus,
 } from "@/types/api";
 import { type UploadOptions, request, upload } from "./client";
 
@@ -88,6 +89,12 @@ export const getAppInfo = (signal?: AbortSignal) => request<AppInfo>("/app/info"
 export const getUpdateStatus = (signal?: AbortSignal) =>
   request<UpdateStatus>("/app/update", { signal });
 
+export const getYtdlpStatus = (signal?: AbortSignal) =>
+  request<YtdlpStatus>("/app/ytdlp", { signal });
+
+/** Check PyPI for a newer yt-dlp now; returns the `update_ytdlp` job record. */
+export const checkYtdlp = () => request<JobRecord>("/app/ytdlp/check", { method: "POST" });
+
 /** Open the logs folder in the OS file manager. Resolves on 204. */
 export const openLogs = () => request<void>("/app/open-logs", { method: "POST" });
 
@@ -116,6 +123,7 @@ export const queryKeys = {
   appInfo: ["app", "info"] as const,
   appUpdate: ["app", "update"] as const,
   models: ["models"] as const,
+  ytdlp: ["app", "ytdlp"] as const,
 };
 
 /** Mutation key prefix for the per-edit autosaves, so `SaveStatus` can observe them. */

@@ -1,9 +1,9 @@
 /**
  * App settings: the speech-model catalog (download, remove, choose the active model), the
- * YouTube cookies source, the update check, a shortcut to the logs folder, and what the app
- * talks to over the network.
- * Everything here is backend state (`/models`, `/app/*`); the parent mounts this only while
- * open. A download keeps running server-side after close and resumes its progress on reopen.
+ * YouTube cookies source, the update checks (app and yt-dlp), a shortcut to the logs folder,
+ * and what the app talks to over the network. Everything here is backend state (`/models`,
+ * `/app/*`); the parent mounts this only while open. A download keeps running server-side
+ * after close and resumes its progress on reopen.
  */
 import {
   useAppInfo,
@@ -19,6 +19,7 @@ import { Badge, Button, Input, Modal, WaveformLoader } from "@/components/ui";
 import { ModelDownloadProgress } from "@/features/models/ModelDownload";
 import { useModelDownload } from "@/features/models/useModelDownload";
 import { CheckForUpdatesLink } from "@/features/updates/UpdateBanner";
+import { YtdlpUpdateSection } from "@/features/updates/YtdlpUpdateSection";
 import { formatMegabytes } from "@/lib/format";
 import type { CookieBrowser, SpeechModel } from "@/types/api";
 import { FolderOpen } from "lucide-react";
@@ -343,6 +344,7 @@ function UpdatesSection() {
           </>
         )}
       </p>
+      <YtdlpUpdateSection />
     </Section>
   );
 }
@@ -383,7 +385,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         <TroubleshootingSection />
         <p className="border-t border-border pt-4 text-xs text-text-tertiary">
           Sawt Sakinah only goes online to import from YouTube, download speech models from Hugging
-          Face and check GitHub for updates. It sends no telemetry.
+          Face and check GitHub for updates (and PyPI, when it keeps the YouTube downloader up to
+          date). It sends no telemetry.
         </p>
       </div>
 
