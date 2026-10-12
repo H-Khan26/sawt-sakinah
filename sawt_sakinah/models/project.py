@@ -4,7 +4,8 @@ A ``Project`` is what the frontend loads and works against. It bundles the
 ``AudioSource`` with detection output (silences, markers, prayer structure), the current
 ``EditDecisionList``, per-stage status, and any rendered export artifacts. Persisted as
 ``project.json`` by the service layer. Because every field is itself a pydantic model,
-``Project.model_validate(json)`` rebuilds the whole tree. See
+``Project.model_validate(json)`` rebuilds the whole tree. The on-disk format version
+(``schema_version``) belongs to the store and ``migrations.py``, not to this model. See
 docs/audio/05-data-model-and-api.md.
 
 Times are always in seconds (float).
@@ -108,3 +109,5 @@ class ProjectSummary(BaseModel):
     updated_at: datetime
     status: ProjectStatus = Field(default_factory=ProjectStatus)
     export_count: int = 0
+    # Why the project can't be opened (newer version, damaged file); None when it can.
+    unreadable: Optional[str] = None

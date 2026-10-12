@@ -19,6 +19,34 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The user-facing message of an error body: `detail` as is, or for a FastAPI validation list
+ * its `msg` strings (without pydantic's "Value error, " prefix) joined with "; ".
+ */
+function errorMessage(body: Partial<ApiErrorBody> | null): string | null {
+  const detail = body?.detail;
+  if (typeof detail === "string") return detail || null;
+  if (!Array.isArray(detail)) return null;
+  const msgs = detail
+    .map((issue) => (typeof issue?.msg === "string" ? issue.msg.replace(/^Value error, /, "") : ""))
+    .filter(Boolean);
+  return msgs.length > 0 ? msgs.join("; ") : null;
+}
+
+/** Build the typed `ApiError` for a non-2xx response from its (possibly absent) body. */
+function apiError(
+  body: Partial<ApiErrorBody> | null,
+  status: number,
+  statusText: string,
+  fallback: string,
+): ApiError {
+  return new ApiError(
+    errorMessage(body) ?? (statusText || fallback),
+    status,
+    typeof body?.error === "string" ? body.error : null,
+  );
+}
+
 async function parseError(res: Response): Promise<ApiError> {
   let body: Partial<ApiErrorBody> | null = null;
   try {
@@ -26,8 +54,7 @@ async function parseError(res: Response): Promise<ApiError> {
   } catch {
     // non-JSON error body; fall through to the status text
   }
-  const detail = body?.detail ?? res.statusText ?? "Request failed";
-  return new ApiError(detail, res.status, body?.error ?? null);
+  return apiError(body, res.status, res.statusText, "Request failed");
 }
 
 interface RequestOptions {
@@ -102,14 +129,7 @@ export function upload<T>(path: string, file: File, opts: UploadOptions = {}): P
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve((parseBody() ?? undefined) as T);
       } else {
-        const body = parseBody();
-        reject(
-          new ApiError(
-            body?.detail ?? xhr.statusText ?? "Upload failed",
-            xhr.status,
-            body?.error ?? null,
-          ),
-        );
+        reject(apiError(parseBody(), xhr.status, xhr.statusText, "Upload failed"));
       }
     };
     xhr.onerror = () => {

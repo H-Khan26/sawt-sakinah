@@ -17,7 +17,12 @@ way the window does:
    gate when frozen), then with the ``ffmpeg`` detector, which must find the gap;
 6. the gap is cut in the EDL, the project is exported, and the exported file must exist,
    download, and be shorter than the source;
-7. the test project is deleted.
+7. on Windows, deleting the project while a file in it is held open is refused with 409
+   and leaves it intact; once released, the project is deleted;
+8. recovery and hardening: leftovers planted before the service starts (a
+   ``.deleting-*`` folder, an unfinished project, a stale ``.part`` export) are swept at
+   startup, a project with ``schema_version`` 999 is listed as unreadable and refused with
+   409, and responses carry the Content-Security-Policy and ``nosniff`` headers.
 
 All project and cache data goes to a throwaway temp directory, never the user's. No model
 is downloaded (phrase detection is skipped). Each step is logged; the result is also
@@ -31,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import sys
 import tempfile
@@ -88,6 +94,15 @@ class _Client:
                 return res.status, res.read()
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read()
+
+    def headers_of(self, path: str) -> dict[str, str]:
+        """The response headers of ``GET path`` (lower-cased names)."""
+        req = urllib.request.Request(self.base + path, headers=self.headers)
+        try:
+            with self.opener.open(req, timeout=30) as res:  # noqa: S310 (local URL)
+                return {k.lower(): v for k, v in res.headers.items()}
+        except urllib.error.HTTPError as exc:
+            return {k.lower(): v for k, v in exc.headers.items()}
 
     def json(self, method: str, path: str, expect: int = 200, **kwargs: Any) -> Any:
         status, data = self.request(method, path, **kwargs)
@@ -249,6 +264,77 @@ def _check_gui(run: _Run) -> None:
             raise SelfTestError(f"window components missing: {', '.join(missing)}")
 
 
+_STALE = 24 * 3600.0  # seconds; older than the sweep's grace period
+_NEWER_PROJECT = "9" * 32
+
+
+def _plant_leftovers(projects_dir: Path) -> dict[str, Path]:
+    """Files an interrupted run would leave, plus a project from a newer app version."""
+    trash = projects_dir / ".deleting-0123456789abcdef-00000000"
+    unfinished = projects_dir / ("e" * 32)
+    keeper = projects_dir / ("f" * 32)
+    part = keeper / "exports" / "0123456789abcdef.part.mp3"
+    newer = projects_dir / _NEWER_PROJECT
+    for folder in (trash, unfinished / "audio", keeper / "exports", newer):
+        folder.mkdir(parents=True, exist_ok=True)
+    (trash / "source.mp3").write_bytes(b"x")
+    (unfinished / "audio" / "source.webm.part").write_bytes(b"x")
+    part.write_bytes(b"x")
+    # Not a loadable project; the sweep only looks for its project.json.
+    (keeper / "project.json").write_text("{}", encoding="utf-8")
+    (newer / "project.json").write_text(
+        json.dumps({"schema_version": 999, "id": _NEWER_PROJECT}), encoding="utf-8"
+    )
+    old = time.time() - _STALE
+    for path in (
+        unfinished / "audio" / "source.webm.part",
+        unfinished / "audio",
+        unfinished,
+        part,
+        trash / "source.mp3",
+        trash,
+    ):
+        os.utime(path, (old, old))
+    return {"trash": trash, "unfinished": unfinished, "part": part, "keeper": keeper}
+
+
+def _check_recovery(run: _Run, client: _Client, planted: dict[str, Path]) -> None:
+    from .service.security import CONTENT_SECURITY_POLICY
+
+    with run.step("startup-sweep") as detail:
+        left = [name for name in ("trash", "unfinished", "part") if planted[name].exists()]
+        detail["left"] = left
+        if left:
+            raise SelfTestError(f"the startup sweep left: {', '.join(left)}")
+        if not (planted["keeper"] / "project.json").is_file():
+            raise SelfTestError("the startup sweep removed a finished project")
+
+    with run.step("schema-version") as detail:
+        listed = {p["id"]: p for p in client.json("GET", "/projects")["projects"]}
+        entry = listed.get(_NEWER_PROJECT)
+        detail["listed"] = entry
+        if entry is None or "newer version" not in (entry.get("unreadable") or ""):
+            raise SelfTestError(f"a schema_version 999 project was listed as {entry}")
+        status, data = client.request("GET", f"/projects/{_NEWER_PROJECT}")
+        detail["status"] = status
+        if status != 409 or b"ProjectTooNewError" not in data:
+            raise SelfTestError(f"opening a schema_version 999 project returned {status}")
+        status, _ = client.request("DELETE", f"/projects/{_NEWER_PROJECT}")
+        if status != 204:
+            raise SelfTestError(f"deleting a schema_version 999 project returned {status}")
+
+    with run.step("headers") as detail:
+        paths = ["/health"] + (["/"] if (runtime.static_dir() / "index.html").is_file() else [])
+        for path in paths:
+            headers = client.headers_of(path)
+            csp = headers.get("content-security-policy")
+            if csp != CONTENT_SECURITY_POLICY:
+                raise SelfTestError(f"{path} has Content-Security-Policy {csp!r}")
+            if headers.get("x-content-type-options") != "nosniff":
+                raise SelfTestError(f"{path} lacks X-Content-Type-Options: nosniff")
+        detail["checked"] = paths
+
+
 def _make_clip(path: Path) -> None:
     from .proc import run as run_proc
 
@@ -340,6 +426,22 @@ def _exercise_api(run: _Run, client: _Client, workdir: Path, projects_dir: Path)
                 f"the export is {artifact['duration_sec']:.2f} s; the cut was not applied"
             )
 
+    with run.step("delete-locked") as detail:
+        # Only Windows refuses to move a folder while a file in it is open.
+        if os.name != "nt":
+            detail["skipped"] = "open files do not lock folders on this OS"
+        else:
+            audio = next((projects_dir / project_id / "audio").glob("*.mp3"))
+            with open(audio, "rb"):
+                status, data = client.request("DELETE", f"/projects/{project_id}")
+            detail["status"] = status
+            if status != 409 or b"ProjectInUseError" not in data:
+                raise SelfTestError(f"DELETE of a locked project returned {status}: {data[:200]!r}")
+            listed = [p["id"] for p in client.json("GET", "/projects")["projects"]]
+            intact = (projects_dir / project_id / "project.json").is_file()
+            if project_id not in listed or not intact:
+                raise SelfTestError("a refused delete changed the project")
+
     with run.step("delete") as detail:
         status, data = client.request("DELETE", f"/projects/{project_id}")
         if status != 204:
@@ -366,6 +468,7 @@ def run_self_test(host: str = "127.0.0.1", report_path: Optional[str] = None) ->
             from .service.settings import ServiceSettings
 
             projects_dir = workdir / "projects"
+            planted = _plant_leftovers(projects_dir)
             settings = ServiceSettings(
                 projects_dir=projects_dir,
                 cache_dir=workdir / "cache",
@@ -382,6 +485,7 @@ def run_self_test(host: str = "127.0.0.1", report_path: Optional[str] = None) ->
                 raise SelfTestError(f"/health without the token returned {bad}, expected 401")
             detail.update(url=service.url, health=health)
 
+        _check_recovery(run, client, planted)
         _exercise_api(run, client, workdir, projects_dir)
         run.report["ok"] = True
     except Exception as exc:  # noqa: BLE001 - every failure ends up in the report

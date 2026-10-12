@@ -12,6 +12,13 @@ The service listens on localhost, so any web page the user visits can try to rea
   Starlette spools the body. Every other request body is capped at ``MAX_BODY_BYTES``,
   also from ``Content-Length``, and a body without one (chunked) is refused with 411.
 
+Every response also carries ``SECURITY_HEADERS`` (``SecurityHeaders``): a Content Security
+Policy that lets the SPA load scripts, styles, fonts, media and API calls from this origin
+only (plus ``blob:``/``data:`` media and images, which wavesurfer and the bundled CSS use),
+never be framed, and never load plugins; ``nosniff``; and ``no-referrer``. Inline styles
+stay allowed because wavesurfer injects its own ``<style>`` into its shadow DOM; inline
+scripts are not.
+
 The token is presented as the ``X-Sawt-Token`` header or as an HttpOnly, SameSite=Strict
 session cookie. The desktop window gets the cookie by first loading
 ``/_session?token=<token>``, which sets it and redirects to ``/``; from then on fetches,
@@ -30,7 +37,7 @@ from fastapi import FastAPI
 from starlette.datastructures import Headers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import cookie_parser
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..config import CONFIG
 
@@ -44,6 +51,28 @@ _MULTIPART_OVERHEAD = 1024 * 1024
 # Cap for every body except the upload. Marker and EDL saves grow with the recording; this
 # leaves a wide margin for long recordings with thousands of markers.
 MAX_BODY_BYTES = 8 * 1024 * 1024
+
+CONTENT_SECURITY_POLICY = "; ".join(
+    (
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self'",
+        "media-src 'self' blob:",
+        "connect-src 'self'",
+        "worker-src 'self' blob:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    )
+)
+SECURITY_HEADERS: tuple[tuple[bytes, bytes], ...] = (
+    (b"content-security-policy", CONTENT_SECURITY_POLICY.encode("latin-1")),
+    (b"x-content-type-options", b"nosniff"),
+    (b"referrer-policy", b"no-referrer"),
+)
 
 
 def cookie_name(scope: Scope) -> str:
@@ -183,6 +212,27 @@ class LocalGuard:
         await send({"type": "http.response.body", "body": b""})
 
 
+class SecurityHeaders:
+    """Pure ASGI middleware adding ``SECURITY_HEADERS`` to every HTTP response."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                names = {name.lower() for name, _ in message.get("headers", [])}
+                extra = [(n, v) for n, v in SECURITY_HEADERS if n not in names]
+                message = {**message, "headers": [*message.get("headers", []), *extra]}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
 async def _reject(send: Send, status: int, error: str, detail: str) -> None:
     """Answer with the service's ``{error, detail}`` envelope without calling the app."""
     body = json.dumps({"error": error, "detail": detail}).encode()
@@ -205,7 +255,8 @@ def install_guards(
     allowed_origins: list[str],
     token: Optional[str],
 ) -> None:
-    """Add the guards; the Host check is added last so it runs first."""
+    """Add the guards; the Host check runs first, and the security headers wrap every
+    response, rejections included."""
     app.add_middleware(
         LocalGuard,
         allowed_hosts=allowed_hosts,
@@ -214,3 +265,4 @@ def install_guards(
         max_upload_bytes=CONFIG.extraction.max_upload_mb * 1024 * 1024,
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+    app.add_middleware(SecurityHeaders)

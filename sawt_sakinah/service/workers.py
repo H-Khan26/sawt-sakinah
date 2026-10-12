@@ -6,6 +6,13 @@ result through the store, and returns a small JSON-able summary that becomes the
 ``result``. Kept free of any HTTP/FastAPI types so they are testable in isolation and
 reusable from a CLI. All audio writes happen here or in the editing layer -- detection
 endpoints never produce files.
+
+A job removes the partial output it owns when it fails or is stopped at shutdown: an
+export renders to ``<id>.part.<ext>`` and is renamed into place only once complete. The
+half-built folder of a job creating a project (download, upload, split) is removed by the
+route's ``on_finish`` hook (``ProjectStore.discard_unfinished``), which also covers a job
+dropped from the queue. What a hard exit still leaves behind is removed by
+``ProjectStore.sweep`` at the next start.
 """
 
 from __future__ import annotations
@@ -25,6 +32,7 @@ from ..editing import render
 from ..extraction import extract_audio, import_file
 from ..extraction.probe import probe
 from ..extraction.segment import write_speech_map
+from ..fileio import part_path, replace_file
 from ..models import (
     AudioSource,
     EditDecisionList,
@@ -36,6 +44,7 @@ from ..models import (
 )
 from ..prayer import derive_structure
 from .jobs import TaskFn
+from .preferences import load_preferences
 from .projects import ProjectStore
 from .schemas import (
     CreateProjectRequest,
@@ -220,6 +229,8 @@ def extract_worker(
     req: CreateProjectRequest,
 ) -> TaskFn:
     def run(progress):
+        # Read at run time, so a cookies change in Settings applies to the next try.
+        prefs = load_preferences()
         source = extract_audio(
             req.url,
             output_dir=store.audio_dir(project_id),
@@ -229,6 +240,8 @@ def extract_worker(
             ffmpeg_bin=settings.ffmpeg_bin,
             ffprobe_bin=settings.ffprobe_bin,
             progress_callback=progress,
+            cookies_from_browser=prefs.cookies_browser,
+            cookies_file=prefs.cookies_file,
         )
         return _persist_source(store, project_id, source)
 
@@ -432,18 +445,28 @@ def export_worker(
             if req.embed_markers and project.markers
             else None
         )
-        render(
-            project.audio_source,
-            edl,
-            out_format=req.format,
-            out_path=out_path,
-            ffmpeg_bin=settings.ffmpeg_bin,
-            ffprobe_bin=settings.ffprobe_bin,
-            bitrate=req.bitrate,
-            embed_markers=req.embed_markers,
-            chapter_markers=chapter_markers,
-        )
-        meta = probe(out_path, ffprobe_bin=settings.ffprobe_bin)
+        # Rendered under a partial name so an interrupted export never looks finished.
+        partial = part_path(out_path)
+        try:
+            render(
+                project.audio_source,
+                edl,
+                out_format=req.format,
+                out_path=partial,
+                ffmpeg_bin=settings.ffmpeg_bin,
+                ffprobe_bin=settings.ffprobe_bin,
+                bitrate=req.bitrate,
+                embed_markers=req.embed_markers,
+                chapter_markers=chapter_markers,
+            )
+            meta = probe(partial, ffprobe_bin=settings.ffprobe_bin)
+            replace_file(partial, out_path)
+        except BaseException:
+            try:
+                partial.unlink(missing_ok=True)
+            except OSError as exc:
+                _log.warning("could not remove the partial export %s: %s", partial, exc)
+            raise
         default_name = project.name or None
         if scoped and not req.name:
             base = project.name or project.audio_source.title
@@ -497,7 +520,8 @@ def split_worker(
         label = _range_label(req.range_start, req.range_end)
         name = req.name or f"{src.name or src.audio_source.title} ({label})"
 
-        with tempfile.TemporaryDirectory() as tmp:
+        # A helper killed at shutdown may still hold the segment; never fail on cleanup.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             fmt = CONFIG.editing.out_format
             segment = Path(tmp) / f"segment.{fmt}"
             render(

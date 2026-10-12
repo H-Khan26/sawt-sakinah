@@ -22,7 +22,11 @@ from .errors import (
     NoAudioStreamError,
     FileTooLargeError,
     YouTubeBotCheckError,
+    CookiesError,
     JobCancelledError,
+    ProjectInUseError,
+    ProjectUnreadableError,
+    ProjectTooNewError,
 )
 
 __all__ = [
@@ -47,5 +51,9 @@ __all__ = [
     "NoAudioStreamError",
     "FileTooLargeError",
     "YouTubeBotCheckError",
+    "CookiesError",
     "JobCancelledError",
+    "ProjectInUseError",
+    "ProjectUnreadableError",
+    "ProjectTooNewError",
 ]

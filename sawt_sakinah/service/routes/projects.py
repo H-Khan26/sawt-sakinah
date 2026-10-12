@@ -3,6 +3,7 @@ EDL / marker updates."""
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -25,9 +26,11 @@ from ..schemas import (
 )
 from ..workers import extract_worker, import_worker, split_worker
 from ...models import EditDecisionList
-from ...models.errors import FileTooLargeError, UnsupportedMediaError
+from ...models.errors import FileTooLargeError, ProjectInUseError, UnsupportedMediaError
 from ...prayer import derive_structure
 from .common import validate_id
+
+_log = logging.getLogger(__name__)
 
 # Read uploads in 1 MiB chunks so a large file never loads wholesale into memory.
 _UPLOAD_CHUNK = 1024 * 1024
@@ -36,13 +39,28 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 def _submit_new_project(jobs, store, project_id: str, kind: JobKind, fn):
-    """Submit the job that fills a freshly prepared project; drop the project if the job
-    queue refuses it, so no empty skeleton is left behind."""
+    """Submit the job that fills a freshly prepared project. The project folder is removed
+    if the queue refuses the job, or if the job ends (failed, stopped or dropped at
+    shutdown) without writing ``project.json``, so no empty skeleton is left behind."""
     try:
-        return jobs.submit(kind, fn, project_id=project_id)
+        return jobs.submit(
+            kind,
+            fn,
+            project_id=project_id,
+            on_finish=lambda: store.discard_unfinished(project_id),
+        )
     except JobQueueFullError:
-        store.delete(project_id)
+        _discard_skeleton(store, project_id)
         raise
+
+
+def _discard_skeleton(store, project_id: str) -> None:
+    """Remove a project folder that never got a job; a locked folder (a scanner on
+    Windows) is left to the startup sweep rather than masking the caller's error."""
+    try:
+        store.delete(project_id)
+    except ProjectInUseError as exc:
+        _log.warning("could not remove the unused project %s: %s", project_id, exc)
 
 
 @router.post("", response_model=CreateProjectResponse, status_code=202)
@@ -102,7 +120,7 @@ async def upload_project(
                     )
                 fh.write(chunk)
     except FileTooLargeError:
-        store.delete(project_id)  # drops the whole skeleton, including the partial staging file
+        _discard_skeleton(store, project_id)  # the skeleton, including the staging file
         raise
     finally:
         await file.close()
@@ -175,6 +193,8 @@ def patch_project(
 
 @router.delete("/{project_id}", status_code=204)
 def delete_project(project_id: str, store=Depends(get_store)) -> Response:
+    """Delete the project. Answers 409 (``ProjectInUseError``) when its files stay locked,
+    in which case nothing was removed."""
     validate_id(project_id, "project_id")
     if not store.delete(project_id):
         raise HTTPException(status_code=404, detail="project not found")

@@ -1,6 +1,7 @@
 /**
  * App settings: the speech-model catalog (download, remove, choose the active model), the
- * update check, a shortcut to the logs folder, and what the app talks to over the network.
+ * YouTube cookies source, the update check, a shortcut to the logs folder, and what the app
+ * talks to over the network.
  * Everything here is backend state (`/models`, `/app/*`); the parent mounts this only while
  * open. A download keeps running server-side after close and resumes its progress on reopen.
  */
@@ -14,14 +15,14 @@ import {
   useSelectModel,
   useUpdateStatus,
 } from "@/api/hooks";
-import { Badge, Button, Modal, WaveformLoader } from "@/components/ui";
+import { Badge, Button, Input, Modal, WaveformLoader } from "@/components/ui";
 import { ModelDownloadProgress } from "@/features/models/ModelDownload";
 import { useModelDownload } from "@/features/models/useModelDownload";
 import { CheckForUpdatesLink } from "@/features/updates/UpdateBanner";
 import { formatMegabytes } from "@/lib/format";
-import type { SpeechModel } from "@/types/api";
+import type { CookieBrowser, SpeechModel } from "@/types/api";
 import { FolderOpen } from "lucide-react";
-import type { ReactNode } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -133,6 +134,184 @@ function SpeechModelSection() {
   );
 }
 
+type CookieMode = "off" | "browser" | "file";
+
+const COOKIE_MODES: { value: CookieMode; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "browser", label: "From a browser" },
+  { value: "file", label: "From a cookies.txt file" },
+];
+
+const BROWSER_LABELS: Record<CookieBrowser, string> = {
+  chrome: "Chrome",
+  edge: "Microsoft Edge",
+  firefox: "Firefox",
+  brave: "Brave",
+  chromium: "Chromium",
+  vivaldi: "Vivaldi",
+  opera: "Opera",
+  safari: "Safari",
+};
+
+const SELECT_CLASS =
+  "h-10 rounded border border-border bg-background px-3 text-base text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50";
+
+/**
+ * Where YouTube imports read sign-in cookies from: nowhere, a browser profile, or a
+ * cookies.txt file. Radio and browser choices save at once; the file choice stays local until
+ * a path is saved, so the stored setting only changes to a file the backend accepted.
+ */
+function CookiesSection() {
+  const prefs = usePreferences();
+  const info = useAppInfo();
+  const patch = usePatchPreferences();
+  const saveFile = usePatchPreferences();
+
+  const savedBrowser = prefs.data?.cookies_browser ?? null;
+  const savedFile = prefs.data?.cookies_file ?? null;
+  const savedMode: CookieMode = savedFile ? "file" : savedBrowser ? "browser" : "off";
+  const [fileChosen, setFileChosen] = useState(false);
+  const mode: CookieMode = fileChosen ? "file" : savedMode;
+
+  // The typed path; until the user edits it the field shows the saved one.
+  const [draftPath, setDraftPath] = useState<string | null>(null);
+  const path = draftPath ?? savedFile ?? "";
+
+  const offered = info.data?.cookie_browsers ?? [];
+  const browsers =
+    savedBrowser && !offered.includes(savedBrowser) ? [...offered, savedBrowser] : offered;
+
+  const chooseMode = (next: CookieMode) => {
+    setFileChosen(next === "file");
+    if (next !== "file") saveFile.reset();
+    if (next === "file" || next === savedMode) return;
+    if (next === "off") {
+      patch.mutate({ cookies_browser: null, cookies_file: null });
+    } else {
+      const browser = savedBrowser ?? offered[0];
+      if (browser) patch.mutate({ cookies_browser: browser, cookies_file: null });
+    }
+  };
+
+  const onSaveFile = (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    saveFile.mutate(
+      { cookies_browser: null, cookies_file: trimmed },
+      { onSuccess: () => setFileChosen(false) },
+    );
+  };
+
+  return (
+    <Section title="YouTube cookies">
+      <p className="text-sm text-text-secondary">
+        YouTube sometimes asks to confirm you're not a bot. Signing in through your browser's
+        cookies usually gets past that. Cookies are only used for YouTube imports and stay on this
+        computer: the app reads them on each import and never copies or uploads them anywhere else.
+      </p>
+      <fieldset className="flex min-w-0 flex-col gap-2" disabled={!prefs.data}>
+        <legend className="sr-only">Use cookies</legend>
+        {COOKIE_MODES.map((m) => {
+          const inputId = `cookies-mode-${m.value}`;
+          return (
+            <label
+              key={m.value}
+              htmlFor={inputId}
+              className="flex cursor-pointer items-center gap-2 text-sm text-text-secondary"
+            >
+              <input
+                id={inputId}
+                type="radio"
+                name="cookies-mode"
+                className="accent-accent h-4 w-4 cursor-pointer"
+                checked={mode === m.value}
+                disabled={m.value === "browser" && browsers.length === 0}
+                onChange={() => chooseMode(m.value)}
+              />
+              {m.label}
+            </label>
+          );
+        })}
+      </fieldset>
+
+      {mode === "browser" && (
+        <div className="flex flex-col gap-1.5 pl-6">
+          <label
+            htmlFor="cookies-browser"
+            className="flex flex-col gap-1.5 text-sm font-medium text-text-secondary"
+          >
+            Browser
+            <select
+              id="cookies-browser"
+              className={SELECT_CLASS}
+              value={savedBrowser ?? ""}
+              disabled={!prefs.data}
+              aria-describedby="cookies-browser-hint"
+              onChange={(e) =>
+                patch.mutate({
+                  cookies_browser: e.target.value as CookieBrowser,
+                  cookies_file: null,
+                })
+              }
+            >
+              {browsers.map((b) => (
+                <option key={b} value={b}>
+                  {BROWSER_LABELS[b] ?? b}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p id="cookies-browser-hint" className="text-sm text-text-tertiary">
+            Sign in to YouTube in that browser first. On Windows, Chrome and Edge may need to be
+            closed while importing; Firefox works most reliably.
+          </p>
+        </div>
+      )}
+
+      {mode === "file" && (
+        <form className="flex items-start gap-2 pl-6" onSubmit={onSaveFile}>
+          <div className="min-w-0 flex-1">
+            <Input
+              id="cookies-file"
+              label="cookies.txt path"
+              placeholder="C:\Users\you\cookies.txt"
+              value={path}
+              spellCheck={false}
+              autoComplete="off"
+              invalid={saveFile.isError}
+              hint={
+                saveFile.isError
+                  ? saveFile.error.message
+                  : savedMode === "file"
+                    ? "Imports read this file. Save again after changing the path."
+                    : "The full path to a Netscape-format cookies.txt file. Nothing changes until you save."
+              }
+              onChange={(e) => {
+                setDraftPath(e.target.value);
+                if (saveFile.isError) saveFile.reset();
+              }}
+            />
+          </div>
+          <Button
+            type="submit"
+            variant="secondary"
+            className="mt-[26px]"
+            loading={saveFile.isPending}
+            disabled={!path.trim() || path.trim() === savedFile}
+          >
+            Save
+          </Button>
+        </form>
+      )}
+
+      {patch.isError && (
+        <p className="text-sm text-danger">Couldn't save that change: {patch.error.message}</p>
+      )}
+    </Section>
+  );
+}
+
 function UpdatesSection() {
   const prefs = usePreferences();
   const patch = usePatchPreferences();
@@ -199,6 +378,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
       <div className="flex flex-col gap-6 px-5 py-4">
         <SpeechModelSection />
+        <CookiesSection />
         <UpdatesSection />
         <TroubleshootingSection />
         <p className="border-t border-border pt-4 text-xs text-text-tertiary">

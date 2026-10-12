@@ -56,6 +56,15 @@ AudioSource:
 - **Failure modes.** Private/age-restricted/region-locked videos, live streams,
   removed videos, and yt-dlp version drift. Map yt-dlp's `DownloadError` to typed
   errors the API can return cleanly. yt-dlp needs periodic updates as YouTube changes.
+  YouTube's bot check maps to `YouTubeBotCheckError`, whose message suggests turning on
+  cookies in Settings (or, when they are on, signing in again) or checking for an update.
+- **Cookies.** `extract_audio(..., cookies_from_browser=, cookies_file=)` passes optional
+  YouTube cookies to yt-dlp: a browser profile (`cookiesfrombrowser`; the allow-list in
+  `service/schemas.py` is chrome, edge, firefox, brave, chromium, vivaldi, opera, plus
+  safari on macOS) or a Netscape cookies.txt file. The file is read into memory and given
+  to yt-dlp as a stream, so it is never copied or written back. The service takes the
+  choice from the preferences (`cookies_browser` / `cookies_file`) on each import. A
+  source that can't be read fails with `CookiesError`.
 - **Input validation.** Accept a URL or a bare video ID; reject playlists (or decide
   how to handle them) and non-YouTube hosts unless explicitly in scope.
 - **Working-copy normalization.** Produce a standardized PCM working file

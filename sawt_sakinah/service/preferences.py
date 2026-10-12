@@ -2,8 +2,13 @@
 
 The desktop window's origin changes with its port, so preferences the UI used to keep in
 ``localStorage`` live here instead, next to the app-level choices (update check, Whisper
-model). Reads tolerate a missing or corrupt file, and fall back to the default for any
-single value that is no longer valid; writes are atomic.
+model, YouTube cookies). Reads tolerate a missing or corrupt file, and fall back to the
+default for any single value that is no longer valid; writes are atomic.
+
+YouTube cookies are either a browser to read them from (``cookies_browser``, one of
+``schemas.COOKIE_BROWSERS``) or a cookies.txt file (``cookies_file``, an absolute path that
+must exist when it is set); at most one is set. Only the choice is stored here: the
+cookies stay where they are and are read on each YouTube import.
 """
 
 from __future__ import annotations
@@ -18,10 +23,15 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 from .. import runtime
 from ..config import CONFIG
 from ..fileio import replace_file
-from .schemas import SILENCE_DETECTORS, WHISPER_MODELS
+from .schemas import (
+    SILENCE_DETECTORS,
+    WHISPER_MODELS,
+    check_cookie_browser,
+    check_cookies_file,
+)
 
 _LOCK = threading.Lock()
-_NULLABLE = frozenset({"dismissed_update"})
+_NULLABLE = frozenset({"dismissed_update", "cookies_browser", "cookies_file"})
 _MAX_VERSION_LEN = 64
 
 
@@ -52,11 +62,30 @@ class Preferences(BaseModel):
     whisper_model: str = CONFIG.phrases.model_size
     show_deleted: bool = False
     silence_detector: str = CONFIG.silence.detector
+    cookies_browser: Optional[str] = None
+    cookies_file: Optional[str] = None
 
     @field_validator("whisper_model")
     @classmethod
     def _check_model(cls, v: str) -> str:
         return _check_whisper_model(v)
+
+    @field_validator("cookies_browser")
+    @classmethod
+    def _check_browser(cls, v: Optional[str]) -> Optional[str]:
+        return v if v is None else check_cookie_browser(v)
+
+    @field_validator("cookies_file")
+    @classmethod
+    def _check_file(cls, v: Optional[str]) -> Optional[str]:
+        # A stored file that went missing stays set; the import then says so.
+        return v if v is None else check_cookies_file(v, must_exist=False)
+
+    @model_validator(mode="after")
+    def _one_cookie_source(self) -> "Preferences":
+        if self.cookies_browser is not None and self.cookies_file is not None:
+            raise ValueError("set cookies_browser or cookies_file, not both")
+        return self
 
     @field_validator("silence_detector")
     @classmethod
@@ -82,11 +111,23 @@ class PreferencesPatch(BaseModel):
     whisper_model: Optional[str] = None
     show_deleted: Optional[bool] = None
     silence_detector: Optional[str] = None
+    cookies_browser: Optional[str] = None
+    cookies_file: Optional[str] = None
 
     @field_validator("whisper_model")
     @classmethod
     def _check_model(cls, v: Optional[str]) -> Optional[str]:
         return v if v is None else _check_whisper_model(v)
+
+    @field_validator("cookies_browser")
+    @classmethod
+    def _check_browser(cls, v: Optional[str]) -> Optional[str]:
+        return v if v is None else check_cookie_browser(v)
+
+    @field_validator("cookies_file")
+    @classmethod
+    def _check_file(cls, v: Optional[str]) -> Optional[str]:
+        return v if v is None else check_cookies_file(v)
 
     @field_validator("silence_detector")
     @classmethod

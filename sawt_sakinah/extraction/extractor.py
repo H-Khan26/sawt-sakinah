@@ -2,11 +2,16 @@
 
 Side-effecting layer: network + filesystem. It downloads, transcodes, probes, and
 hands back an :class:`AudioSource`. It performs no analysis or editing.
+
+Optional YouTube cookies (for its bot check) come from a browser profile or a cookies.txt
+file. The file is read into memory and handed to yt-dlp as a stream, so yt-dlp's habit of
+writing the cookie jar back on exit never touches the user's file.
 """
 
 from __future__ import annotations
 
 import hashlib
+import io
 import logging
 import os
 import re
@@ -14,12 +19,14 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import yt_dlp
+from yt_dlp.cookies import CookieLoadError
 
 from .. import runtime
 from ..config import CONFIG
 from ..models.sources import AudioSource
 from ..models.errors import (
     AgeRestrictedError,
+    CookiesError,
     ExtractionError,
     FileTooLargeError,
     LiveStreamError,
@@ -49,6 +56,20 @@ GENERIC_FAILURE = "YouTube may have changed. Check for an app update."
 # later". Both are transient blocks, not a missing video. The age gate ("Sign in to
 # confirm your age") does not match.
 _BOT_CHECK = re.compile(r"not a bot|(?:isn['\u2019]t|is not) available,? try again later")
+
+#: Display names for the browsers cookies can come from (``schemas.COOKIE_BROWSERS``).
+BROWSER_LABELS = {
+    "chrome": "Chrome",
+    "edge": "Microsoft Edge",
+    "firefox": "Firefox",
+    "brave": "Brave",
+    "chromium": "Chromium",
+    "vivaldi": "Vivaldi",
+    "opera": "Opera",
+    "safari": "Safari",
+}
+# A cookies.txt larger than this is not one.
+_MAX_COOKIES_BYTES = 5 * 1024 * 1024
 
 _NETWORK_HINTS = (
     "getaddrinfo",
@@ -80,6 +101,15 @@ def _make_download_hook(callback: Callable[[dict], None]) -> Callable[[dict], No
     return hook
 
 
+def _make_postprocessor_hook(callback: Callable[[dict], None]) -> Callable[[dict], None]:
+    """Report yt-dlp's post-processing (the transcode) as ``{stage: transcode, status}``."""
+
+    def hook(d: dict) -> None:
+        _emit(callback, stage="transcode", status=d.get("status"))
+
+    return hook
+
+
 class _YtdlpLogger:
     """Routes yt-dlp's console output to :mod:`logging` (a windowed build has no console)."""
 
@@ -96,25 +126,79 @@ class _YtdlpLogger:
         _log.error("%s", msg)
 
 
-def _map_download_error(err: Exception, url: str) -> ExtractionError:
+def _is_cookie_failure(err: BaseException) -> bool:
+    """Whether yt-dlp failed while loading cookies (it wraps that in a DownloadError)."""
+    seen: set[int] = set()
+    todo: list[Optional[BaseException]] = [err]
+    while todo:
+        exc = todo.pop()
+        if exc is None or id(exc) in seen:
+            continue
+        seen.add(id(exc))
+        if isinstance(exc, CookieLoadError):
+            return True
+        exc_info = getattr(exc, "exc_info", None)
+        if isinstance(exc_info, tuple) and len(exc_info) > 1:
+            todo.append(exc_info[1])
+        todo += [exc.__cause__, exc.__context__]
+    return False
+
+
+def _cookie_error(cookies: str, message: str) -> CookiesError:
+    """The user-facing error for cookies yt-dlp could not load (``message`` is its text)."""
+    if cookies == "file":
+        return CookiesError(
+            "Couldn't read the cookies.txt file chosen in Settings. Export it again from "
+            "your browser, or turn YouTube cookies off in Settings."
+        )
+    label = BROWSER_LABELS.get(cookies, cookies)
+    if "could not find" in message.lower():
+        return CookiesError(
+            f"Couldn't find {label} cookies on this computer. Check that {label} is "
+            "installed and signed in to YouTube, or choose another option in Settings."
+        )
+    return CookiesError(
+        f"Couldn't read your {label} cookies. Some browsers lock or encrypt them while "
+        f"they run: close {label} and try again, or choose another browser or a "
+        "cookies.txt file in Settings."
+    )
+
+
+def _map_download_error(
+    err: Exception, url: str, cookies: Optional[str] = None
+) -> ExtractionError:
     """Translate a yt-dlp DownloadError/ExtractorError into a typed ExtractionError.
 
     Recognised failures keep yt-dlp's message as the new error's text; network failures
-    and unrecognised ones get a plain user-facing message. The original error is logged
-    and chained.
+    and unrecognised ones get a plain user-facing message. ``cookies`` names the cookie
+    source in use (a browser id or ``"file"``) or is ``None``; it shapes the bot-check
+    advice. The original error is logged and chained.
     """
     msg = str(err)
     low = msg.lower()
+    if cookies is not None and _is_cookie_failure(err):
+        _log.warning("yt-dlp could not load cookies for %s: %s", url, msg)
+        return _cookie_error(cookies, msg)
     # Before the unavailable check: the "try again later" refusal starts "Video unavailable".
     if _BOT_CHECK.search(low):
         _log.warning("yt-dlp failed for %s: %s", url, msg)
+        if cookies is not None:
+            advice = (
+                "Make sure you are signed in to YouTube where the cookies come from (or "
+                "export them again), try again later, or check for an app update."
+            )
+        else:
+            advice = (
+                "Turn on YouTube cookies in Settings and try again, or check for an app "
+                "update."
+            )
         if "not a bot" in low:
             return YouTubeBotCheckError(
                 "YouTube asked to confirm this is not a bot and refused the download. "
-                "Try again later."
+                + advice
             )
         return YouTubeBotCheckError(
-            "YouTube is refusing downloads from this network for now. Try again later."
+            "YouTube is refusing downloads from this network for now. " + advice
         )
     if "private video" in low:
         return PrivateVideoError(msg)
@@ -147,6 +231,26 @@ def _js_runtimes() -> Optional[dict]:
             _log.warning("bundled Deno is missing; YouTube extraction may fail")
             return {}
         return None
+
+
+def _read_cookies_file(path: str | os.PathLike) -> str:
+    """The text of a cookies.txt file, read once; raises :class:`CookiesError`."""
+    try:
+        if os.path.getsize(path) > _MAX_COOKIES_BYTES:
+            raise CookiesError(
+                "The cookies file chosen in Settings is too large to be a cookies.txt file."
+            )
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except FileNotFoundError as exc:
+        raise CookiesError(
+            f"The cookies file chosen in Settings no longer exists ({path}). Choose it "
+            "again in Settings, or turn YouTube cookies off."
+        ) from exc
+    except OSError as exc:
+        raise CookiesError(
+            f"Couldn't open the cookies file chosen in Settings ({exc.strerror or exc})."
+        ) from exc
 
 
 def _expected_size(info: dict) -> Optional[int]:
@@ -205,6 +309,8 @@ def extract_audio(
     ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin,
     max_download_mb: int = CONFIG.extraction.max_download_mb,
     max_duration_sec: float = CONFIG.extraction.max_duration_sec,
+    cookies_from_browser: Optional[str] = None,
+    cookies_file: str | os.PathLike | None = None,
 ) -> AudioSource:
     """Download the best audio stream for ``url`` and return an :class:`AudioSource`.
 
@@ -236,6 +342,10 @@ def extract_audio(
         ffprobe_bin: Name/path of the ffprobe executable.
         max_download_mb: Reject audio streams larger than this many megabytes.
         max_duration_sec: Reject videos longer than this many seconds.
+        cookies_from_browser: Read YouTube cookies from this browser's profile (a yt-dlp
+            browser name such as ``"firefox"``).
+        cookies_file: Read YouTube cookies from this Netscape cookies.txt file instead.
+            It is only read, never written.
 
     Returns:
         An :class:`AudioSource` describing the extracted file.
@@ -245,6 +355,7 @@ def extract_audio(
         LiveStreamError: If ``url`` is a live or upcoming stream.
         FileTooLargeError: If the video exceeds ``max_duration_sec`` or its audio
             exceeds ``max_download_mb``.
+        CookiesError: If the chosen cookies can't be read.
         ExtractionError (or a subclass): If the video cannot be fetched.
         FileNotFoundError: If ffmpeg is missing or the expected output file is not
             produced.
@@ -285,19 +396,30 @@ def extract_audio(
             }
         ],
     }
+    cookies: Optional[str] = None
+    if cookies_from_browser:
+        ydl_opts["cookiesfrombrowser"] = (cookies_from_browser,)
+        cookies = cookies_from_browser
+    elif cookies_file:
+        # A stream: yt-dlp writes the jar back to its cookiefile on exit.
+        ydl_opts["cookiefile"] = io.StringIO(_read_cookies_file(cookies_file))
+        cookies = "file"
     js_runtimes = _js_runtimes()
     if js_runtimes is not None:
         ydl_opts["js_runtimes"] = js_runtimes
     if progress_callback is not None:
         ydl_opts["progress_hooks"] = [_make_download_hook(progress_callback)]
+        # yt-dlp runs its own ffmpeg for the transcode; reporting before it starts lets a
+        # callback that cancels (the app closing) stop the job while nothing is being written.
+        ydl_opts["postprocessor_hooks"] = [_make_postprocessor_hook(progress_callback)]
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(source_url, download=False)
             _check_limits(info, max_download_mb, max_duration_sec)
             info = ydl.process_ie_result(info, download=True)
-    except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError) as err:
-        raise _map_download_error(err, source_url) from err
+    except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError, CookieLoadError) as err:
+        raise _map_download_error(err, source_url, cookies) from err
 
     # After post-processing the file has the requested audio extension.
     result = out_dir / f"{stem}.{audio_format}"

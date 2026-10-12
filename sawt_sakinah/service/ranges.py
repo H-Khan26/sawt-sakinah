@@ -1,22 +1,28 @@
 """HTTP Range support for audio streaming/seeking.
 
-No ``Range`` header -> a plain ``FileResponse``. With a ``Range`` header -> a ``206``
-``StreamingResponse`` that seeks and yields fixed-size chunks; an unsatisfiable range
-yields ``416``. Used by the audio and export-download endpoints so the frontend's
-waveform/player can seek without downloading the whole file.
+No ``Range`` header -> a ``200`` with the whole file (Starlette's ``FileResponse``, with its
+conditional headers). With a ``Range`` header -> a ``206`` that seeks and yields fixed-size
+chunks; an unsatisfiable range yields ``416``. Used by the audio and export-download
+endpoints so the frontend's waveform/player can seek without downloading the whole file. The
+``206`` body reads through a tracked handle when given an
+:class:`~sawt_sakinah.service.projects.OpenStreams`, so deleting a project can close the
+streams that a player still holds open.
 """
 
 from __future__ import annotations
 
 import mimetypes
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import TYPE_CHECKING, Iterator, Optional
 from urllib.parse import quote
 
 from fastapi import Response
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..config import CONFIG
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .projects import OpenStreams
 
 CHUNK_SIZE = CONFIG.service.stream_chunk_size
 
@@ -85,21 +91,54 @@ def _parse_range(header: str, size: int) -> Optional[tuple[int, int]]:
     return start, min(end, size - 1)
 
 
+def _read_range(
+    path: Path, start: int, length: int, streams: Optional["OpenStreams"], key: str
+) -> Iterator[bytes]:
+    """Yield ``length`` bytes of ``path`` from ``start``, in ``CHUNK_SIZE`` pieces.
+
+    Stops early when the handle is closed under it (a project delete) or the file can't
+    be opened; the response then ends short of its Content-Length and the client drops it.
+    """
+    try:
+        handle = streams.opened(key, path) if streams is not None else open(path, "rb")
+        with handle as fh:
+            fh.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = fh.read(min(CHUNK_SIZE, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+    except (OSError, ValueError):
+        return
+
+
 def ranged_file_response(
     path: str | Path,
     range_header: Optional[str],
     media_type: Optional[str] = None,
     filename: Optional[str] = None,
+    *,
+    streams: Optional["OpenStreams"] = None,
+    key: str = "",
 ) -> Response:
-    """Serve ``path`` honoring an optional ``Range`` header (200, 206, or 416)."""
+    """Serve ``path`` honoring an optional ``Range`` header (200, 206, or 416).
+
+    With ``streams``, the file handle is tracked under ``key`` (the project id).
+    """
     path = Path(path)
     media_type = media_type or media_type_for(path)
     size = path.stat().st_size
 
-    disposition = {"Content-Disposition": _content_disposition(filename)} if filename else {}
+    headers = {"Accept-Ranges": "bytes"}
+    if filename:
+        headers["Content-Disposition"] = _content_disposition(filename)
 
     if not range_header:
-        return FileResponse(path, media_type=media_type, headers=disposition)
+        # Starlette's FileResponse adds ETag/Last-Modified and uses sendfile; a whole-file
+        # download is short-lived, so it is not tracked for deletes (a delete retries).
+        return FileResponse(path, media_type=media_type, headers=headers)
 
     parsed = _parse_range(range_header, size)
     if parsed is None:
@@ -110,24 +149,12 @@ def ranged_file_response(
 
     start, end = parsed
     length = end - start + 1
-
-    def body() -> Iterator[bytes]:
-        with open(path, "rb") as fh:
-            fh.seek(start)
-            remaining = length
-            while remaining > 0:
-                chunk = fh.read(min(CHUNK_SIZE, remaining))
-                if not chunk:
-                    break
-                remaining -= len(chunk)
-                yield chunk
-
-    headers = {
-        "Content-Range": f"bytes {start}-{end}/{size}",
-        "Accept-Ranges": "bytes",
-        "Content-Length": str(length),
-        **disposition,
-    }
+    headers.update(
+        {"Content-Range": f"bytes {start}-{end}/{size}", "Content-Length": str(length)}
+    )
     return StreamingResponse(
-        body(), status_code=206, media_type=media_type, headers=headers
+        _read_range(path, start, length, streams, key),
+        status_code=206,
+        media_type=media_type,
+        headers=headers,
     )

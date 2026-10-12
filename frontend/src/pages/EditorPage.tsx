@@ -8,6 +8,7 @@ import { useEditRegions } from "@/features/cuts/useEditRegions";
 import { ExportButton } from "@/features/export/ExportButton";
 import { MarkerLayer } from "@/features/markers/MarkerLayer";
 import { MarkersPanel } from "@/features/markers/MarkersPanel";
+import { OpenSettingsButton } from "@/features/settings/OpenSettingsButton";
 import { SilencePanel } from "@/features/silence/SilencePanel";
 import { TransportBar } from "@/features/transport/TransportBar";
 import { useTransportHotkeys } from "@/features/transport/useTransportHotkeys";
@@ -34,8 +35,13 @@ const ERROR_TITLES: Record<string, string> = {
   LiveStreamError: "Live streams can't be processed",
   RegionLockedError: "This video is region-locked",
   YouTubeBotCheckError: "YouTube refused the download",
+  CookiesError: "Couldn't read your YouTube cookies",
+  JobCancelledError: "The import was stopped",
   ExtractionError: "Extraction failed",
 };
+
+/** Failures the YouTube cookies setting can fix; the alert offers a way to Settings. */
+const SETTINGS_FIXABLE = new Set(["YouTubeBotCheckError", "CookiesError"]);
 
 function extractionErrorTitle(job: JobRecord | undefined): string {
   const type = job?.error_type ?? "";
@@ -99,6 +105,11 @@ export function EditorPage() {
             <p className="mt-2">
               <CheckForUpdatesLink />
             </p>
+          )}
+          {SETTINGS_FIXABLE.has(job.data?.error_type ?? "") && (
+            <div className="mt-3">
+              <OpenSettingsButton />
+            </div>
           )}
         </Alert>
       </div>

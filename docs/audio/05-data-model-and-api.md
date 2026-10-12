@@ -63,6 +63,49 @@ Project                            # the top-level container
 A **Project** is what the frontend loads and works against. It bundles the audio plus
 all derived data and the current edit state.
 
+## On-disk format and versioning
+
+Each project is a folder under the projects directory holding `project.json`,
+`audio/`, `exports/` and a cached `waveform.json`. `project.json` is the `Project` model
+dumped as JSON plus a top-level `schema_version` integer (currently **1**; files from
+before versioning have none and count as 0).
+
+- **Migrations** live in `models/migrations.py`: a registry of `version -> step`
+  functions applied in order on every load (v0 -> v1 fills the library name, timestamps
+  and `source_kind` that early files lack). The upgraded form is written on the next
+  save; the store always writes the current version, never an older one.
+- **Newer files are refused.** A `schema_version` above the app's is never loaded or
+  rewritten: `GET /projects/{id}` answers 409 `ProjectTooNewError` ("This project was
+  saved by a newer version of Sawt Sakinah. Update the app to open it."), and a damaged
+  file answers 422 `ProjectUnreadableError`.
+- **The library never breaks on one bad file.** `GET /projects` lists a project it
+  can't read with `unreadable` set to the reason (other fields are placeholders); it can
+  still be deleted.
+- **Writes are atomic**: a temp file and a replace, retried briefly while Windows
+  reports the target as open.
+- **Partial files** carry `.part` (or `.tmp`) in their name until complete, e.g.
+  `exports/<id>.part.mp3`.
+
+### Deleting, shutdown and the startup sweep
+
+- `DELETE /projects/{id}` closes the streams the server holds open on the project's
+  files, refuses new ones, and renames the folder to `.deleting-<id>-<suffix>` (retried
+  for about 1.5 s). On Windows the rename fails while any file inside is open, so a
+  project still in use (by another program, a virus scanner) answers 409
+  `ProjectInUseError` and is left untouched. After the rename the folder is removed; if
+  that fails it is already hidden from the library and the next start removes it.
+- **Shutdown** (closing the window) drops queued jobs, terminates the helper programs
+  (ffmpeg) running jobs started, and makes the next progress report raise, so jobs stop
+  and remove their partial outputs (an export's `.part` file, the folder of a project
+  that was still being imported or split) within `service.shutdown_grace_sec` (3 s).
+  Every job ends recorded as `JobCancelledError`; one still running after the budget is
+  left to the process exit. Partially downloaded models are kept, since downloads
+  resume.
+- **Startup sweep** (`ProjectStore.sweep`, before the first request): removes
+  `.deleting-*` folders, project folders without a `project.json` (an import that never
+  finished) and partial files inside projects. Leftovers modified in the last 10 minutes
+  are kept, in case another process sharing the data directory is still writing them.
+
 ## Async / job model (required)
 
 Extraction and ML detection are slow (seconds–minutes). The API must not block:
@@ -73,6 +116,8 @@ GET  /jobs/{job_id}            -> { state, progress, error? }
 GET  /projects/{id}            -> Project
 POST /projects/{id}/detect/silence   { params }        -> { job_id }
 POST /projects/{id}/detect/phrases   { params, refs }  -> { job_id }
+GET  /projects                 -> { projects: [ProjectSummary] }   # unreadable ones flagged
+DELETE /projects/{id}          -> 204, or 409 ProjectInUseError while files are locked
 GET  /projects/{id}/audio      -> audio stream (range requests for waveform/seek)
 GET  /projects/{id}/waveform   -> precomputed peaks (optional, for fast rendering)
 PUT  /projects/{id}/edl        { operations }          -> updated EDL
@@ -114,11 +159,21 @@ The service listens on localhost, so any web page the user opens can try to reac
 - **Body size**: every other request body is capped at 8 MiB (413
   `RequestTooLargeError`), checked from its `Content-Length` before the body is read. A
   body without `Content-Length` (chunked) gets 411.
+- **Response headers**: every response carries a Content Security Policy
+  (`service/security.py::CONTENT_SECURITY_POLICY`): `default-src 'self'`, scripts, fonts
+  and API calls from this origin only, images and media also from `blob:`/`data:`,
+  `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`.
+  Styles allow `'unsafe-inline'` because wavesurfer injects a `<style>` element into its
+  shadow DOM; inline scripts are refused. Also `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: no-referrer`. The dev Vite server serves the SPA without them.
 
 Request fields that reach file names, ffmpeg or model loading (`format`, `bitrate`,
 `audio_format`, `audio_quality`, `model_size`, `device`, `compute_type`, `detector`) are
 checked against allow-lists in `service/schemas.py`, and export paths must stay inside
-the project's exports folder.
+the project's exports folder. The YouTube cookies preferences are checked the same way:
+`cookies_browser` against a fixed browser allow-list (`GET /app/info` lists the ones
+offered on this OS), `cookies_file` as an absolute path to an existing local file (no
+network share); at most one is set.
 
 ## Contract discipline
 

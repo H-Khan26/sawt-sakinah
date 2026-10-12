@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import re
-
 from fastapi import HTTPException
 
-# ids are uuid4().hex (project) or hex digests (source); reject anything else so a
-# crafted id can never escape the project root via the filesystem.
-_HEX_ID = re.compile(r"^[0-9a-f]{8,64}$")
+from ..projects import PROJECT_ID
 
 
 def validate_id(value: str, kind: str = "id") -> str:
-    if not _HEX_ID.match(value):
+    """Reject anything but the store's id shape, so a crafted id never names a path
+    outside the project root."""
+    if not PROJECT_ID.fullmatch(value):
         raise HTTPException(status_code=400, detail=f"invalid {kind}")
     return value

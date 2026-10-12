@@ -10,12 +10,21 @@ them. State/progress is queried via :meth:`JobRegistry.get`, which returns a cop
 the lock. At most ``service.max_pending_jobs`` jobs may be pending or running at once;
 further submissions raise :class:`JobQueueFullError`. No Celery/Redis yet -- this is
 deliberately the simplest thing that gives handles, state, and progress.
+
+Shutdown (:meth:`JobRegistry.shutdown`) drops queued jobs, then stops running ones within a
+time budget: helper programs (ffmpeg) are terminated and the next progress report raises
+:class:`JobCancelledError`, so a job unwinds through its own cleanup (removing partial
+outputs) instead of being cut off mid-write. A terminal report (the job's own "done")
+never raises, so work that has already been committed is recorded as succeeded. A job
+still running when the budget runs out is recorded as cancelled and left to the process
+exit.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from enum import Enum
@@ -24,6 +33,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from .. import proc
 from ..config import CONFIG
 from ..models import JobCancelledError
 
@@ -77,9 +87,18 @@ def _failure(error: str, exc: BaseException) -> dict:
     return {"state": JobState.failed, "error": error, "error_type": type(exc).__name__}
 
 
+CANCELLED_MESSAGE = "The job was cancelled because the app was closing."
+
+
 def _cancelled() -> dict:
-    """The final state of a job dropped from the queue at shutdown."""
-    return _failure("The job was cancelled at shutdown.", JobCancelledError())
+    """The final state of a job stopped or dropped at shutdown."""
+    return _failure(CANCELLED_MESSAGE, JobCancelledError(CANCELLED_MESSAGE))
+
+
+def _is_terminal(payload: dict) -> bool:
+    """Whether ``payload`` is a job's closing report (workers end with ``status: done``,
+    the extraction pipeline with ``stage: done``)."""
+    return payload.get("status") == "done" or payload.get("stage") == "done"
 
 
 class JobRegistry:
@@ -95,6 +114,8 @@ class JobRegistry:
         self._max_pending = max_pending_jobs
         self._active = 0  # jobs submitted and not yet finished
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)  # notified when _active drops to 0
+        self._closing = threading.Event()
         self._pool = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix="sawt-job"
         )
@@ -166,7 +187,9 @@ class JobRegistry:
             result = fn(lambda payload: self.update_progress(job_id, payload))
             outcome = {"state": JobState.succeeded, "result": result or None}
         except BaseException as exc:  # noqa: BLE001 - the job's Future is never read
-            if isinstance(exc, Exception):
+            if isinstance(exc, JobCancelledError):
+                outcome = _cancelled()
+            elif isinstance(exc, Exception):
                 outcome = _failure(str(exc), exc)
             else:  # SystemExit, KeyboardInterrupt and the like
                 _log.exception("job %s stopped with %s", job_id, type(exc).__name__)
@@ -187,8 +210,23 @@ class JobRegistry:
         finally:
             with self._lock:
                 self._active -= 1
+                if self._active == 0:
+                    self._idle.notify_all()
+
+    @property
+    def closing(self) -> bool:
+        """True once :meth:`shutdown` has started."""
+        return self._closing.is_set()
 
     def update_progress(self, job_id: str, payload: dict) -> None:
+        """Record a progress payload. Raises :class:`JobCancelledError` during shutdown,
+        which is how a job that reports progress (a download) is stopped cooperatively.
+
+        A terminal report (``status`` or ``stage`` of ``"done"``) follows work the job has
+        already committed, so it is recorded and never raises.
+        """
+        if self._closing.is_set() and not _is_terminal(payload):
+            raise JobCancelledError(CANCELLED_MESSAGE)
         self._patch(job_id, progress=payload)
 
     def get(self, job_id: str) -> Optional[JobRecord]:
@@ -205,11 +243,34 @@ class JobRegistry:
                 setattr(record, key, value)
             record.updated_at = _now()
 
-    def shutdown(self) -> None:
-        """Drop queued jobs (recorded as failed) and return without waiting for running ones.
+    def shutdown(self, timeout: float = 0.0) -> None:
+        """Drop queued jobs and stop running ones, waiting at most ``timeout`` seconds.
 
-        The interpreter still joins the worker threads at exit, so without
-        ``cancel_futures`` every queued job would run first.
+        Queued jobs never start (``cancel_futures``; the interpreter would otherwise run
+        them all before exiting). With a ``timeout``, helper programs are terminated
+        (again every quarter second, in case a job started another one) until every job
+        has finished or the time is up; jobs still running then are recorded as cancelled
+        and end with the process.
         """
+        self._closing.set()
         self._pool.shutdown(wait=False, cancel_futures=True)
         self._phrase_pool.shutdown(wait=False, cancel_futures=True)
+        if timeout <= 0:
+            return
+        deadline = time.monotonic() + timeout
+        while True:
+            proc.terminate_all()
+            with self._lock:
+                remaining = deadline - time.monotonic()
+                if self._active == 0 or remaining <= 0:
+                    break
+                self._idle.wait(min(0.25, remaining))
+        with self._lock:
+            leftover = [
+                job_id
+                for job_id, record in self._jobs.items()
+                if record.state in (JobState.pending, JobState.running)
+            ]
+        for job_id in leftover:
+            _log.warning("job %s still running at exit; recording it as cancelled", job_id)
+            self._patch(job_id, **_cancelled())
