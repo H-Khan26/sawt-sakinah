@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes } from "react";
 import { forwardRef } from "react";
 import { WaveformLoader } from "./WaveformLoader";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "dome";
 export type ButtonSize = "sm" | "md";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -16,14 +16,20 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const BASE =
   "inline-flex items-center justify-center gap-2 rounded font-sans font-medium " +
   "transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 " +
-  "focus-visible:ring-border-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
-  "disabled:cursor-not-allowed disabled:opacity-50";
+  "focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+
+/** Focus ring for buttons on the page; `dome` sets its own for the dome ground. */
+const PAGE_RING = "focus-visible:ring-border-focus focus-visible:ring-offset-background";
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-white hover:bg-accent-hover",
-  secondary: "border border-border bg-background text-text hover:bg-background-secondary",
-  ghost: "bg-transparent text-accent hover:bg-accent-soft",
-  danger: "bg-danger text-white hover:brightness-95",
+  primary: `bg-accent text-accent-on hover:bg-accent-hover ${PAGE_RING}`,
+  secondary: `border border-border bg-surface text-text hover:bg-background-secondary ${PAGE_RING}`,
+  ghost: `bg-transparent text-accent hover:bg-accent-soft ${PAGE_RING}`,
+  danger: `bg-danger text-accent-on hover:brightness-95 ${PAGE_RING}`,
+  /** Outlined icon button for the header on the dome ground. */
+  dome:
+    "border border-dome-on/40 bg-transparent text-dome-on hover:bg-dome-on/10 " +
+    "focus-visible:ring-dome-on focus-visible:ring-offset-dome",
 };
 
 const SIZES: Record<ButtonSize, string> = {

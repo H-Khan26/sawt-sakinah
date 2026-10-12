@@ -9,7 +9,8 @@ import { RenameDialog } from "./RenameDialog";
  * In-editor project switcher: a collapsed button showing the current project name, expanding
  * to a popover that lists all projects (navigate between them), plus rows to start a new
  * project or return to the library. The current project's name is also the rename entry
- * point. Reads the name from props (the header pulls it from the project cache). Unreadable
+ * point. Sits on the dome ground of the editor bar and reads the name from props (the bar pulls
+ * it from the project cache). Unreadable
  * projects are listed but disabled, with the reason as their tooltip.
  */
 export function ProjectSwitcher({
@@ -51,7 +52,7 @@ export function ProjectSwitcher({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex max-w-[16rem] items-center gap-1.5 rounded px-2.5 py-1.5 font-serif text-lg text-background hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background sm:max-w-xs"
+        className="flex max-w-[16rem] items-center gap-1.5 rounded px-2.5 py-1.5 font-serif text-lg text-dome-on hover:bg-dome-on/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dome-on sm:max-w-xs"
       >
         <span className="truncate">{currentName}</span>
         <ChevronDown
@@ -63,7 +64,7 @@ export function ProjectSwitcher({
       {open && (
         <div
           role="menu"
-          className="absolute left-1/2 z-40 mt-2 w-72 -translate-x-1/2 overflow-hidden rounded-card border border-border bg-background text-text shadow-xl"
+          className="absolute left-1/2 z-40 mt-2 w-72 -translate-x-1/2 overflow-hidden rounded-card border border-border bg-surface text-text shadow-xl"
         >
           <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
             <span

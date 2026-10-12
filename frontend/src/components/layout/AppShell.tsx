@@ -1,18 +1,15 @@
-import { UpdateBanner } from "@/features/updates/UpdateBanner";
 import type { ReactNode } from "react";
-import { AppHeader } from "./AppHeader";
+import { useMatch } from "react-router-dom";
+import { EditorShell } from "./EditorShell";
+import { LibraryShell } from "./LibraryShell";
 
 /**
- * Minimal shell: a slim {@link AppHeader} (with the dismissible {@link UpdateBanner} under it
- * when a release is out) over a full-bleed main region that fills the remaining viewport
- * height. No sidebar — this is a single-document tool.
+ * Picks the layout for the current route: {@link EditorShell} for a recording (`/p/:projectId`),
+ * {@link LibraryShell} for the library and the new-recording flow.
  */
 export function AppShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-full flex-col">
-      <AppHeader />
-      <UpdateBanner />
-      <main className="min-h-0 flex-1 overflow-auto">{children}</main>
-    </div>
-  );
+  const editor = useMatch("/p/:projectId/*");
+  const projectId = editor?.params.projectId;
+  if (projectId) return <EditorShell projectId={projectId}>{children}</EditorShell>;
+  return <LibraryShell>{children}</LibraryShell>;
 }
