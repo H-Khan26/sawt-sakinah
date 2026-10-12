@@ -46,7 +46,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, NoReturn, Optional, Sequence
 
-from . import runtime
+from . import proc, runtime
 
 _log = logging.getLogger("sawt_sakinah.desktop")
 
@@ -419,7 +419,9 @@ def _exit_process(code: int) -> NoReturn:
 
     A job still running when the window closes (a Whisper transcription can't be
     interrupted) would otherwise keep a windowless process alive, running beside the next
-    launch. The service's shutdown has already stopped the helper programs it started.
+    launch. The service's shutdown has already stopped the helper programs it started; on
+    Windows the job object from :func:`proc.confine_children` ends any other child (the
+    ffmpeg yt-dlp runs itself) with the process.
     """
     _log.info("Sawt Sakinah exiting (code %s)", code)
     for stream in (sys.stdout, sys.stderr):
@@ -462,6 +464,7 @@ def _launch(args: argparse.Namespace, self_test: bool, show_boxes: bool, log_fil
         if data_dir_error is not None:
             raise StartupError(data_dir_error)
         _report_user_config(show_boxes)
+        proc.confine_children()
         if self_test:
             from .selftest import run_self_test
 

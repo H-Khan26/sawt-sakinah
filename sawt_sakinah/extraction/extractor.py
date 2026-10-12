@@ -101,6 +101,15 @@ def _make_download_hook(callback: Callable[[dict], None]) -> Callable[[dict], No
     return hook
 
 
+def _make_postprocessor_hook(callback: Callable[[dict], None]) -> Callable[[dict], None]:
+    """Report yt-dlp's post-processing (the transcode) as ``{stage: transcode, status}``."""
+
+    def hook(d: dict) -> None:
+        _emit(callback, stage="transcode", status=d.get("status"))
+
+    return hook
+
+
 class _YtdlpLogger:
     """Routes yt-dlp's console output to :mod:`logging` (a windowed build has no console)."""
 
@@ -400,6 +409,9 @@ def extract_audio(
         ydl_opts["js_runtimes"] = js_runtimes
     if progress_callback is not None:
         ydl_opts["progress_hooks"] = [_make_download_hook(progress_callback)]
+        # yt-dlp runs its own ffmpeg for the transcode; reporting before it starts lets a
+        # callback that cancels (the app closing) stop the job while nothing is being written.
+        ydl_opts["postprocessor_hooks"] = [_make_postprocessor_hook(progress_callback)]
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

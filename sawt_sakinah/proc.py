@@ -80,6 +80,85 @@ def run(
     return subprocess.CompletedProcess(args, returncode, stdout, stderr)
 
 
+_JOB_HANDLE = None  # keeps the Windows job object alive for the life of the process
+
+
+def confine_children() -> bool:
+    """On Windows, end every child process with this one.
+
+    Puts the process in a job object with ``KILL_ON_JOB_CLOSE``; children (including the
+    ffmpeg yt-dlp starts itself, which :func:`terminate_all` cannot see) inherit it and are
+    killed when the last handle closes at process exit. Returns whether it took effect; a
+    failure is logged and harmless. A no-op on other systems.
+    """
+    global _JOB_HANDLE
+    if os.name != "nt" or _JOB_HANDLE is not None:
+        return _JOB_HANDLE is not None
+    import ctypes
+    from ctypes import wintypes
+
+    class IoCounters(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_ulonglong) for name in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount",
+        )]
+
+    class BasicLimits(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+            ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class ExtendedLimits(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", BasicLimits),
+            ("IoInfo", IoCounters),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    job_object_extended_limit_information = 9
+    job_object_limit_kill_on_job_close = 0x2000
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    # Handles are 64-bit; without these declarations ctypes truncates them to int.
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+    kernel32.SetInformationJobObject.restype = wintypes.BOOL
+    kernel32.SetInformationJobObject.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD
+    ]
+    kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+    kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        _log.warning("could not create a job object (error %d)", ctypes.get_last_error())
+        return False
+    limits = ExtendedLimits()
+    limits.BasicLimitInformation.LimitFlags = job_object_limit_kill_on_job_close
+    ok = kernel32.SetInformationJobObject(
+        job, job_object_extended_limit_information, ctypes.byref(limits), ctypes.sizeof(limits)
+    ) and kernel32.AssignProcessToJobObject(job, kernel32.GetCurrentProcess())
+    if not ok:
+        _log.warning(
+            "children will not end with the app (job object error %d)", ctypes.get_last_error()
+        )
+        kernel32.CloseHandle(job)
+        return False
+    _JOB_HANDLE = job
+    return True
+
+
 def terminate_all() -> int:
     """Kill every helper program :func:`run` has running; returns how many.
 
@@ -97,4 +176,4 @@ def terminate_all() -> int:
     return len(live)
 
 
-__all__ = ["INPUT_PROTOCOLS", "ffmpeg_input", "run", "terminate_all"]
+__all__ = ["INPUT_PROTOCOLS", "confine_children", "ffmpeg_input", "run", "terminate_all"]

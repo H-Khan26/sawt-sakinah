@@ -14,8 +14,10 @@ deliberately the simplest thing that gives handles, state, and progress.
 Shutdown (:meth:`JobRegistry.shutdown`) drops queued jobs, then stops running ones within a
 time budget: helper programs (ffmpeg) are terminated and the next progress report raises
 :class:`JobCancelledError`, so a job unwinds through its own cleanup (removing partial
-outputs) instead of being cut off mid-write. Every job ends recorded as cancelled, and one
-that is still running when the budget runs out is left to the process exit.
+outputs) instead of being cut off mid-write. A terminal report (the job's own "done")
+never raises, so work that has already been committed is recorded as succeeded. A job
+still running when the budget runs out is recorded as cancelled and left to the process
+exit.
 """
 
 from __future__ import annotations
@@ -91,6 +93,12 @@ CANCELLED_MESSAGE = "The job was cancelled because the app was closing."
 def _cancelled() -> dict:
     """The final state of a job stopped or dropped at shutdown."""
     return _failure(CANCELLED_MESSAGE, JobCancelledError(CANCELLED_MESSAGE))
+
+
+def _is_terminal(payload: dict) -> bool:
+    """Whether ``payload`` is a job's closing report (workers end with ``status: done``,
+    the extraction pipeline with ``stage: done``)."""
+    return payload.get("status") == "done" or payload.get("stage") == "done"
 
 
 class JobRegistry:
@@ -179,8 +187,8 @@ class JobRegistry:
             result = fn(lambda payload: self.update_progress(job_id, payload))
             outcome = {"state": JobState.succeeded, "result": result or None}
         except BaseException as exc:  # noqa: BLE001 - the job's Future is never read
-            if self._closing.is_set():
-                outcome = _cancelled()  # whatever the stopped work raised on the way out
+            if isinstance(exc, JobCancelledError):
+                outcome = _cancelled()
             elif isinstance(exc, Exception):
                 outcome = _failure(str(exc), exc)
             else:  # SystemExit, KeyboardInterrupt and the like
@@ -212,8 +220,12 @@ class JobRegistry:
 
     def update_progress(self, job_id: str, payload: dict) -> None:
         """Record a progress payload. Raises :class:`JobCancelledError` during shutdown,
-        which is how a job that reports progress (a download) is stopped cooperatively."""
-        if self._closing.is_set():
+        which is how a job that reports progress (a download) is stopped cooperatively.
+
+        A terminal report (``status`` or ``stage`` of ``"done"``) follows work the job has
+        already committed, so it is recorded and never raises.
+        """
+        if self._closing.is_set() and not _is_terminal(payload):
             raise JobCancelledError(CANCELLED_MESSAGE)
         self._patch(job_id, progress=payload)
 
