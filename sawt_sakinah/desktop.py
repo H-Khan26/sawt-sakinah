@@ -468,6 +468,10 @@ def _launch(args: argparse.Namespace, self_test: bool, show_boxes: bool, log_fil
             raise StartupError(data_dir_error)
         _report_user_config(show_boxes)
         proc.confine_children()
+        # Decides which yt-dlp this process uses; runs here so its log lines reach the file.
+        from . import ytdlp_updates
+
+        ytdlp_updates.activate()
         if self_test:
             from .selftest import run_self_test
 

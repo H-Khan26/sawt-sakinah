@@ -45,7 +45,8 @@ from urllib.parse import urlsplit
 
 from . import __version__, runtime
 from .config import CONFIG
-from .fileio import replace_file
+from .extraction.hashing import content_hash
+from .fileio import read_json, write_json
 
 _log = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ PACKAGES = {"yt_dlp": "yt-dlp", "yt_dlp_ejs": "yt-dlp-ejs"}
 PLUGINS_DIR = "plugins"
 MANIFEST = "manifest.json"
 _STATE_FILE = "state.json"
-_MANIFEST_FORMAT = 1
+_MANIFEST_FORMAT = 2  # files carry sha256 + size + mtime_ns; older formats are re-downloaded
 
 _ALLOWED_HOSTS = frozenset({"pypi.org", "files.pythonhosted.org"})
 _PYPI = "https://pypi.org/pypi"
@@ -154,31 +155,16 @@ def _enabled() -> bool:
         return False
 
 
-def _read_json(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _write_json(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex[:8]}.tmp")
-    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    replace_file(tmp, path)
-
-
 def _state(root: Path) -> dict:
     with _STATE_LOCK:
-        return _read_json(root / _STATE_FILE)
+        return read_json(root / _STATE_FILE)
 
 
 def _update_state(root: Path, **changes: Any) -> dict:
     with _STATE_LOCK:
-        state = {**_read_json(root / _STATE_FILE), **changes}
+        state = {**read_json(root / _STATE_FILE), **changes}
         try:
-            _write_json(root / _STATE_FILE, state)
+            write_json(root / _STATE_FILE, state)
         except OSError as exc:
             _log.warning("could not save the yt-dlp update state: %s", exc)
         return state
@@ -212,14 +198,6 @@ def _installed_sets(root: Path) -> list[tuple[tuple, Path]]:
     return sorted(sets, key=lambda item: item[0], reverse=True)
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _safe_member(name: str) -> Optional[PurePosixPath]:
     """The relative path for a wheel member name, or ``None`` when it is unsafe."""
     if not name or name.startswith("/") or "\\" in name or ":" in name or "\x00" in name:
@@ -230,30 +208,43 @@ def _safe_member(name: str) -> Optional[PurePosixPath]:
     return PurePosixPath(*parts)
 
 
+def _file_entry(path: Path, digest: str) -> dict:
+    """A manifest entry: the file's SHA-256 plus the size and mtime it was written with."""
+    st = path.stat()
+    return {"sha256": digest, "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+
+
 def _load_manifest(set_dir: Path) -> dict:
-    """The set's manifest, after checking every listed file against its SHA-256."""
-    manifest = _read_json(set_dir / MANIFEST)
+    """The set's manifest, after checking every listed file.
+
+    A file whose size and mtime still match the manifest is trusted (the full hash was
+    checked against PyPI's digest when it was installed); one that changed is re-hashed.
+    That keeps a launch with a thousand-file set to a stat per file, not a read.
+    """
+    manifest = read_json(set_dir / MANIFEST)
     files = manifest.get("files")
     if manifest.get("format") != _MANIFEST_FORMAT or not isinstance(files, dict) or not files:
-        raise YtdlpUpdateError("the manifest is missing or invalid")
+        raise YtdlpUpdateError("the manifest is missing or outdated")
     if not isinstance(manifest.get("yt_dlp_ejs"), str):
         raise YtdlpUpdateError("the manifest names no yt-dlp-ejs version")
     if manifest.get("yt_dlp") != set_dir.name:
         raise YtdlpUpdateError("the manifest does not match its folder")
     root = set_dir.resolve()
-    for name, digest in files.items():
+    for name, entry in files.items():
         rel = _safe_member(name) if isinstance(name, str) else None
+        digest = entry.get("sha256") if isinstance(entry, dict) else None
         if rel is None or not isinstance(digest, str):
             raise YtdlpUpdateError(f"the manifest lists an invalid file: {name!r}")
         path = (set_dir / rel).resolve()
         if not path.is_relative_to(root):
             raise YtdlpUpdateError(f"the manifest lists a file outside the set: {name!r}")
         try:
-            actual = _sha256_file(path)
+            st = path.stat()
+            unchanged = st.st_size == entry.get("size") and st.st_mtime_ns == entry.get("mtime_ns")
+            if not unchanged and content_hash(path) != digest:
+                raise YtdlpUpdateError(f"{name} does not match its recorded SHA-256")
         except OSError as exc:
             raise YtdlpUpdateError(f"{name} is missing or unreadable ({exc})") from exc
-        if actual != digest:
-            raise YtdlpUpdateError(f"{name} does not match its recorded SHA-256")
     return manifest
 
 
@@ -324,25 +315,22 @@ def _activate() -> dict:
         return info
 
     bundled_key = version_key(bundled)
-    sets = _installed_sets(root)
-    for index, (key, set_dir) in enumerate(sets):
-        if index > 0 or (bundled_key is not None and key <= bundled_key):
-            _remove(set_dir)  # older than the newest set, or no newer than the bundled copy
+    failed: list[str] = []
+    # Newest first: the first set that verifies and imports is used; a newer one that fails
+    # is dropped and the next-newest tried, so one bad download never costs a working one.
+    for key, set_dir in _installed_sets(root):
+        if info["source"] == "updated" or (bundled_key is not None and key <= bundled_key):
+            _remove(set_dir)  # superseded by the set in use, or no newer than the bundled copy
             continue
         verified = False
         try:
             manifest = _load_manifest(set_dir)
             verified = True
             _import_set(set_dir, manifest)
-        except Exception as exc:  # noqa: BLE001 - any failure falls back to the bundled copy
+        except Exception as exc:  # noqa: BLE001 - any failure falls through to the next copy
             reason = f"{type(exc).__name__}: {exc}"
-            _log.error(
-                "yt-dlp update %s failed its check (%s); using the bundled %s",
-                set_dir.name,
-                reason,
-                bundled,
-            )
-            info["fallback"] = f"The downloaded yt-dlp {set_dir.name} failed to load: {reason}"
+            _log.error("yt-dlp update %s failed its check (%s)", set_dir.name, reason)
+            failed.append(f"The downloaded yt-dlp {set_dir.name} failed to load: {reason}")
             # Damaged files are downloaded again; a release that fails to import is skipped.
             if verified:
                 _mark_bad(root, set_dir.name)
@@ -355,6 +343,10 @@ def _activate() -> dict:
             path=str(set_dir),
         )
         _log.info("using the downloaded yt-dlp %s (bundled: %s)", manifest["yt_dlp"], bundled)
+    if failed:
+        using = info["version"] if info["source"] == "updated" else f"the bundled {bundled}"
+        info["fallback"] = f"{failed[0]}. Using {using}."
+        _log.warning("yt-dlp update: %s", info["fallback"])
     return info
 
 
@@ -466,10 +458,14 @@ def _wheel(files: Any, project: str, version: str) -> dict:
 
 
 def _pick_version(index: dict, channel: str, skip: set[str]) -> str:
-    """The newest yt-dlp version on ``channel`` with a usable wheel, not in ``skip``."""
+    """The newest yt-dlp version on ``channel`` with a usable wheel.
+
+    Nightly skips the versions in ``skip`` (they failed to load here before); stable has a
+    single candidate, so it is returned and the caller reports it as skipped.
+    """
     if channel == "stable":
         version = (index.get("info") or {}).get("version")
-        if version_key(version) is None or version in skip:
+        if version_key(version) is None:
             raise YtdlpUpdateError(f"PyPI reports no usable stable yt-dlp (got {version!r})")
         return version
     releases = index.get("releases")
@@ -523,18 +519,18 @@ def _download(wheel: dict, dest: Path, progress: Optional[ProgressFn], label: st
     return path
 
 
-def _unpack(wheel_path: Path, package: str, version: str, dest: Path) -> dict[str, str]:
+def _unpack(wheel_path: Path, package: str, version: str, dest: Path) -> dict[str, dict]:
     """Extract ``package/`` and its ``.dist-info`` from a verified wheel into ``dest``.
 
-    Returns ``{relative path: sha256}`` of the written files. A member with an unsafe
-    name, a symlink, or a top-level entry other than those two (or the wheel's ``.data``,
-    which is skipped) aborts the unpack.
+    Returns ``{relative path: manifest entry}`` of the written files (see
+    :func:`_file_entry`). A member with an unsafe name, a symlink, or a top-level entry
+    other than those two (or the wheel's ``.data``, which is skipped) aborts the unpack.
     """
     dist = f"{package}-{version}"  # the wheel's dist-info stem matches the import name
     allowed = {package, f"{dist}.dist-info"}
     skipped = f"{dist}.data"
     root = dest.resolve()
-    files: dict[str, str] = {}
+    files: dict[str, dict] = {}
     written = 0
     with zipfile.ZipFile(wheel_path) as zf:
         for info in zf.infolist():
@@ -565,7 +561,7 @@ def _unpack(wheel_path: Path, package: str, version: str, dest: Path) -> dict[st
                         raise YtdlpUpdateError(f"{wheel_path.name} unpacks to too much data")
                     digest.update(chunk)
                     out.write(chunk)
-            files[key] = digest.hexdigest()
+            files[key] = _file_entry(target, digest.hexdigest())
     if not any(key.startswith(f"{package}/") for key in files):
         raise YtdlpUpdateError(f"{wheel_path.name} holds no {package} package")
     return files
@@ -592,6 +588,8 @@ def _install_latest(root: Path, progress: Optional[ProgressFn]) -> dict:
     if progress is not None:
         progress({"stage": "check", "channel": channel})
     version = _pick_version(_get_json(f"{_PYPI}/yt-dlp/json"), channel, skip)
+    if version in skip:
+        return {"status": "skipped", "latest": version, "channel": channel}
 
     # Newer than the bundled copy, the one in use and any set already waiting.
     known = [active.get("bundled_version"), active.get("version")]
@@ -613,14 +611,14 @@ def _install_latest(root: Path, progress: Optional[ProgressFn]) -> dict:
     tree = staging / "tree"
     try:
         tree.mkdir(parents=True)
-        files: dict[str, str] = {}
+        files: dict[str, dict] = {}
         for package, wheel, pkg_version in (
             ("yt_dlp", ytdlp_wheel, version),
             ("yt_dlp_ejs", ejs_wheel, ejs_version),
         ):
             path = _download(wheel, staging, progress, PACKAGES[package])
             files.update(_unpack(path, package, pkg_version, tree))
-        _write_json(
+        write_json(
             tree / MANIFEST,
             {
                 "format": _MANIFEST_FORMAT,
@@ -654,8 +652,9 @@ def _install_latest(root: Path, progress: Optional[ProgressFn]) -> dict:
 def check_and_install(progress: Optional[ProgressFn] = None) -> dict:
     """Download the newest yt-dlp when it is newer than every copy present.
 
-    Returns ``{"status": "installed" | "up_to_date", "latest", ...}``. The new copy is
-    used from the next launch. Raises :class:`YtdlpUpdateError` on failure (also
+    Returns ``{"status": "installed" | "up_to_date" | "skipped", "latest", ...}``
+    (``skipped``: the newest release failed to load here before). The new copy is used
+    from the next launch. Raises :class:`YtdlpUpdateError` on failure (also
     recorded for :func:`status`), :class:`YtdlpUpdateBusyError` while another check runs.
     """
     if not _CHECK_LOCK.acquire(blocking=False):
