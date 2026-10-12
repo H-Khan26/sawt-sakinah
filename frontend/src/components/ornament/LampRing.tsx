@@ -44,7 +44,9 @@ export function LampRing({ geometry: g, className }: LampRingProps) {
           fill={`url(#${base}-pool)`}
         />
       </g>
-      <path className="d-soft" d={g.hoopBack} opacity={g.backOpacity} />
+      <g opacity={g.backOpacity}>
+        <path className="d-soft" d={g.hoopBack} />
+      </g>
       <path className="d-line" d={g.hoopFront} />
       {g.lamps.map((lamp) => (
         <g key={lamp.angle} transform={`translate(${lamp.x} ${lamp.y})`} opacity={lamp.opacity}>

@@ -61,7 +61,8 @@ function Gradient({ gradient, id }: { gradient: DomeGradient; id: string }) {
 
 /**
  * The dome rosette seen from below, drawn in units of R and placed by `transform`. Fills its
- * container; strokes stay 1 px at any scale. Windows, band and the whole fade independently.
+ * positioned container; strokes stay 1 px at any scale. Windows, band and the whole fade
+ * independently.
  */
 export function DomeRosette({
   transform,

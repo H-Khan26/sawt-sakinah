@@ -1,8 +1,14 @@
 /* Ornament colours: every fill and stroke comes from a theme token. */
 
-/* Dome rosette and lamp ring (DomeRosette, LampRing). */
+/* Dome rosette and lamp ring (DomeRosette, LampRing): each fills its positioned stage, whose
+   top-left corner is the origin of the builders' pixel coordinates. */
 .dome-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   overflow: visible;
+  pointer-events: none;
 }
 .dome-art * {
   vector-effect: non-scaling-stroke;
