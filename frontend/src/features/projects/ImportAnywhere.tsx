@@ -2,6 +2,7 @@ import { useCreateProject, useUploadProject } from "@/api/hooks";
 import { CetvelFrame } from "@/components/ornament";
 import { Progress, useToast } from "@/components/ui";
 import { isLikelyYouTubeUrl } from "@/lib/youtube";
+import { useIsMutating } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useOpenImport } from "./useOpenImport";
 
@@ -20,9 +21,10 @@ function isEditable(el: Element | null): boolean {
  * YouTube link while no field has focus starts its extraction; either opens the editor on the new
  * job. Shows a "Drop to import" overlay while a file is dragged over the window, and an importing
  * overlay until the editor opens. A drop that something else already handled (`preventDefault`,
- * e.g. the New recording sheet's drop zone) is left alone.
+ * e.g. the New recording sheet's drop zone) is left alone, and nothing new starts while another
+ * import or change is in flight. `paused` (a dialog is open) turns it all off.
  */
-export function ImportAnywhere() {
+export function ImportAnywhere({ paused = false }: { paused?: boolean }) {
   const upload = useUploadProject();
   const create = useCreateProject();
   const openImport = useOpenImport();
@@ -30,9 +32,12 @@ export function ImportAnywhere() {
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState(0);
   const busy = upload.isPending || create.isPending;
+  // Counts every mutation in flight, including an import the sheet started.
+  const mutating = useIsMutating();
+  const blocked = paused || mutating > 0;
 
   const importFile = (file: File) => {
-    if (busy) return;
+    if (blocked) return;
     setProgress(0);
     upload.mutate(
       { file, onProgress: setProgress },
@@ -44,7 +49,7 @@ export function ImportAnywhere() {
   };
 
   const importUrl = (url: string) => {
-    if (busy) return;
+    if (blocked) return;
     create.mutate(
       { url },
       {
@@ -55,8 +60,8 @@ export function ImportAnywhere() {
   };
 
   // The window listeners bind once and call the latest handlers through this ref.
-  const handlers = useRef({ importFile, importUrl });
-  handlers.current = { importFile, importUrl };
+  const handlers = useRef({ importFile, importUrl, paused });
+  handlers.current = { importFile, importUrl, paused };
 
   useEffect(() => {
     let depth = 0;
@@ -65,7 +70,7 @@ export function ImportAnywhere() {
     const onDragEnter = (e: DragEvent) => {
       if (!hasFiles(e)) return;
       depth += 1;
-      setDragging(true);
+      if (!handlers.current.paused) setDragging(true);
     };
     const onDragLeave = (e: DragEvent) => {
       if (!hasFiles(e)) return;
@@ -86,7 +91,7 @@ export function ImportAnywhere() {
       if (file) handlers.current.importFile(file);
     };
     const onPaste = (e: ClipboardEvent) => {
-      if (isEditable(document.activeElement)) return;
+      if (handlers.current.paused || isEditable(document.activeElement)) return;
       const text = e.clipboardData?.getData("text/plain").trim() ?? "";
       if (!isLikelyYouTubeUrl(text)) return;
       e.preventDefault();
@@ -107,13 +112,15 @@ export function ImportAnywhere() {
     };
   }, []);
 
-  if (!dragging && !busy) return null;
+  if (!busy && !(dragging && !paused)) return null;
 
   return (
+    // While importing it sits above any open sheet (z-50) and blocks it; while dragging it sits
+    // below, so the sheet's own drop zone stays visible.
     <div
       className={
         busy
-          ? "fixed inset-0 z-40 grid place-items-center bg-scrim p-6"
+          ? "fixed inset-0 z-[60] grid place-items-center bg-scrim p-6"
           : "pointer-events-none fixed inset-0 z-40 grid place-items-center bg-scrim p-6"
       }
     >

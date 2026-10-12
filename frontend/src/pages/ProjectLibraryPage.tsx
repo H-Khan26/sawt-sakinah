@@ -162,7 +162,7 @@ export function ProjectLibraryPage({ newSheet = false }: { newSheet?: boolean })
           ))}
       </div>
 
-      <ImportAnywhere />
+      <ImportAnywhere paused={dialog !== null} />
       {newSheet && <NewRecordingSheet onClose={() => navigate("/")} />}
 
       {dialog?.kind === "rename" && (
