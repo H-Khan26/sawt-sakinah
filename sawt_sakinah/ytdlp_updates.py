@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import importlib.machinery
+import importlib.metadata
 import importlib.util
 import json
 import logging
@@ -47,6 +48,7 @@ from . import __version__, runtime
 from .config import CONFIG
 from .extraction.hashing import content_hash
 from .fileio import read_json, write_json
+from .models.errors import JobCancelledError
 
 _log = logging.getLogger(__name__)
 
@@ -79,17 +81,12 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 ProgressFn = Callable[[dict], None]
 
 _ACTIVATE_LOCK = threading.Lock()
-_CHECK_LOCK = threading.Lock()
 _STATE_LOCK = threading.Lock()
 _active: Optional[dict] = None
 
 
 class YtdlpUpdateError(Exception):
     """A check or install failed (network, PyPI data, integrity or disk)."""
-
-
-class YtdlpUpdateBusyError(YtdlpUpdateError):
-    """Another check is already running."""
 
 
 # -- versions ---------------------------------------------------------------------------
@@ -229,15 +226,13 @@ def _load_manifest(set_dir: Path) -> dict:
         raise YtdlpUpdateError("the manifest names no yt-dlp-ejs version")
     if manifest.get("yt_dlp") != set_dir.name:
         raise YtdlpUpdateError("the manifest does not match its folder")
-    root = set_dir.resolve()
     for name, entry in files.items():
+        # _safe_member admits only plain relative paths, so the join stays inside the set.
         rel = _safe_member(name) if isinstance(name, str) else None
         digest = entry.get("sha256") if isinstance(entry, dict) else None
         if rel is None or not isinstance(digest, str):
             raise YtdlpUpdateError(f"the manifest lists an invalid file: {name!r}")
-        path = (set_dir / rel).resolve()
-        if not path.is_relative_to(root):
-            raise YtdlpUpdateError(f"the manifest lists a file outside the set: {name!r}")
+        path = set_dir / rel
         try:
             st = path.stat()
             unchanged = st.st_size == entry.get("size") and st.st_mtime_ns == entry.get("mtime_ns")
@@ -287,9 +282,21 @@ def _import_set(set_dir: Path, manifest: dict) -> None:
         raise
 
 
-def _activate() -> dict:
+def _bundled_ejs_version() -> Optional[str]:
+    """The bundled yt-dlp-ejs version without importing the package (that would pin the
+    bundled copy before a downloaded set can take its place)."""
+    version = _read_module_attr("yt_dlp_ejs", "_version", "version")
+    if version is None:
+        try:
+            version = importlib.metadata.version("yt-dlp-ejs")
+        except importlib.metadata.PackageNotFoundError:
+            return None
+    return version
+
+
+def _activate(prune: bool) -> dict:
     bundled = _read_module_attr("yt_dlp", "version", "__version__")
-    bundled_ejs = _read_module_attr("yt_dlp_ejs", "_version", "version")
+    bundled_ejs = _bundled_ejs_version()
     info: dict[str, Any] = {
         "source": "bundled",
         "version": bundled,
@@ -305,10 +312,14 @@ def _activate() -> dict:
         return info
 
     root = plugins_dir()
-    for leftover in root.glob(".staging-*"):  # a check cut short by the app closing
-        _remove(leftover)
+    # Only the app's primary instance prunes: a second launch, the CLI or a self-test must
+    # not delete what the running app is using or writing.
+    remove = _remove if prune else (lambda path: None)
+    if prune:
+        for leftover in root.glob(".staging-*"):  # a check cut short by the app closing
+            _remove(leftover)
     if not _enabled():
-        if any(root.glob("*/" + MANIFEST)):
+        if prune and any(root.glob("*/" + MANIFEST)):
             _log.info("yt-dlp updates are off; removing the downloaded copies")
             for _, set_dir in _installed_sets(root):
                 _remove(set_dir)
@@ -320,7 +331,7 @@ def _activate() -> dict:
     # is dropped and the next-newest tried, so one bad download never costs a working one.
     for key, set_dir in _installed_sets(root):
         if info["source"] == "updated" or (bundled_key is not None and key <= bundled_key):
-            _remove(set_dir)  # superseded by the set in use, or no newer than the bundled copy
+            remove(set_dir)  # superseded by the set in use, or no newer than the bundled copy
             continue
         verified = False
         try:
@@ -334,7 +345,7 @@ def _activate() -> dict:
             # Damaged files are downloaded again; a release that fails to import is skipped.
             if verified:
                 _mark_bad(root, set_dir.name)
-            _remove(set_dir)
+            remove(set_dir)
             continue
         info.update(
             source="updated",
@@ -350,19 +361,21 @@ def _activate() -> dict:
     return info
 
 
-def activate() -> dict:
+def activate(prune: bool = False) -> dict:
     """Make a verified, newer downloaded yt-dlp importable ahead of the bundled one.
 
     Runs once per process (later calls return the first result) and must run before
-    ``yt_dlp`` is imported. Returns the active copy: ``source`` (``bundled`` or
-    ``updated``), ``version``, ``ejs_version``, ``path``, the bundled versions, and
-    ``fallback`` (why a downloaded copy was not used, else ``None``).
+    ``yt_dlp`` is imported. With ``prune`` (the desktop app once it holds the single-instance
+    lock) it also removes superseded, failed and switched-off downloads; other callers only
+    choose. Returns the active copy: ``source`` (``bundled`` or ``updated``), ``version``,
+    ``ejs_version``, ``path``, the bundled versions, and ``fallback`` (why a downloaded
+    copy was not used, else ``None``).
     """
     global _active
     with _ACTIVATE_LOCK:
         if _active is None:
             try:
-                _active = _activate()
+                _active = _activate(prune)
             except Exception:  # noqa: BLE001 - the bundled copy must always remain usable
                 _log.exception("yt-dlp update activation failed")
                 _active = {"source": "bundled", "version": None, "fallback": "activation failed"}
@@ -654,27 +667,25 @@ def check_and_install(progress: Optional[ProgressFn] = None) -> dict:
 
     Returns ``{"status": "installed" | "up_to_date" | "skipped", "latest", ...}``
     (``skipped``: the newest release failed to load here before). The new copy is used
-    from the next launch. Raises :class:`YtdlpUpdateError` on failure (also
-    recorded for :func:`status`), :class:`YtdlpUpdateBusyError` while another check runs.
+    from the next launch. Raises :class:`YtdlpUpdateError` on failure (also recorded for
+    :func:`status`). One check runs at a time: the service's route hands out the running
+    job instead of starting another.
     """
-    if not _CHECK_LOCK.acquire(blocking=False):
-        raise YtdlpUpdateBusyError("A yt-dlp update check is already running.")
+    root = plugins_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    now = time.time()
     try:
-        root = plugins_dir()
-        root.mkdir(parents=True, exist_ok=True)
-        now = time.time()
-        try:
-            result = _install_latest(root, progress)
-        except Exception as exc:
-            _log.warning("yt-dlp update check failed: %s", exc)
-            _update_state(root, failed_at=now, error=str(exc))
-            if isinstance(exc, YtdlpUpdateError):
-                raise
-            raise YtdlpUpdateError(str(exc)) from exc
-        _update_state(root, checked_at=now, failed_at=None, error=None, latest=result["latest"])
-        return result
-    finally:
-        _CHECK_LOCK.release()
+        result = _install_latest(root, progress)
+    except JobCancelledError:
+        raise  # the app is closing; not a failed check
+    except Exception as exc:
+        _log.warning("yt-dlp update check failed: %s", exc)
+        _update_state(root, failed_at=now, error=str(exc))
+        if isinstance(exc, YtdlpUpdateError):
+            raise
+        raise YtdlpUpdateError(str(exc)) from exc
+    _update_state(root, checked_at=now, failed_at=None, error=None, latest=result["latest"])
+    return result
 
 
 def status() -> dict:
@@ -706,7 +717,6 @@ def status() -> dict:
 
 
 __all__ = [
-    "YtdlpUpdateBusyError",
     "YtdlpUpdateError",
     "activate",
     "import_yt_dlp",

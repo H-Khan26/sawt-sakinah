@@ -39,7 +39,7 @@ export function YtdlpUpdateSection() {
   // one started from the button, so the status never shows a stale failure while it runs.
   const launchJobId = info?.check_job_id ?? undefined;
   useEffect(() => {
-    if (launchJobId && !jobId) setJobId(launchJobId);
+    if (launchJobId && launchJobId !== jobId) setJobId(launchJobId);
   }, [launchJobId, jobId]);
   const job = useJob(jobId);
   const state = job.data?.state;

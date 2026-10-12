@@ -65,10 +65,6 @@ def _cache_path() -> Path:
     return runtime.data_dir() / _CACHE_FILE
 
 
-def _read_cache(path: Path) -> dict:
-    return read_json(path)
-
-
 def _write_cache(path: Path, data: dict) -> None:
     try:
         write_json(path, data, indent=None)
@@ -133,7 +129,7 @@ def check_for_update(force: bool = False) -> UpdateStatus:
     interval = CONFIG.app.update_check_interval_hours * 3600.0
     path = _cache_path()
     with _LOCK:
-        cache = _read_cache(path)
+        cache = read_json(path)
         if cache.get("repo") != repo:
             cache = {}
         now = time.time()

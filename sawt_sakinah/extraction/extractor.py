@@ -38,8 +38,6 @@ from .finalize import emit as _emit
 from .finalize import finalize_source
 from .validate import normalize_url
 
-# The bundled yt-dlp, or an opted-in, verified newer download put ahead of it.
-
 _log = logging.getLogger(__name__)
 
 #: Output stem for downloads. A fixed short name keeps paths under Windows' 260-character

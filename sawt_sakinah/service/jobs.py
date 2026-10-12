@@ -168,6 +168,7 @@ class JobRegistry:
         Raises:
             JobQueueFullError: If ``max_pending_jobs`` jobs are already pending or running.
         """
+        executor = self._pools[pool]  # an unknown pool name fails before anything is recorded
         job_id = uuid4().hex
         record = JobRecord(id=job_id, kind=kind, project_id=project_id)
         with self._lock:
@@ -175,7 +176,6 @@ class JobRegistry:
                 raise self._full_error()
             self._active += 1
             self._jobs[job_id] = record
-        executor = self._pools[pool]
         try:
             future = executor.submit(self._run, job_id, fn, on_finish)
         except BaseException:
