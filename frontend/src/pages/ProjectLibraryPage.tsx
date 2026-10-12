@@ -3,6 +3,7 @@ import { ArchToggleIcon, Lattice, ListIcon, Niche } from "@/components/ornament"
 import { Alert, Button, Input, SegmentedControl, WaveformLoader } from "@/components/ui";
 import { DeleteDialog } from "@/features/projects/DeleteDialog";
 import { FihristList } from "@/features/projects/FihristList";
+import { ImportAnywhere } from "@/features/projects/ImportAnywhere";
 import { NewRecordingSheet } from "@/features/projects/NewRecordingSheet";
 import { NicheCard } from "@/features/projects/NicheCard";
 import { RenameDialog } from "@/features/projects/RenameDialog";
@@ -26,8 +27,8 @@ const VIEW_OPTIONS = [
  * The library, set on the qibla wall: the star lattice fades in below the header, behind a
  * heading row (title and count, search from 12 recordings, view toggle, New recording) and the
  * recordings, most recently edited first (server-sorted), as an arcade of niches or a fihrist
- * list. With `newSheet` (the `/new` route) the New recording sheet is open over it and closes
- * to `/`.
+ * list. Files dropped and YouTube links pasted anywhere on the page import straight away. With
+ * `newSheet` (the `/new` route) the New recording sheet is open over it and closes to `/`.
  */
 export function ProjectLibraryPage({ newSheet = false }: { newSheet?: boolean }) {
   const navigate = useNavigate();
@@ -161,6 +162,7 @@ export function ProjectLibraryPage({ newSheet = false }: { newSheet?: boolean })
           ))}
       </div>
 
+      <ImportAnywhere />
       {newSheet && <NewRecordingSheet onClose={() => navigate("/")} />}
 
       {dialog?.kind === "rename" && (
