@@ -15,7 +15,7 @@
  * `controller`; the source<->edited mapping lives here and in `timeMap.ts` alone.
  */
 import { audioUrl } from "@/api/endpoints";
-import { waveformColors } from "@/lib/themeColors";
+import { useThemeColors } from "@/lib/themeColors";
 import { formatClock, formatTimelineTime } from "@/lib/time";
 import { ZOOM_MAX, clampZoom, usePlaybackStore } from "@/stores/playbackStore";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
@@ -85,6 +85,12 @@ export function useWaveformEngine({
   const [regions, setRegions] = useState<RegionsPlugin | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+
+  const { waveformColors } = useThemeColors();
+  const colorsRef = useRef(waveformColors);
+  colorsRef.current = waveformColors;
+  /** The colours the live renderer was last given. */
+  const appliedColorsRef = useRef<typeof waveformColors | null>(null);
 
   const rate = usePlaybackStore((s) => s.rate);
   const zoom = usePlaybackStore((s) => s.zoom);
@@ -183,14 +189,15 @@ export function useWaveformEngine({
     setIsReady(false);
     setError(null);
     const regionsPlugin = RegionsPlugin.create();
+    const colors = colorsRef.current;
 
     const ws = WaveSurfer.create({
       container: el,
       peaks: toWavesurferPeaks(first),
       duration: first.duration,
-      waveColor: waveformColors.unplayed,
-      progressColor: waveformColors.played,
-      cursorColor: waveformColors.cursor,
+      waveColor: colors.unplayed,
+      progressColor: colors.played,
+      cursorColor: colors.cursor,
       cursorWidth: 2,
       barWidth: 1,
       barGap: 1,
@@ -204,17 +211,20 @@ export function useWaveformEngine({
           formatTimeCallback: (sec) => formatTimelineTime(sec, renderRef.current?.duration ?? sec),
           style: { color: "var(--color-text-tertiary)", fontSize: "13px" },
         }),
+        // The hover line and label are DOM elements, so they take the tokens directly and follow
+        // a theme change without being re-applied.
         HoverPlugin.create({
-          lineColor: waveformColors.hover,
+          lineColor: "var(--waveform-hover)",
           lineWidth: 1,
-          labelColor: "#ffffff",
-          labelBackground: waveformColors.hover,
+          labelColor: "var(--waveform-hover-label)",
+          labelBackground: "var(--waveform-hover)",
           formatTimeCallback: formatClock,
         }),
         regionsPlugin,
       ],
     });
     wsRef.current = ws;
+    appliedColorsRef.current = colors;
     lastLoadedRef.current = first;
     setWavesurfer(ws);
     setRegions(regionsPlugin);
@@ -270,6 +280,18 @@ export function useWaveformEngine({
       // A newer load / destroy superseded this one; ignore.
     });
   }, [render, isReady]);
+
+  // Re-apply the canvas colours when the theme changes.
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws || appliedColorsRef.current === waveformColors) return;
+    appliedColorsRef.current = waveformColors;
+    ws.setOptions({
+      waveColor: waveformColors.unplayed,
+      progressColor: waveformColors.played,
+      cursorColor: waveformColors.cursor,
+    });
+  }, [waveformColors]);
 
   // Apply store-driven zoom to the live renderer.
   useEffect(() => {

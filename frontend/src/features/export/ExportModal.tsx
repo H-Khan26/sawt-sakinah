@@ -28,7 +28,7 @@ const SELECT_CLASS =
   "h-10 rounded border border-border bg-background px-3 text-base text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50";
 
 const DOWNLOAD_LINK_CLASS =
-  "inline-flex h-10 items-center justify-center gap-2 rounded bg-accent px-4 text-base font-medium text-white transition-colors duration-fast hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  "inline-flex h-10 items-center justify-center gap-2 rounded bg-accent px-4 text-base font-medium text-accent-on transition-colors duration-fast hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 export function ExportModal({
   project,

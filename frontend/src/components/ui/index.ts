@@ -19,6 +19,8 @@ export type { PanelSectionProps } from "./PanelSection";
 export { Progress } from "./Progress";
 export type { ProgressProps } from "./Progress";
 export { WorkbenchPanel } from "./WorkbenchPanel";
+export { SegmentedControl } from "./SegmentedControl";
+export type { SegmentedControlProps, SegmentedOption } from "./SegmentedControl";
 export { RangeSlider, Slider } from "./Slider";
 export type { RangeSliderProps, SliderProps } from "./Slider";
 export { Tabs } from "./Tabs";

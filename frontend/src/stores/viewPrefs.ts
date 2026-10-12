@@ -13,11 +13,20 @@
  * highlighted in place, for inspecting or restoring cuts.
  *
  * `silenceDetector` is the silence-detection mode last chosen in the silence panel.
+ *
+ * `theme` is the colour theme (`system` follows the OS; see `src/theme/theme.ts`), `landing`
+ * whether the app opens under the dome, and `libraryView` the library's layout.
  */
 import { patchPreferences, queryKeys } from "@/api/endpoints";
 import { usePreferences } from "@/api/hooks";
 import { queryClient } from "@/lib/queryClient";
-import type { AppPreferences, PreferencesPatch, SilenceDetector } from "@/types/api";
+import type {
+  AppPreferences,
+  LibraryView,
+  PreferencesPatch,
+  SilenceDetector,
+  ThemePreference,
+} from "@/types/api";
 import { useEffect } from "react";
 import { create } from "zustand";
 
@@ -27,7 +36,16 @@ interface ViewPrefsState {
   toggleShowDeleted: () => void;
   silenceDetector: SilenceDetector;
   setSilenceDetector: (v: SilenceDetector) => void;
+  theme: ThemePreference;
+  setTheme: (v: ThemePreference) => void;
+  landing: boolean;
+  setLanding: (v: boolean) => void;
+  libraryView: LibraryView;
+  setLibraryView: (v: LibraryView) => void;
 }
+
+const THEMES: readonly ThemePreference[] = ["system", "day", "night"];
+const LIBRARY_VIEWS: readonly LibraryView[] = ["icons", "list"];
 
 /** Keys the user changed before the initial load landed; hydration must not overwrite them. */
 const touched = new Set<keyof PreferencesPatch>();
@@ -61,6 +79,21 @@ export const useViewPrefs = create<ViewPrefsState>()((set, get) => ({
     set({ silenceDetector });
     save({ silence_detector: silenceDetector });
   },
+  theme: "system",
+  setTheme: (theme) => {
+    set({ theme });
+    save({ theme });
+  },
+  landing: true,
+  setLanding: (landing) => {
+    set({ landing });
+    save({ landing });
+  },
+  libraryView: "icons",
+  setLibraryView: (libraryView) => {
+    set({ libraryView });
+    save({ library_view: libraryView });
+  },
 }));
 
 function hydrate(prefs: AppPreferences) {
@@ -73,6 +106,11 @@ function hydrate(prefs: AppPreferences) {
     (prefs.silence_detector === "vad" || prefs.silence_detector === "ffmpeg")
   ) {
     next.silenceDetector = prefs.silence_detector;
+  }
+  if (!touched.has("theme") && THEMES.includes(prefs.theme)) next.theme = prefs.theme;
+  if (!touched.has("landing")) next.landing = prefs.landing;
+  if (!touched.has("library_view") && LIBRARY_VIEWS.includes(prefs.library_view)) {
+    next.libraryView = prefs.library_view;
   }
   useViewPrefs.setState(next);
 }

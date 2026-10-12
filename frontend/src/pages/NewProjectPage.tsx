@@ -152,7 +152,7 @@ function UploadForm({ onReady }: ReadyHandler) {
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-60 ${
-          dragging ? "border-accent bg-accent/5" : "border-border hover:border-border-focus"
+          dragging ? "border-accent bg-accent-soft" : "border-border hover:border-border-focus"
         }`}
       >
         <UploadCloud size={28} className="text-text-tertiary" />

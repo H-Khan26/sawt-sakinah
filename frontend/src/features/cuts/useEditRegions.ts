@@ -10,7 +10,7 @@
  */
 import { activeSilences } from "@/features/silence/active";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
-import { selectionColors } from "@/lib/themeColors";
+import { useThemeColors } from "@/lib/themeColors";
 import { useEditStore } from "@/stores/editStore";
 import type { EditOperation, SilenceSegment } from "@/types/api";
 import { useEffect, useMemo, useRef } from "react";
@@ -22,13 +22,15 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
   const selectedIds = useEditStore((s) => s.selectedIds);
   const selectionStart = useEditStore((s) => s.selectionStart);
   const selectionEnd = useEditStore((s) => s.selectionEnd);
+  const colors = useThemeColors();
 
   // Draw only the silence that survives manual cuts; classify manual cuts against that same
   // active set so a removed clipped-silence isn't also drawn as a manual-cut region.
   const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
   const cuts = useMemo(() => manualCuts(ops, active), [ops, active]);
 
-  // Reconcile overlays whenever the inputs, the selection, or the mapping change (once laid out).
+  // Reconcile overlays whenever the inputs, the selection, the mapping or the theme's colours
+  // change (once laid out).
   useEffect(() => {
     if (!regions || !isReady) return;
     reconcileEditRegions(regions, {
@@ -38,9 +40,10 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
       selectionStart,
       selectionEnd,
       timeMap,
+      colors,
     });
     return () => regions.clearRegions();
-  }, [regions, isReady, active, cuts, selectedIds, selectionStart, selectionEnd, timeMap]);
+  }, [regions, isReady, active, cuts, selectedIds, selectionStart, selectionEnd, timeMap, colors]);
 
   // Click a region -> select it (silence/cut) and seek there. Region coordinates are edited-time,
   // so invert through the map to seek in source time. Read store actions via getState to avoid
@@ -56,12 +59,14 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
     });
   }, [regions, controller, timeMap]);
 
-  // Enable drag-to-select once per plugin instance. Kept separate from the reconcile/handler
-  // effects so an in-progress drag is never torn down by a state change mid-gesture.
+  // Enable drag-to-select once per plugin instance (and again for a new theme's colour). Kept
+  // separate from the reconcile/handler effects so an in-progress drag is never torn down by a
+  // state change mid-gesture.
+  const selectionFill = colors.selectionColors.fill;
   useEffect(() => {
     if (!regions || !isReady) return;
-    return regions.enableDragSelection({ color: selectionColors.fill });
-  }, [regions, isReady]);
+    return regions.enableDragSelection({ color: selectionFill });
+  }, [regions, isReady, selectionFill]);
 
   // Bridge Regions-plugin gestures back to the source-time selection store. `timeMap` is read
   // through a ref so these subscribe once (a fresh map mid-drag must not resubscribe). Both

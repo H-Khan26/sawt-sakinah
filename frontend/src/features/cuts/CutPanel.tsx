@@ -10,7 +10,7 @@ import { activeSilences } from "@/features/silence/active";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import type { TimeMap } from "@/features/waveform/timeMap";
 import { cn } from "@/lib/cn";
-import { cutColors, selectionColors, silenceColors } from "@/lib/themeColors";
+import { useThemeColors } from "@/lib/themeColors";
 import { formatClock, formatClockPrecise, parseClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
 import type { EditOperation, ProjectView } from "@/types/api";
@@ -94,6 +94,7 @@ function Swatch({ color, label }: { color: string; label: string }) {
 }
 
 function EditLegend() {
+  const { selectionColors, cutColors, silenceColors } = useThemeColors();
   return (
     <div className="flex flex-col gap-2 rounded border border-border bg-background-secondary/40 p-3 text-xs text-text-secondary">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

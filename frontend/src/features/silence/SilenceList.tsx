@@ -59,7 +59,7 @@ export function SilenceList({
                 {formatClock(timeMap.toEdited(seg.start))} –{" "}
                 {formatClock(timeMap.toEdited(seg.end))}
               </span>
-              {removed && <span className="text-xs text-accent-secondary">removed</span>}
+              {removed && <span className="text-xs text-accent">removed</span>}
               <span className="tabular-nums text-text-tertiary">{seg.duration.toFixed(1)}s</span>
             </button>
           </li>

@@ -6,7 +6,7 @@
  */
 import { Badge, badgeVariantForMarker } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { markerColors } from "@/lib/themeColors";
+import { useThemeColors } from "@/lib/themeColors";
 import type { Marker } from "@/types/api";
 
 /** Auto markers below this confidence are shown as tentative. */
@@ -24,6 +24,7 @@ export function MarkerChip({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const { markerColors } = useThemeColors();
   const variant = badgeVariantForMarker(marker.type);
   const tentative = marker.source === "auto" && marker.confidence < LOW_CONFIDENCE;
 
@@ -41,13 +42,13 @@ export function MarkerChip({
         className={cn(
           "pointer-events-auto absolute top-1 -translate-x-1/2 rounded-full",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus",
-          selected && "ring-2 ring-accent-secondary ring-offset-1 ring-offset-background-secondary",
+          selected && "ring-2 ring-accent ring-offset-1 ring-offset-background-secondary",
         )}
         style={{ opacity: tentative ? 0.65 : 1 }}
       >
         <Badge
           variant={variant}
-          className={cn(tentative && "border border-dashed border-white/70")}
+          className={cn(tentative && "border border-dashed border-accent-on/70")}
         >
           <span lang="ar" dir="rtl" className="font-arabic">
             {marker.label}

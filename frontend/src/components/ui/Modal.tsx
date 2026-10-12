@@ -65,7 +65,7 @@ export function Modal({ open, onClose, children, ariaLabel, className }: ModalPr
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -77,7 +77,7 @@ export function Modal({ open, onClose, children, ariaLabel, className }: ModalPr
         aria-modal="true"
         aria-label={ariaLabel}
         className={cn(
-          "static m-0 max-h-[90vh] w-full max-w-lg overflow-auto rounded-card border border-border bg-background p-0 text-text shadow-xl focus:outline-none",
+          "static m-0 max-h-[90vh] w-full max-w-lg overflow-auto rounded-card border border-border bg-surface p-0 text-text shadow-xl focus:outline-none",
           className,
         )}
       >

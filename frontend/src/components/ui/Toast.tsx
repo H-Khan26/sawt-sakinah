@@ -28,7 +28,7 @@ const VARIANT_ACCENT: Record<ToastVariant, string> = {
   error: "border-l-danger",
   success: "border-l-success",
   warning: "border-l-warning",
-  info: "border-l-info",
+  info: "border-l-accent",
 };
 
 const DEFAULT_DURATION = 4000;
@@ -63,7 +63,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <output
             key={t.id}
             className={cn(
-              "pointer-events-auto flex items-start gap-3 rounded border border-l-4 border-border bg-background p-3 text-sm text-text shadow-lg",
+              "pointer-events-auto flex items-start gap-3 rounded border border-l-4 border-border bg-surface p-3 text-sm text-text shadow-lg",
               VARIANT_ACCENT[t.variant],
             )}
           >
