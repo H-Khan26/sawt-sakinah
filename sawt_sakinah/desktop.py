@@ -358,6 +358,9 @@ def run(host: str = "127.0.0.1", port: Optional[int] = None) -> int:
 
         service = Service(settings, host, pick_port(host, port))
         service.start()
+        from .service.routes.ytdlp import launch_check
+
+        launch_check(service.app)  # the opt-in daily yt-dlp update check
         try:
             lock.publish(host, service.port, service.token)
             # The session route sets the token cookie, then redirects to the SPA.

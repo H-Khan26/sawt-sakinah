@@ -65,6 +65,7 @@ class JobKind(str, Enum):
     export = "export"
     split = "split"
     download_model = "download_model"
+    update_ytdlp = "update_ytdlp"
 
 
 class JobRecord(BaseModel):

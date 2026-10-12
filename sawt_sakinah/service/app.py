@@ -41,7 +41,7 @@ from ..models import (
 )
 from .jobs import JobQueueFullError, JobRegistry
 from .projects import ProjectStore
-from .routes import detect, export, jobs, media, models, projects, system
+from .routes import detect, export, jobs, media, models, projects, system, ytdlp
 from .security import install_guards
 from .settings import ServiceSettings
 
@@ -145,6 +145,7 @@ def create_app(settings: Optional[ServiceSettings] = None) -> FastAPI:
         export.router,
         system.router,
         models.router,
+        ytdlp.router,
     ):
         app.include_router(router)
 

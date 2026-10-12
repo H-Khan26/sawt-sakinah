@@ -18,9 +18,6 @@ import re
 from pathlib import Path
 from typing import Callable, Optional
 
-import yt_dlp
-from yt_dlp.cookies import CookieLoadError
-
 from .. import runtime
 from ..config import CONFIG
 from ..models.sources import AudioSource
@@ -35,11 +32,13 @@ from ..models.errors import (
     VideoUnavailableError,
     YouTubeBotCheckError,
 )
+from ..ytdlp_updates import import_yt_dlp
 from . import cache as _cache
 from .finalize import emit as _emit
 from .finalize import finalize_source
 from .validate import normalize_url
 
+# The bundled yt-dlp, or an opted-in, verified newer download put ahead of it.
 
 _log = logging.getLogger(__name__)
 
@@ -128,6 +127,8 @@ class _YtdlpLogger:
 
 def _is_cookie_failure(err: BaseException) -> bool:
     """Whether yt-dlp failed while loading cookies (it wraps that in a DownloadError)."""
+    from yt_dlp.cookies import CookieLoadError  # yt-dlp is loaded by the time it has failed
+
     seen: set[int] = set()
     todo: list[Optional[BaseException]] = [err]
     while todo:
@@ -412,6 +413,11 @@ def extract_audio(
         # yt-dlp runs its own ffmpeg for the transcode; reporting before it starts lets a
         # callback that cancels (the app closing) stop the job while nothing is being written.
         ydl_opts["postprocessor_hooks"] = [_make_postprocessor_hook(progress_callback)]
+
+    # Imported here, not at module load: ytdlp_updates.activate() must run first so a
+    # verified downloaded yt-dlp can take precedence over the bundled copy.
+    yt_dlp = import_yt_dlp()
+    from yt_dlp.cookies import CookieLoadError
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

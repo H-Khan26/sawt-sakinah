@@ -64,6 +64,7 @@ class Preferences(BaseModel):
     silence_detector: str = CONFIG.silence.detector
     cookies_browser: Optional[str] = None
     cookies_file: Optional[str] = None
+    ytdlp_update: bool = False  # opt-in yt-dlp self-update (ytdlp_updates.py)
 
     @field_validator("whisper_model")
     @classmethod
@@ -113,6 +114,7 @@ class PreferencesPatch(BaseModel):
     silence_detector: Optional[str] = None
     cookies_browser: Optional[str] = None
     cookies_file: Optional[str] = None
+    ytdlp_update: Optional[bool] = None
 
     @field_validator("whisper_model")
     @classmethod

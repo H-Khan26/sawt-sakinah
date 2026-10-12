@@ -124,8 +124,10 @@ service:
   stream_chunk_size: 65536     # byte chunk size for ranged media streaming responses
   shutdown_grace_sec: 3        # on close, time running jobs get to stop and clean up
 
-# Desktop app: the update check against the project's GitHub releases.
+# Desktop app: the update check against the project's GitHub releases, and the opt-in
+# yt-dlp self-update from PyPI (sawt_sakinah/ytdlp_updates.py).
 app:
   release_repo: H-Khan26/sawt-sakinah   # <owner>/<repo> whose latest release is checked
   update_check_interval_hours: 24       # at most one check per interval
   update_check_timeout_sec: 5           # network timeout for one check
+  ytdlp_channel: nightly                # yt-dlp channel the opt-in self-update follows: nightly | stable
