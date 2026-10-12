@@ -106,7 +106,7 @@ function ModelRow({
               {formatMegabytes(model.size_mb)}
             </span>
             {model.installed ? (
-              <Badge variant="success">Downloaded</Badge>
+              <Badge variant="green">Downloaded</Badge>
             ) : (
               <Badge>Not downloaded</Badge>
             )}

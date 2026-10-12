@@ -11,8 +11,8 @@ import { useNavigate } from "react-router-dom";
 /** The furthest-along stage as a single badge; edited > analyzed > extracted. */
 function stageBadge(status: ProjectStatus): { label: string; variant: BadgeVariant } {
   if (status.edited) return { label: "Edited", variant: "accent" };
-  if (status.analyzed) return { label: "Analyzed", variant: "accent-secondary" };
-  if (status.extracted) return { label: "Extracted", variant: "info" };
+  if (status.analyzed) return { label: "Analyzed", variant: "green" };
+  if (status.extracted) return { label: "Extracted", variant: "neutral" };
   return { label: "Processing", variant: "neutral" };
 }
 
@@ -73,9 +73,9 @@ export function ProjectCard({
         }
       }}
       className={cn(
-        "group relative flex flex-col gap-4 rounded-[20px] border border-[rgba(224,224,224,0.96)] bg-[rgba(252,251,248,0.96)] p-5 text-left shadow-sm transition-all duration-fast sm:flex-row sm:items-start sm:justify-between sm:gap-6",
+        "group relative flex flex-col gap-4 rounded-[20px] border border-border bg-surface p-5 text-left shadow-sm transition-all duration-fast sm:flex-row sm:items-start sm:justify-between sm:gap-6",
         !unreadable &&
-          "cursor-pointer hover:border-[rgba(69,3,119,0.24)] hover:bg-[rgba(255,255,255,0.98)] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus",
+          "cursor-pointer hover:border-accent/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus",
       )}
     >
       <div className="min-w-0 flex-1">
@@ -114,14 +114,14 @@ export function ProjectCard({
             <Badge variant={stage.variant}>{stage.label}</Badge>
           )}
           {project.export_count > 0 && (
-            <span className="rounded-full bg-[rgba(69,3,119,0.06)] px-3 py-1 text-xs text-text-secondary">
+            <span className="rounded-full bg-accent-soft px-3 py-1 text-xs text-text-secondary">
               {project.export_count} export{project.export_count === 1 ? "" : "s"}
             </span>
           )}
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-4 border-t border-[rgba(224,224,224,0.9)] pt-4 sm:min-w-52 sm:flex-col sm:items-end sm:justify-between sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
+      <div className="flex items-center justify-between gap-4 border-t border-border pt-4 sm:min-w-52 sm:flex-col sm:items-end sm:justify-between sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
         <div className="text-xs uppercase tracking-[0.18em] text-text-tertiary sm:text-right">
           Updated
           <div className="mt-1 text-sm normal-case tracking-normal text-text-secondary">
@@ -138,14 +138,14 @@ export function ProjectCard({
               e.stopPropagation();
               setMenuOpen((v) => !v);
             }}
-            className="rounded p-1 text-text-tertiary transition-colors duration-fast hover:bg-[rgba(69,3,119,0.06)] hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+            className="rounded p-1 text-text-tertiary transition-colors duration-fast hover:bg-accent-soft hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
           >
             <MoreVertical size={18} />
           </button>
           {menuOpen && (
             <div
               role="menu"
-              className="absolute right-0 z-10 mt-1 w-40 overflow-hidden rounded border border-[rgba(224,224,224,0.96)] bg-[rgba(252,251,248,0.98)] py-1 shadow-lg backdrop-blur-[8px]"
+              className="absolute right-0 z-10 mt-1 w-40 overflow-hidden rounded border border-border bg-surface py-1 shadow-lg"
             >
               {!unreadable && (
                 <button

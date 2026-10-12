@@ -2,13 +2,7 @@ import { cn } from "@/lib/cn";
 import type { MarkerType } from "@/types/api";
 import type { HTMLAttributes } from "react";
 
-export type BadgeVariant =
-  | "neutral"
-  | "accent"
-  | "accent-secondary"
-  | "info"
-  | "success"
-  | "danger";
+export type BadgeVariant = "neutral" | "accent" | "green" | "danger";
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
@@ -16,23 +10,20 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 
 const VARIANTS: Record<BadgeVariant, string> = {
   neutral: "bg-background-tertiary text-text-secondary",
-  accent: "bg-accent text-white",
-  "accent-secondary": "bg-accent-secondary text-white",
-  info: "bg-info text-white",
-  success: "bg-success text-white",
-  danger: "bg-danger text-white",
+  accent: "bg-accent text-accent-on",
+  green: "bg-green text-accent-on",
+  danger: "bg-danger text-accent-on",
 };
 
 /**
- * Maps a detected marker `type` to a badge variant. Exported so the marker layer
- * (Phase 6) can color chips consistently: takbir uses the primary accent, the other
- * known phrase types use the secondary accent, unknown/custom fall back to neutral.
+ * Maps a detected marker `type` to a badge variant, so marker chips colour consistently: takbir
+ * uses the accent, the other known phrase types binding green, and custom markers neutral.
  */
 export const markerTypeVariant: Record<string, BadgeVariant> = {
   takbir: "accent",
-  tasmi: "accent-secondary",
-  tahmid: "accent-secondary",
-  tasleem: "accent-secondary",
+  tasmi: "green",
+  tahmid: "green",
+  tasleem: "green",
   custom: "neutral",
 };
 

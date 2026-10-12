@@ -47,8 +47,7 @@ function barDescriptors(n: number): BarDescriptor[] {
  * Waveform loading animation. The bars draw in left-to-right, fluctuate up and down as
  * if someone is speaking, then draw out, on a loop (the container clip drives the draw
  * in/out reveal; each bar runs its own oscillation). Uses `currentColor`, so it inherits
- * the surrounding text color like the old spinner did — pass `text-accent` where a purple
- * waveform is wanted. Stilled to a static waveform under `prefers-reduced-motion`.
+ * the surrounding text color — pass `text-accent` for an accent waveform. Stilled to a static waveform under `prefers-reduced-motion`.
  */
 export function WaveformLoader({
   size = 24,

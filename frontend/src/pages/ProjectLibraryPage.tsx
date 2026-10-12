@@ -23,8 +23,8 @@ export function ProjectLibraryPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <section className="rounded-[32px] border border-[rgba(224,224,224,0.92)] bg-[rgba(252,251,248,0.88)] p-6 shadow-xl backdrop-blur-[8px] sm:p-8">
-        <div className="mb-8 flex flex-col gap-4 border-b border-[rgba(224,224,224,0.92)] pb-6 sm:flex-row sm:items-end sm:justify-between">
+      <section className="rounded-[32px] border border-border bg-surface p-6 shadow-xl sm:p-8">
+        <div className="mb-8 flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.28em] text-text-tertiary">
               Project library
@@ -37,14 +37,14 @@ export function ProjectLibraryPage() {
           </div>
           <div className="flex flex-col items-start gap-3 sm:items-end">
             {!isPending && !isError && (
-              <div className="rounded-full border border-[rgba(69,3,119,0.12)] bg-[rgba(255,255,255,0.72)] px-4 py-2 text-sm text-text-secondary shadow-sm">
+              <div className="rounded-full border border-border bg-background px-4 py-2 text-sm text-text-secondary shadow-sm">
                 {projectCount} project{projectCount === 1 ? "" : "s"}
               </div>
             )}
             <button
               type="button"
               onClick={() => navigate("/new")}
-              className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-medium text-white shadow-md transition-all duration-fast hover:bg-accent-hover hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:ring-offset-2"
+              className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-medium text-accent-on shadow-md transition-all duration-fast hover:bg-accent-hover hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:ring-offset-2"
             >
               <Plus size={18} />
               New project
@@ -53,7 +53,7 @@ export function ProjectLibraryPage() {
         </div>
 
         {isPending && (
-          <div className="flex min-h-64 items-center justify-center rounded-[24px] border border-[rgba(224,224,224,0.92)] bg-[rgba(255,255,255,0.62)]">
+          <div className="flex min-h-64 items-center justify-center rounded-[24px] border border-border bg-background-secondary">
             <WaveformLoader size={32} label="Loading projects" className="text-accent" />
           </div>
         )}
@@ -65,7 +65,7 @@ export function ProjectLibraryPage() {
         )}
 
         {projects && projects.length === 0 && (
-          <div className="rounded-[24px] border border-[rgba(224,224,224,0.92)] bg-[rgba(255,255,255,0.62)] p-4 sm:p-5">
+          <div className="rounded-[24px] border border-border bg-background-secondary p-4 sm:p-5">
             <EmptyState
               title="No projects yet"
               description="Start by pasting a YouTube link to a Quran recitation."
@@ -75,7 +75,7 @@ export function ProjectLibraryPage() {
         )}
 
         {projects && projects.length > 0 && (
-          <div className="rounded-[24px] border border-[rgba(224,224,224,0.92)] bg-[rgba(255,255,255,0.56)] p-3 shadow-inner sm:p-4">
+          <div className="rounded-[24px] border border-border bg-background-secondary p-3 shadow-inner sm:p-4">
             <div className="mb-4 flex items-center justify-between gap-3 px-2 pt-1">
               <div>
                 <h2 className="font-serif text-xl text-text">Recent projects</h2>

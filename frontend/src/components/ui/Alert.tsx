@@ -18,7 +18,7 @@ const VARIANTS: Record<AlertVariant, { wrap: string; title: string }> = {
   error: { wrap: "border-danger/40 bg-danger/5", title: "text-danger" },
   success: { wrap: "border-success/40 bg-success/5", title: "text-success" },
   warning: { wrap: "border-warning/40 bg-warning/5", title: "text-warning" },
-  info: { wrap: "border-info/40 bg-info/5", title: "text-info" },
+  info: { wrap: "border-accent/40 bg-accent-soft", title: "text-accent" },
 };
 
 export function Alert({ variant = "info", title, children, action, className }: AlertProps) {
