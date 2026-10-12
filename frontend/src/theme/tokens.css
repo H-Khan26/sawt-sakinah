@@ -1,0 +1,167 @@
+/* ---------------------------------------------------------------------------
+ * Design tokens: the single source of every colour, shadow and motion value.
+ * Day values sit on :root; night overrides them under data-theme="night" on
+ * <html> (set by src/theme/theme.ts). Tailwind binds its names to these vars,
+ * and src/lib/themeColors.ts resolves the waveform ones for the canvas.
+ * ------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --color-background: #f5efe3;
+  --color-surface: #faf6ec;
+  --color-background-secondary: #ede5d4;
+  --color-background-tertiary: #e3d8c2;
+  --color-scrim: rgba(42, 35, 32, 0.45);
+
+  /* Text */
+  --color-text: #2a2320;
+  --color-text-secondary: #5a4d45;
+  --color-text-tertiary: #6f6157;
+
+  /* Accent */
+  --color-accent: #6a1e28;
+  --color-accent-hover: #4f161d;
+  --color-accent-soft: rgba(106, 30, 40, 0.07);
+  --color-on-accent: #fbf8f1;
+  --color-gold: #b8954f;
+  --color-green: #2e4a3d;
+
+  /* Borders */
+  --color-border: #e0d5c1;
+  --color-border-focus: var(--color-accent);
+
+  /* Semantic */
+  --color-error: #b5432f;
+  --color-success: #2e4a3d;
+  --color-warning: #9a6b1e;
+
+  /* Waveform and regions */
+  --waveform-played: #6a1e28;
+  --waveform-unplayed: #cdbfa6;
+  --waveform-cursor: #6a1e28;
+  --waveform-hover: var(--color-gold);
+  --waveform-hover-label: #2a2320;
+  --silence-fill: rgba(42, 35, 32, 0.08);
+  --silence-fill-selected: rgba(42, 35, 32, 0.18);
+  --cut-stripe: rgba(181, 67, 47, 0.42);
+  --cut-stripe-selected: rgba(181, 67, 47, 0.62);
+  --selection-fill: rgba(184, 149, 79, 0.24);
+  --marker-line: #2e4a3d;
+
+  /* Dome, lamps and wall */
+  --dome-ground: #6a1e28;
+  --dome-ground-2: #4f161d;
+  --dome-line: #c9aa66;
+  --dome-line-opacity: 0.62;
+  --dome-soft-opacity: 0.3;
+  --dome-window: #f5efe3;
+  --dome-window-opacity: 0.3;
+  --dome-ring-light: 0.55;
+  --dome-center-light: 0;
+  --lamp-fill: transparent;
+  --lamp-stroke: #c9aa66;
+  --lamp-glow: 0;
+  --wall-light: transparent;
+  --lattice-opacity: 0.2;
+  --on-dome: #dcc791;
+
+  /* Niche */
+  --niche-fill: #faf6ec;
+  --niche-line: #dccfb6;
+  --niche-inner: #c9aa66;
+  --niche-wave: #bba98b;
+  --niche-current: #6a1e28;
+  --niche-current-line: #c9aa66;
+  --niche-current-ink: #f5efe3;
+  --niche-current-ink-2: #dcc791;
+  --niche-wave-current: #c9aa66;
+  --niche-current-glow: none;
+
+  /* Shadows (warm ink) */
+  --shadow-xs: 0 1px 2px rgba(42, 35, 32, 0.04);
+  --shadow-sm: 0 1px 3px rgba(42, 35, 32, 0.08), 0 1px 2px rgba(42, 35, 32, 0.04);
+  --shadow-md: 0 4px 6px rgba(42, 35, 32, 0.07), 0 2px 4px rgba(42, 35, 32, 0.05);
+  --shadow-lg: 0 10px 15px rgba(42, 35, 32, 0.08), 0 4px 6px rgba(42, 35, 32, 0.04);
+  --shadow-xl: 0 20px 25px rgba(42, 35, 32, 0.08), 0 8px 10px rgba(42, 35, 32, 0.03);
+  --shadow-2xl: 0 25px 50px rgba(42, 35, 32, 0.12);
+
+  /* Motion */
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+:root[data-theme="night"] {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --color-background: #1b1416;
+  --color-surface: #2a1e20;
+  --color-background-secondary: #241a1b;
+  --color-background-tertiary: #3a2c2c;
+  --color-scrim: rgba(14, 9, 10, 0.6);
+
+  /* Text */
+  --color-text: #ede3cc;
+  --color-text-secondary: #bfaf95;
+  --color-text-tertiary: #9c8c76;
+
+  /* Accent */
+  --color-accent: #c9aa66;
+  --color-accent-hover: #dcc791;
+  --color-accent-soft: rgba(201, 170, 102, 0.16);
+  --color-on-accent: #2a1e20;
+  --color-gold: #c9aa66;
+  --color-green: #6e9a86;
+
+  /* Borders */
+  --color-border: #3a2c2c;
+
+  /* Semantic */
+  --color-error: #d9734f;
+  --color-success: #6e9a86;
+  --color-warning: #d9b26a;
+
+  /* Waveform and regions */
+  --waveform-played: #c9aa66;
+  --waveform-unplayed: #5b4a3e;
+  --waveform-cursor: #ede3cc;
+  --waveform-hover-label: #2a1e20;
+  --silence-fill: rgba(237, 227, 204, 0.08);
+  --silence-fill-selected: rgba(237, 227, 204, 0.18);
+  --cut-stripe: rgba(217, 115, 79, 0.4);
+  --cut-stripe-selected: rgba(217, 115, 79, 0.6);
+  --selection-fill: rgba(201, 170, 102, 0.2);
+  --marker-line: #6e9a86;
+
+  /* Dome, lamps and wall */
+  --dome-ground: #1b1416;
+  --dome-ground-2: #241a1b;
+  --dome-line: #c9aa66;
+  --dome-line-opacity: 0.4;
+  --dome-soft-opacity: 0.18;
+  --dome-window: #0e090a;
+  --dome-window-opacity: 0.5;
+  --dome-ring-light: 0;
+  --dome-center-light: 1;
+  --lamp-fill: #f3d58a;
+  --lamp-stroke: #f3d58a;
+  --lamp-glow: 1;
+  --wall-light: rgba(201, 170, 102, 0.09);
+  --lattice-opacity: 0.07;
+  --on-dome: #c9aa66;
+
+  /* Niche */
+  --niche-fill: #241a1b;
+  --niche-line: #3a2c2c;
+  --niche-inner: #8e7344;
+  --niche-wave: #5b4a3e;
+  --niche-current: #2a1e20;
+  --niche-current-line: #c9aa66;
+  --niche-current-ink: #ede3cc;
+  --niche-current-ink-2: #c9aa66;
+  --niche-wave-current: #c9aa66;
+  --niche-current-glow: drop-shadow(0 -6px 18px rgba(201, 170, 102, 0.22));
+}
