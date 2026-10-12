@@ -4,6 +4,7 @@ import { Progress, useToast } from "@/components/ui";
 import { isLikelyYouTubeUrl } from "@/lib/youtube";
 import { useIsMutating } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useOpenImport } from "./useOpenImport";
 
 /** True when typing or pasting goes into a field rather than the page. */
@@ -114,9 +115,10 @@ export function ImportAnywhere({ paused = false }: { paused?: boolean }) {
 
   if (!busy && !(dragging && !paused)) return null;
 
-  return (
-    // While importing it sits above any open sheet (z-50) and blocks it; while dragging it sits
-    // below, so the sheet's own drop zone stays visible.
+  return createPortal(
+    // On the body, so it covers the library's header and the landing's dome. While importing it
+    // sits above any open sheet (z-50) and blocks it; while dragging it sits below, so the sheet's
+    // own drop zone stays visible.
     <div
       className={
         busy
@@ -144,6 +146,7 @@ export function ImportAnywhere({ paused = false }: { paused?: boolean }) {
           </>
         )}
       </CetvelFrame>
-    </div>
+    </div>,
+    document.body,
   );
 }

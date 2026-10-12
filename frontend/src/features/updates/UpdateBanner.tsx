@@ -5,6 +5,7 @@
  * `target="_blank"` links). Dismissing stores the version so the banner stays hidden for it.
  */
 import { useDismissUpdate, useUpdateStatus } from "@/api/hooks";
+import { cn } from "@/lib/cn";
 import { X } from "lucide-react";
 
 export const RELEASES_URL = "https://github.com/H-Khan26/sawt-sakinah/releases";
@@ -17,7 +18,8 @@ export function releaseUrl(url: string | null | undefined): string {
 const LINK_CLASS =
   "font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus rounded";
 
-export function UpdateBanner() {
+/** `className` adds to the strip's own classes (e.g. a full border where it stands alone). */
+export function UpdateBanner({ className }: { className?: string }) {
   const { data } = useUpdateStatus();
   const dismiss = useDismissUpdate();
   const latest = data?.latest;
@@ -26,7 +28,10 @@ export function UpdateBanner() {
   return (
     <aside
       aria-label="Update available"
-      className="flex shrink-0 items-center justify-center gap-3 border-b border-border bg-background-secondary px-4 py-2 text-sm text-text"
+      className={cn(
+        "flex shrink-0 items-center justify-center gap-3 border-b border-border bg-background-secondary px-4 py-2 text-sm text-text",
+        className,
+      )}
     >
       <span>
         Version {latest} is available.{" "}
