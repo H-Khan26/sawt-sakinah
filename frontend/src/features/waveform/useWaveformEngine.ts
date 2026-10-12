@@ -281,18 +281,15 @@ export function useWaveformEngine({
     });
   }, [render, isReady]);
 
-  // Re-apply the canvas colours when the theme changes. `setOptions` re-renders from the options
-  // it was created with, so the current zoom goes along to keep it.
+  // Re-apply the canvas colours when the theme changes.
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws || appliedColorsRef.current === waveformColors) return;
     appliedColorsRef.current = waveformColors;
-    const zoom = usePlaybackStore.getState().zoom;
     ws.setOptions({
       waveColor: waveformColors.unplayed,
       progressColor: waveformColors.played,
       cursorColor: waveformColors.cursor,
-      ...(zoom != null ? { minPxPerSec: zoom } : {}),
     });
   }, [waveformColors]);
 
