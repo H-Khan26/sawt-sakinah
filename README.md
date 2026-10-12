@@ -58,15 +58,18 @@ Intel Macs are not supported by the download; they can [run from source](#run-fr
 
 The speech model for phrase detection is not in the zip. The app downloads it (about
 1.6 GB) the first time you run phrase detection, and keeps it for later. Phrase detection
-runs on the CPU and takes a few minutes per recording; silence detection and editing are
-quick.
+runs on the CPU and takes roughly a third of the recording's length with the default model
+(a 39-minute Taraweeh recording took 12 minutes on a 6-core desktop CPU from 2020, using up
+to 1.5 GB of memory). The optional `large-v3` model is about six times slower on the same
+recording (69 minutes) and used up to 5 GB. Silence detection and editing are quick: the
+same recording imported from YouTube in 42 seconds and exported in 22.
 
 | | Minimum | Recommended |
 |---|---|---|
 | System | Windows 10 22H2 or Windows 11, 64-bit (x64); or macOS 14 on Apple Silicon | |
-| CPU | 4 cores, x86-64 with AVX2, or any Apple Silicon chip | 8 cores or more |
-| Memory | 8 GB | 16 GB |
-| Disk | 5 GB free (app, speech model, projects) | |
+| CPU | 4 cores, x86-64 with AVX2, or any Apple Silicon chip | 6 cores or more |
+| Memory | 8 GB | 16 GB (the optional `large-v3` model uses about 5 GB while it runs) |
+| Disk | 4 GB free: about 0.6 GB for the app, 1.5 GB for the speech model, 150 MB per hour of recording per project | Add 3 GB for the optional `large-v3` model |
 | GPU | Not used | |
 | Network | For YouTube imports and the one-time model download | |
 
@@ -96,6 +99,15 @@ The app's settings have a button that opens the logs folder, for bug reports. To
 replace the old app with the new release: on Windows, delete the old folder and unzip the
 new one in its place; on macOS, move the new `SawtSakinah.app` into Applications over the
 old one (macOS may ask for **Open Anyway** again on its first launch).
+YouTube changes sometimes break the app's YouTube downloader
+([yt-dlp](https://github.com/yt-dlp/yt-dlp)) before a new release is out. With **Keep the
+YouTube downloader up to date** turned on in the settings, the app checks PyPI when it
+starts (at most once a day) for the newest yt-dlp nightly build, downloads it into the `plugins` folder of its data
+directory (checked against the SHA-256 that PyPI publishes) and uses it from the next
+launch. If the downloaded copy fails its checks, the app falls back to the copy it came
+with; turning the option off does the same at the next launch and deletes the download.
+The settings show which yt-dlp version is in use.
+
 To keep everything somewhere else for one run (a test, for example), launch the app
 with the environment variable `SAWT_DATA_DIR` set to an absolute folder path; the
 logs then go to its `logs` folder on both systems.
@@ -106,6 +118,8 @@ logs then go to its `logs` folder on both systems.
 - **Hugging Face**, to download the speech model once.
 - **GitHub API**, to check for a newer release. This is on by default and can be turned
   off in the app's settings.
+- **PyPI**, once a day, only if you turn on **Keep the YouTube downloader up to date** in
+  the settings (it is off by default).
 
 There is no telemetry, no account and no analytics.
 

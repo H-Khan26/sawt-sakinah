@@ -19,6 +19,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import {
+  checkYtdlp,
   createProject,
   deleteModel,
   deleteProject,
@@ -33,6 +34,7 @@ import {
   getProject,
   getUpdateStatus,
   getWaveform,
+  getYtdlpStatus,
   listModels,
   listProjects,
   openLogs,
@@ -321,6 +323,23 @@ export function useDismissUpdate() {
       );
     },
     onSuccess: (prefs) => queryClient.setQueryData(queryKeys.preferences, prefs),
+  });
+}
+
+/** The yt-dlp in use and its self-update state; refetched whenever Settings opens. */
+export function useYtdlpStatus() {
+  return useQuery({
+    queryKey: queryKeys.ytdlp,
+    queryFn: ({ signal }) => getYtdlpStatus(signal),
+  });
+}
+
+/** Run the yt-dlp update check now; seeds the job cache so `useJob` polls it at once. */
+export function useCheckYtdlp() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => checkYtdlp(),
+    onSuccess: (job) => queryClient.setQueryData(queryKeys.job(job.id), job),
   });
 }
 

@@ -11,6 +11,7 @@ from ...applog import open_folder
 from ..preferences import Preferences, PreferencesPatch, load_preferences, update_preferences
 from ..schemas import cookie_browsers
 from ..updates import UpdateStatus, check_for_update
+from .ytdlp import preference_changed
 
 router = APIRouter(prefix="/app", tags=["app"])
 
@@ -34,14 +35,18 @@ def get_preferences() -> Preferences:
 
 
 @router.patch("/preferences", response_model=Preferences)
-def patch_preferences(patch: PreferencesPatch) -> Preferences:
+def patch_preferences(patch: PreferencesPatch, request: Request) -> Preferences:
     """Apply the sent keys and return the full, stored preferences."""
+    changes = patch.changes()
     try:
-        return update_preferences(patch.changes())
+        saved = update_preferences(changes)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False, include_context=False))
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"could not save preferences: {exc}")
+    if "ytdlp_update" in changes:
+        preference_changed(request.app, saved.ytdlp_update)
+    return saved
 
 
 @router.get("/update", response_model=UpdateStatus)

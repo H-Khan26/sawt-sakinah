@@ -32,7 +32,7 @@ import os
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -146,6 +146,7 @@ class AppConfig(_Section):
     release_repo: str
     update_check_interval_hours: float
     update_check_timeout_sec: float
+    ytdlp_channel: Literal["nightly", "stable"]
 
 
 class Config(_Section):

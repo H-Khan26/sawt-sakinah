@@ -156,7 +156,8 @@ export type JobKind =
   | "detect_phrases"
   | "export"
   | "split"
-  | "download_model";
+  | "download_model"
+  | "update_ytdlp";
 
 /**
  * `GET /jobs/{id}`. `progress` is an arbitrary, per-kind dict: detection/export jobs
@@ -317,6 +318,8 @@ export interface AppPreferences {
   /** Absolute path to a Netscape-format cookies.txt that YouTube imports read. Mutually
    * exclusive with `cookies_browser`. */
   cookies_file: string | null;
+  /** Keep yt-dlp up to date from PyPI (opt-in; off by default). */
+  ytdlp_update: boolean;
 }
 
 /** Browsers YouTube cookies can be read from. */
@@ -348,6 +351,30 @@ export interface UpdateStatus {
   /** Release page for `latest`. */
   url: string | null;
   update_available: boolean;
+}
+
+/** `GET /app/ytdlp` — the YouTube downloader in use and its opt-in self-update. */
+export interface YtdlpStatus {
+  /** The `ytdlp_update` preference. */
+  enabled: boolean;
+  /** yt-dlp release channel the update follows ("nightly" or "stable"). */
+  channel: string;
+  /** "bundled" (shipped with the app) or "updated" (downloaded from PyPI). */
+  source: "bundled" | "updated" | null;
+  version: string | null;
+  ejs_version: string | null;
+  bundled_version: string | null;
+  /** Why a downloaded copy was not used at this launch. */
+  fallback: string | null;
+  /** A downloaded version that takes effect at the next launch. */
+  pending_version: string | null;
+  latest: string | null;
+  checked_at: string | null;
+  /** The last check's failure. */
+  error: string | null;
+  /** The check job pending or running right now (started at launch or by "Check now"). */
+  check_job_id: string | null;
+  check_state: "pending" | "running" | null;
 }
 
 // --- speech models (/models) ------------------------------------------------

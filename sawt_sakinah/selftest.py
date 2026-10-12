@@ -9,7 +9,9 @@ way the window does:
    actually run;
 2. the bundled SPA and config are present (required when frozen), and the window
    backend pywebview uses on this OS (WebView2 through pythonnet on Windows, WKWebView
-   through PyObjC on macOS) is bundled; no window is opened;
+   through PyObjC on macOS) is bundled; no window is opened. The yt-dlp in use (the
+   bundled copy, or an opted-in update; see ``ytdlp_updates``) is reported under
+   ``ytdlp``, and the bundle must carry the yt-dlp-ejs solver scripts;
 3. ``/health`` answers with the token;
 4. a 12 s test clip (4 s tone, 4 s silence, 4 s tone) is generated with ffmpeg, uploaded
    (``POST /projects/upload``) and imported;
@@ -335,6 +337,27 @@ def _check_recovery(run: _Run, client: _Client, planted: dict[str, Path]) -> Non
         detail["checked"] = paths
 
 
+def _check_ytdlp(run: _Run) -> None:
+    from . import ytdlp_updates
+
+    with run.step("ytdlp") as detail:
+        info = ytdlp_updates.activate()
+        import yt_dlp
+
+        detail.update(
+            source=info.get("source"),
+            version=yt_dlp.version.__version__,
+            ejs_version=info.get("ejs_version"),
+            bundled_version=info.get("bundled_version"),
+            path=str(Path(yt_dlp.__file__).parent),
+            fallback=info.get("fallback"),
+        )
+        run.report["ytdlp"] = dict(detail)
+        # Without the solver scripts YouTube imports fail on the challenge step.
+        if runtime.FROZEN and not detail["ejs_version"]:
+            raise SelfTestError("yt-dlp-ejs (the YouTube challenge solver) is missing")
+
+
 def _make_clip(path: Path) -> None:
     from .proc import run as run_proc
 
@@ -463,6 +486,7 @@ def run_self_test(host: str = "127.0.0.1", report_path: Optional[str] = None) ->
         _check_tools(run)
         _check_bundle(run)
         _check_gui(run)
+        _check_ytdlp(run)
 
         with run.step("service") as detail:
             from .service.settings import ServiceSettings
