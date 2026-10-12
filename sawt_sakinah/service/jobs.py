@@ -123,6 +123,14 @@ class JobRegistry:
         self._phrase_pool = ThreadPoolExecutor(
             max_workers=phrase_workers, thread_name_prefix="sawt-phrase"
         )
+        # Housekeeping the app starts on its own (the yt-dlp update check) runs here, so
+        # a slow download never holds a worker a user's import or export is waiting for.
+        self._background_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sawt-bg")
+        self._pools = {
+            "default": self._pool,
+            "phrase": self._phrase_pool,
+            "background": self._background_pool,
+        }
 
     def ensure_capacity(self) -> None:
         """Raise :class:`JobQueueFullError` now if a submission would be refused.
@@ -149,7 +157,8 @@ class JobRegistry:
         pool: str = "default",
         on_finish: Optional[Callable[[], None]] = None,
     ) -> JobRecord:
-        """Register a job and schedule ``fn`` on the chosen pool; return its record.
+        """Register a job and schedule ``fn`` on the chosen pool (``default``, ``phrase`` or
+        ``background``); return its record.
 
         ``on_finish`` runs once the job ends in any way: succeeded, failed, or dropped from
         the queue at shutdown. It runs before the final state is recorded, so a client that
@@ -166,7 +175,7 @@ class JobRegistry:
                 raise self._full_error()
             self._active += 1
             self._jobs[job_id] = record
-        executor = self._phrase_pool if pool == "phrase" else self._pool
+        executor = self._pools[pool]
         try:
             future = executor.submit(self._run, job_id, fn, on_finish)
         except BaseException:
@@ -254,8 +263,8 @@ class JobRegistry:
         and end with the process.
         """
         self._closing.set()
-        self._pool.shutdown(wait=False, cancel_futures=True)
-        self._phrase_pool.shutdown(wait=False, cancel_futures=True)
+        for executor in self._pools.values():
+            executor.shutdown(wait=False, cancel_futures=True)
         if timeout <= 0:
             return
         deadline = time.monotonic() + timeout

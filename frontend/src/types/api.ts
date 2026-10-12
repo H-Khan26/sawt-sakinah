@@ -372,6 +372,9 @@ export interface YtdlpStatus {
   checked_at: string | null;
   /** The last check's failure. */
   error: string | null;
+  /** The check job pending or running right now (started at launch or by "Check now"). */
+  check_job_id: string | null;
+  check_state: "pending" | "running" | null;
 }
 
 // --- speech models (/models) ------------------------------------------------

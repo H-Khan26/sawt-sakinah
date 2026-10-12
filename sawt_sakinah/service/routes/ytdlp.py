@@ -1,12 +1,15 @@
 """The opt-in yt-dlp self-update (see :mod:`sawt_sakinah.ytdlp_updates`).
 
 * ``GET /app/ytdlp`` -> 200 :class:`YtdlpStatus`: the yt-dlp in use (bundled or updated),
-  a downloaded version waiting for the next launch, and the last check's outcome.
+  a downloaded version waiting for the next launch, the last check's outcome, and the
+  check job running now, if any.
 * ``POST /app/ytdlp/check`` -> 202 with the ``update_ytdlp`` job record; a check already
   pending or running is returned as is. 409 while the ``ytdlp_update`` preference is off.
 
-The desktop shell calls :func:`launch_check` once the service is up, which starts the same
-job when the preference is on and the last check is a day old.
+The desktop shell calls :func:`launch_check` once the service is up, and the preferences
+route calls :func:`preference_changed` when the option is turned on; both start the same
+job when the last check is a day old. The job runs on the registry's background pool so
+it never delays a user's import or export.
 """
 
 from __future__ import annotations
@@ -42,16 +45,27 @@ class YtdlpStatus(BaseModel):
     latest: Optional[str] = None
     checked_at: Optional[str] = None
     error: Optional[str] = None  # the last check's failure
+    check_job_id: Optional[str] = None  # the check pending or running now
+    check_state: Optional[str] = None
+
+
+def _current_check(app, jobs: JobRegistry) -> Optional[JobRecord]:
+    job_id = getattr(app.state, "ytdlp_check_job", None)
+    record = jobs.get(job_id) if job_id else None
+    if record is not None and record.state in (JobState.pending, JobState.running):
+        return record
+    return None
 
 
 def start_check(app, jobs: JobRegistry) -> JobRecord:
     """Submit the check job, or return the one already pending or running."""
     with _LOCK:
-        job_id = getattr(app.state, "ytdlp_check_job", None)
-        record = jobs.get(job_id) if job_id else None
-        if record is not None and record.state in (JobState.pending, JobState.running):
+        record = _current_check(app, jobs)
+        if record is not None:
             return record
-        record = jobs.submit(JobKind.update_ytdlp, ytdlp_updates.check_and_install)
+        record = jobs.submit(
+            JobKind.update_ytdlp, ytdlp_updates.check_and_install, pool="background"
+        )
         app.state.ytdlp_check_job = record.id
         return record
 
@@ -65,9 +79,21 @@ def launch_check(app) -> None:
         _log.exception("could not start the yt-dlp update check")
 
 
+def preference_changed(app, enabled: bool) -> None:
+    """Called when the ``ytdlp_update`` preference is saved: turning it on runs the check
+    that a launch with the option off skipped."""
+    if enabled:
+        launch_check(app)
+
+
 @router.get("", response_model=YtdlpStatus)
-def get_status() -> YtdlpStatus:
-    return YtdlpStatus(**ytdlp_updates.status())
+def get_status(request: Request, jobs=Depends(get_jobs)) -> YtdlpStatus:
+    current = _current_check(request.app, jobs)
+    return YtdlpStatus(
+        **ytdlp_updates.status(),
+        check_job_id=current.id if current else None,
+        check_state=current.state.value if current else None,
+    )
 
 
 @router.post("/check", response_model=JobRecord, status_code=202)

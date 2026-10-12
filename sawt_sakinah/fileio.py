@@ -11,12 +11,14 @@ once complete (:func:`part_path`), so leftovers of an interrupted write are reco
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import time
 from pathlib import Path
 from typing import Callable, TypeVar
+from uuid import uuid4
 
 T = TypeVar("T")
 
@@ -65,6 +67,29 @@ def remove_tree(path: str | os.PathLike, *, attempts: int = _ATTEMPTS) -> None:
     retry_locked(remove, attempts=attempts)
 
 
+def read_json(path: str | os.PathLike) -> dict:
+    """The JSON object stored at ``path``, or ``{}`` when it is missing, unreadable or not
+    an object. For small state and cache files whose absence is not an error."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_json(path: str | os.PathLike, data: dict, *, indent: int | None = 2) -> None:
+    """Write ``data`` to ``path`` atomically (a unique temp file, then a retried replace).
+    Creates the parent directory. Raises ``OSError`` on failure."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{uuid4().hex[:8]}.tmp")
+    try:
+        tmp.write_text(json.dumps(data, indent=indent), encoding="utf-8")
+        replace_file(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def part_path(dst: str | os.PathLike) -> Path:
     """The partial name ``dst`` is written under: ``<stem>.part<suffix>``."""
     dst = Path(dst)
@@ -76,4 +101,12 @@ def is_partial(name: str) -> bool:
     return _PARTIAL.search(name) is not None
 
 
-__all__ = ["retry_locked", "replace_file", "remove_tree", "part_path", "is_partial"]
+__all__ = [
+    "retry_locked",
+    "replace_file",
+    "remove_tree",
+    "read_json",
+    "write_json",
+    "part_path",
+    "is_partial",
+]

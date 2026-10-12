@@ -21,6 +21,9 @@ function checkMessage(result: Record<string, unknown> | null | undefined): strin
     return `Downloaded yt-dlp ${String(result.latest)}. Restart the app to use it.`;
   }
   if (result.status === "up_to_date") return "The YouTube downloader is up to date.";
+  if (result.status === "skipped") {
+    return `yt-dlp ${String(result.latest)} failed to load on this computer last time, so it is skipped.`;
+  }
   return null;
 }
 
@@ -31,6 +34,13 @@ export function YtdlpUpdateSection() {
   const status = useYtdlpStatus();
   const check = useCheckYtdlp();
   const [jobId, setJobId] = useState<string>();
+  const info = status.data;
+  // A check started at launch (or by turning the option on) is followed the same way as
+  // one started from the button, so the status never shows a stale failure while it runs.
+  const launchJobId = info?.check_job_id ?? undefined;
+  useEffect(() => {
+    if (launchJobId && !jobId) setJobId(launchJobId);
+  }, [launchJobId, jobId]);
   const job = useJob(jobId);
   const state = job.data?.state;
   const enabled = prefs.data?.ytdlp_update ?? false;
@@ -41,8 +51,6 @@ export function YtdlpUpdateSection() {
       queryClient.invalidateQueries({ queryKey: queryKeys.ytdlp });
     }
   }, [state, queryClient]);
-
-  const info = status.data;
   const message =
     state === "succeeded"
       ? checkMessage(job.data?.result)
@@ -69,9 +77,9 @@ export function YtdlpUpdateSection() {
       </label>
       <p className="text-sm text-text-secondary">
         YouTube changes often break the downloader (yt-dlp) before a new app release is out. With
-        this on, the app checks PyPI once a day and downloads the newest yt-dlp into its data
-        folder, verified against the SHA-256 PyPI publishes. A new version is used from the next
-        launch. Turn it off to go back to the copy that came with the app.
+        this on, the app checks PyPI when it starts (at most once a day) and downloads the newest
+        yt-dlp into its data folder, verified against the SHA-256 PyPI publishes. A new version is
+        used from the next launch. Turn it off to go back to the copy that came with the app.
       </p>
       {info && (
         <p className="text-sm text-text-secondary">
