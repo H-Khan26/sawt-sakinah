@@ -1,5 +1,5 @@
 import { useProjects } from "@/api/hooks";
-import { ArchToggleIcon, Lattice, ListIcon, Niche } from "@/components/ornament";
+import { ArchToggleIcon, ListIcon, Niche } from "@/components/ornament";
 import { Alert, Button, Input, SegmentedControl, WaveformLoader } from "@/components/ui";
 import { DeleteDialog } from "@/features/projects/DeleteDialog";
 import { FihristList } from "@/features/projects/FihristList";
@@ -24,7 +24,7 @@ const VIEW_OPTIONS = [
 ] as const satisfies readonly { value: LibraryView; label: JSX.Element; ariaLabel: string }[];
 
 /**
- * The library, set on the qibla wall: the star lattice fades in below the header, behind a
+ * The library, set on the qibla wall (the shell draws the wall's light and lattice): a
  * heading row (title and count, search from 12 recordings, view toggle, New recording) and the
  * recordings, most recently edited first (server-sorted), as an arcade of niches or a fihrist
  * list. Files dropped and YouTube links pasted anywhere on the page import straight away. With
@@ -54,15 +54,8 @@ export function ProjectLibraryPage({ newSheet = false }: { newSheet?: boolean })
   const remove = (project: ProjectSummary) => setDialog({ kind: "delete", project });
 
   return (
-    <div
-      className="relative min-h-full"
-      style={{
-        background: "radial-gradient(ellipse 75% 166px at 50% 0, var(--wall-light), transparent)",
-      }}
-    >
-      <Lattice maskFrom={0} maskTo={150} />
-
-      <div className="relative mx-auto w-full max-w-[1100px] px-6 pb-12 pt-9 sm:px-10">
+    <div className="relative">
+      <div className="relative mx-auto w-full max-w-[1100px] px-6 pb-12 sm:px-10">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
           <h1 className="font-display text-[30px] leading-tight text-text">
             Your recordings
