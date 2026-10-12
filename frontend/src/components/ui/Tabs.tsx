@@ -1,3 +1,4 @@
+import { RibbonTab } from "@/components/ornament";
 import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
 import { useId, useRef, useState } from "react";
@@ -14,6 +15,8 @@ export interface TabsProps {
   value?: string;
   defaultId?: string;
   onValueChange?: (id: string) => void;
+  /** `underline` marks the active tab with a rule; `ribbon` hangs a bookmark ribbon behind its label. */
+  variant?: "underline" | "ribbon";
   className?: string;
 }
 
@@ -21,7 +24,14 @@ export interface TabsProps {
  * Accessible tabs with roving focus: ArrowLeft/Right (and Home/End) move between tabs,
  * following the WAI-ARIA tablist pattern. Works controlled or uncontrolled.
  */
-export function Tabs({ items, value, defaultId, onValueChange, className }: TabsProps) {
+export function Tabs({
+  items,
+  value,
+  defaultId,
+  onValueChange,
+  variant = "underline",
+  className,
+}: TabsProps) {
   const baseId = useId();
   const [internal, setInternal] = useState(defaultId ?? items[0]?.id);
   const active = value ?? internal;
@@ -48,22 +58,41 @@ export function Tabs({ items, value, defaultId, onValueChange, className }: Tabs
 
   return (
     <div className={className}>
-      <div role="tablist" className="flex gap-1 border-b border-border" onKeyDown={onKeyDown}>
+      <div
+        role="tablist"
+        className={cn("flex gap-1", variant === "underline" && "border-b border-border")}
+        onKeyDown={onKeyDown}
+      >
         {items.map((tab) => {
           const selected = tab.id === active;
+          const tabProps = {
+            ref: (el: HTMLButtonElement | null) => {
+              tabRefs.current[tab.id] = el;
+            },
+            role: "tab",
+            id: `${baseId}-tab-${tab.id}`,
+            "aria-selected": selected,
+            "aria-controls": `${baseId}-panel-${tab.id}`,
+            tabIndex: selected ? 0 : -1,
+            onClick: () => select(tab.id),
+          };
+          if (variant === "ribbon") {
+            return (
+              <RibbonTab
+                key={tab.id}
+                {...tabProps}
+                active={selected}
+                className="text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+              >
+                {tab.label}
+              </RibbonTab>
+            );
+          }
           return (
             <button
               key={tab.id}
-              ref={(el) => {
-                tabRefs.current[tab.id] = el;
-              }}
+              {...tabProps}
               type="button"
-              role="tab"
-              id={`${baseId}-tab-${tab.id}`}
-              aria-selected={selected}
-              aria-controls={`${baseId}-panel-${tab.id}`}
-              tabIndex={selected ? 0 : -1}
-              onClick={() => select(tab.id)}
               className={cn(
                 "-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus",
                 selected
