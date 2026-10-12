@@ -61,6 +61,7 @@
   --dome-center-light: 0;
   --lamp-fill: transparent;
   --lamp-stroke: #c9aa66;
+  --lamp-stroke-opacity: 0.5;
   --lamp-glow: 0;
   --wall-light: transparent;
   --lattice-opacity: 0.2;
@@ -148,6 +149,7 @@
   --dome-center-light: 1;
   --lamp-fill: #f3d58a;
   --lamp-stroke: #f3d58a;
+  --lamp-stroke-opacity: 1;
   --lamp-glow: 1;
   --wall-light: rgba(201, 170, 102, 0.09);
   --lattice-opacity: 0.07;

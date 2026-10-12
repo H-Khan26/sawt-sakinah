@@ -14,11 +14,16 @@ export function lampAngles(n: number, offset = 0.5): number[] {
   return Array.from({ length: n }, (_, i) => domeAngle(i, n, offset));
 }
 
+/** Stages shorter than this keep less of the pool of light above the wall's content. */
+const SHORT_STAGE = 700;
+
 /** Sizes the descent derives from the stage: header height, dome radius and the chandelier's reach below the header. */
 export function descentMetrics(width: number, height: number) {
   const headerHeight = Math.round(Math.max(92, Math.min(136, height * 0.17)));
   // Below the header: the flattened ring's half-height, the 10 px lamp drop and the pool of light.
-  const chandelier = Math.round(sideRadii(width).ry + 10 + 86);
+  let chandelier = Math.round(sideRadii(width).ry + 10 + 86);
+  // On short stages the reach shrinks to 12% of the height, so a row of niches shows unscrolled.
+  if (height < SHORT_STAGE) chandelier = Math.min(chandelier, Math.round(height * 0.12));
   return { headerHeight, R0: Math.max(width * 0.5, height * 0.42), chandelier };
 }
 

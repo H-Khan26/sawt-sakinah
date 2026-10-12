@@ -42,6 +42,7 @@
 .dome-art .lamp {
   fill: var(--lamp-fill);
   stroke: var(--lamp-stroke);
+  stroke-opacity: var(--lamp-stroke-opacity);
   stroke-width: 1;
 }
 .dome-art .lamp-glow {
