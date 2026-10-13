@@ -114,6 +114,14 @@
 .orn-star.filled .s-num {
   fill: var(--color-on-accent);
 }
+/* Marginal-note star (green) and a rak'ah not yet reached (hairline outline). */
+.orn-star.note .s-body {
+  fill: var(--color-green);
+  stroke: var(--color-green);
+}
+.orn-star.ahead .s-body {
+  stroke: var(--color-border);
+}
 [data-theme="night"] .orn-star.filled {
   filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-gold) 70%, transparent));
 }
@@ -127,7 +135,7 @@
   min-width: 360px;
   max-width: 60%;
   padding: 10px 64px;
-  color: var(--color-on-accent);
+  color: var(--cartouche-ink);
   text-align: center;
 }
 .orn-cartouche > svg {
@@ -138,13 +146,13 @@
   overflow: visible;
 }
 .orn-cartouche .c-body {
-  fill: var(--color-accent);
-  stroke: var(--color-gold);
+  fill: var(--cartouche-fill);
+  stroke: var(--cartouche-line);
   stroke-width: 1;
 }
 .orn-cartouche .c-inner {
   fill: none;
-  stroke: var(--color-gold);
+  stroke: var(--cartouche-line);
   stroke-width: 0.6;
 }
 .orn-cartouche-content {

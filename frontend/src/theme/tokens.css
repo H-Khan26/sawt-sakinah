@@ -78,6 +78,19 @@
   --niche-wave-current: #c9aa66;
   --niche-current-glow: none;
 
+  /* Cartouche */
+  --cartouche-fill: #6a1e28;
+  --cartouche-ink: #f5efe3;
+  --cartouche-ink-2: #dcc791;
+  --cartouche-line: #c9aa66;
+
+  /* App mark (editor rail) */
+  --mark-tile: #2e4a3d;
+  --mark-arch: #f5efe3;
+  --mark-arch-edge: transparent;
+  --mark-arch-line: #b8954f;
+  --mark-bars: #6a1e28;
+
   /* Shadows (warm ink) */
   --shadow-xs: 0 1px 2px rgba(42, 35, 32, 0.04);
   --shadow-sm: 0 1px 3px rgba(42, 35, 32, 0.08), 0 1px 2px rgba(42, 35, 32, 0.04);
@@ -164,4 +177,17 @@
   --niche-current-ink-2: #c9aa66;
   --niche-wave-current: #c9aa66;
   --niche-current-glow: drop-shadow(0 -6px 18px rgba(201, 170, 102, 0.22));
+
+  /* Cartouche */
+  --cartouche-fill: #2a1e20;
+  --cartouche-ink: #ede3cc;
+  --cartouche-ink-2: #c9aa66;
+  --cartouche-line: #c9aa66;
+
+  /* App mark (editor rail) */
+  --mark-tile: #1b1416;
+  --mark-arch: #1b1416;
+  --mark-arch-edge: #c9aa66;
+  --mark-arch-line: transparent;
+  --mark-bars: #c9aa66;
 }

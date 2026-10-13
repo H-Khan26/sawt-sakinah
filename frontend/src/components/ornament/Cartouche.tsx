@@ -9,7 +9,8 @@ export interface CartoucheProps {
 }
 
 /**
- * Sura cartouche behind a title: accent fill with a gold outer line and a 0.6 px inner line.
+ * Sura cartouche behind a title: lacquer fill (`--cartouche-fill`) with a gold outer line and a
+ * 0.6 px inner line.
  * Sizes to its content (360 px minimum, 60% maximum) and redraws the shape at its measured size,
  * so the bracket ends keep their proportion while the body stretches.
  */
