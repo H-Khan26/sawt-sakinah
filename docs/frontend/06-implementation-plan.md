@@ -43,13 +43,15 @@ Override the API target with `SAWT_API_URL`. Quality gates before any commit:
 
 ## Confirmed decisions
 
-- **Theme:** purple. Primary `#450377`, hover `#38025f`,
-  accent `#9667ba`. See [Theme tokens](#theme-tokens).
+- **Theme:** "Mushaf × Mihrab", one layout by day and by night. Accent oxblood `#6A1E28`
+  by day, gold `#C9AA66` at night. See [Theme tokens](#theme-tokens).
 - **Arabic type:** Amiri (logo + headings, echoes Ibarra Real Nova) + IBM Plex Sans
   Arabic (UI labels + marker chips, echoes Jost).
-- **Shell:** minimal slim header over a full-bleed editor. No sidebar.
-- **Scope:** a single in-flight project (`/` link input -> `/p/:projectId` editor ->
-  export). No recent-projects list, so no project-list backend endpoint is needed in v1.
+- **Shell:** the library under the Sanctuary dome (`LibraryShell`); the editor beside an
+  88 px binding rail (`EditorShell`).
+- **Scope (v1):** a single in-flight recording (link input -> `/p/:projectId` editor ->
+  export). The library of recordings (`GET /projects`) is covered by
+  [frontend-project-library-plan.md](../plans/frontend-project-library-plan.md).
 
 ## Stack & conventions
 
@@ -66,7 +68,8 @@ properties, Biome. Hard conventions, enforced by tooling — follow them in ever
   `src/stores/`. Never duplicate server state into a store.
 - **Waveform regions/markers are a projection of app state**, reconciled in effects keyed
   on the silence/marker lists — not their own source of truth.
-- **Styling:** only the tokens below; no new colors. Selected = accent; destructive = red.
+- **Styling:** only the tokens below; no hex in components. Selected = accent;
+  destructive = `danger` (the error token).
 - **Errors:** the client throws a typed [`ApiError`](../../frontend/src/api/client.ts)
   (`status`, `type`); surface via `Alert`/`Toast`, with retry tied to the originating job.
 
@@ -131,7 +134,7 @@ success) and the [`jobToViewState`](../../frontend/src/api/viewState.ts) mapper
 - **silence / phrases / export** — `{ stage, status }` (see the `*_worker` functions in
   [workers.py](../../sawt_sakinah/service/workers.py)).
 
-## Current frontend file map (what Phases 0-4 produced)
+## Current frontend file map (the core from Phases 0-4)
 
 ```
 frontend/
@@ -142,11 +145,15 @@ frontend/
   public/fonts/README.md    which .woff2 files to drop in
   src/
     main.tsx                React root: QueryClientProvider + BrowserRouter
-    App.tsx                 routes: / and /p/:projectId
-    index.css               @font-face + design tokens (purple remap)
+    App.tsx                 routes: /, /new and /p/:projectId
+    index.css               imports the tokens; @font-face, base styles, loader keyframes
+    theme/
+      tokens.css            design tokens: day on :root, night under [data-theme="night"]
+      theme.ts              system/day/night preference -> data-theme on <html>
     pages/
-      LandingPage.tsx       link-input, validate, POST /projects, navigate
-      EditorPage.tsx        entry state machine + EditorWorkspace (waveform + transport)
+      ProjectLibraryPage.tsx  the library ("Your recordings"); /new opens the
+                            New recording sheet over it
+      EditorPage.tsx        entry state machine + EditorWorkspace (the ruled page)
     types/api.ts            all wire types
     api/
       client.ts             fetch wrapper + ApiError
@@ -157,26 +164,37 @@ frontend/
     lib/
       queryClient.ts        QueryClient (retry policy keyed on ApiError.status)
       cn.ts                 class-merge helper
-      themeColors.ts        hex mirrors of --waveform-*/--silence-*/--marker-* CSS vars
-                            (canvas can't read custom properties; keep in sync with index.css)
+      themeColors.ts        resolves the waveform/region tokens for the canvas
+                            (getComputedStyle), re-read when the theme changes
       time.ts               formatClock(seconds) -> "m:ss"
     components/
-      ui/                   Button, Card, Input, Modal, Badge, Progress, Slider,
-                            Tooltip, LoadingSpinner, Tabs, Toast, EmptyState, Alert
-      layout/               AppShell, AppHeader
+      ui/                   Button, SegmentedControl, Tabs, Badge, Modal/SimpleModal,
+                            Alert, Toast, Tooltip, Slider, Input, Progress, EmptyState,
+                            WaveformLoader
+      layout/               AppShell, LibraryShell (Sanctuary), EditorShell (binding rail)
+      ornament/             React wrappers over src/ornament geometry (niche, cartouche,
+                            dome, lattice, Rub el Hizb star, ribbon tab, logo)
       JobProgress.tsx       yt-dlp + {stage,status} progress shapes
+    ornament/               pure geometry builders (no React, no colours)
     features/
       waveform/
         peaks.ts            toWavesurferPeaks: WaveformPeaks -> [max[], min[]] for wavesurfer
-        useWavesurfer.ts    lifecycle hook: create/destroy in effect, events -> playbackStore,
-                            Timeline + Hover plugins; rate/zoom applied via separate effects
+        useWaveformEngine.ts  wavesurfer as renderer + an owned <audio> for playback;
+                            Minimap overview, Timeline + Hover plugins; events -> playbackStore
         WaveformContext.tsx WaveformProvider + useWaveformContext (React context, not store ref)
         WaveformView.tsx    container div + load/error overlays
+        WaveformOverview.tsx  whole-recording strip with the visible range and zoom
+        PlayheadDiamond.tsx the playhead's diamond on the top rule
       transport/
-        transportControls.ts  togglePlay / zoomIn / zoomOut (shared by bar + hotkeys)
-        useTransportHotkeys.ts  Space=play/pause, [/]=zoom; ignored in form fields
-        TransportBar.tsx    split subcomponents (TimeReadout subscribes currentTime alone,
+        transportControls.ts  togglePlay / seekBy / zoomIn / zoomOut (shared by bar + hotkeys)
+        useTransportHotkeys.ts  Space=play/pause, ArrowLeft/ArrowRight=skip 5 s; ignored in
+                            form fields
+        TransportBar.tsx    split subcomponents (Clock subscribes currentTime alone,
                             PlayButton subscribes isPlaying alone) to isolate per-frame renders
+      landing/              Sanctuary: dome landing and the library header
+      projects/             NicheCard, FihristList, ProjectMenu, NewRecordingSheet,
+                            ImportAnywhere, RenameDialog, DeleteDialog, ProjectSwitcher
+      editor/               RuledPage, LowerBand (Silence/Cut/Markers tabs + outline)
     stores/
       playbackStore.ts      currentTime/duration/isPlaying/rate/zoom; fed from wavesurfer events;
                             selector-subscribe to avoid full-tree re-renders per frame
@@ -188,20 +206,22 @@ Suggested places for new code (keep features cohesive): UI primitives in
 
 ## Theme tokens
 
-Defined in [src/index.css](../../frontend/src/index.css) and bound to Tailwind utilities
-in [tailwind.config.js](../../frontend/tailwind.config.js) (`bg-accent`, `text-accent`,
-`border-focus`, etc.). `#450377` carries AA contrast for white text and on the cream
-background; `#9667ba` is mid-tone — use it for accent bars / hovers / selection, never
-for small body text on cream. Backgrounds (cream), text (slate), and semantic colors
-(error/success/warning/info) are listed in [00-overview.md](00-overview.md); the accent
-tokens are:
+Defined in [src/theme/tokens.css](../../frontend/src/theme/tokens.css), day values on
+`:root` and night values under `:root[data-theme="night"]`, and bound by name to Tailwind
+utilities in [tailwind.config.js](../../frontend/tailwind.config.js) (`bg-accent`,
+`text-accent`, `bg-surface`, `border-focus`, `bg-dome`, etc.).
+[src/theme/theme.ts](../../frontend/src/theme/theme.ts) applies the stored preference
+(`system` | `day` | `night`). Text on accent fills uses `--color-on-accent`; gold
+(`--color-gold`) is for rules, ornament and display text of 24px and up, never small body
+text. Backgrounds, text, and semantic colours (error/success/warning) are listed in
+[00-overview.md](00-overview.md); the accent tokens (day / night) are:
 
 ```
---color-accent            #450377   primary; played waveform; markers; focus ring
---color-accent-hover      #38025f   button hover / active
---color-accent-secondary  #9667ba   selected-region bar; marker hover; chips; highlights
---color-accent-soft       rgba(69,3,119,0.10)   region fill / subtle backgrounds
---silence-fill / -selected / marker-line / waveform-played / -unplayed   derived waveform vars
+--color-accent        #6A1E28 / #C9AA66   primary actions; played waveform; active states; focus ring
+--color-accent-hover  #4F161D / #DCC791   button hover / active
+--color-accent-soft   accent at 7% / 16%  subtle backgrounds; info alerts
+--color-on-accent     #FBF8F1 / #2A1E20   text on accent fills
+--waveform-* / --silence-fill* / --cut-stripe* / --selection-fill / --marker-line   waveform and region tokens
 ```
 
 ## Fonts
@@ -228,19 +248,19 @@ Each phase is independently shippable. Build order matters: 2 (primitives) unblo
 
 | Component | File | Notes |
 |---|---|---|
-| `Button` | `Button.tsx` | variants primary/secondary/ghost/danger, sizes sm/md, `loading` spinner |
-| `Card` | `Card.tsx` | `rounded-card`, optional `header`/`footer` slots, `flush` prop |
+| `Button` | `Button.tsx` | variants primary/secondary/ghost/danger/dome, sizes sm/md/icon, `loading` spinner |
+| `SegmentedControl` | `SegmentedControl.tsx` | mutually exclusive toggle buttons on a sunk track; chosen segment fills with the accent |
 | `Input` | `Input.tsx` | forwardRef, `invalid` + hint, `useId` for label pairing |
 | `Modal` + `SimpleModal` | `Modal.tsx` | native `<dialog open>`, focus trap, Esc + scrim close |
-| `Badge` | `Badge.tsx` | neutral + marker-type variants; exports `badgeVariantForMarker` + `markerTypeVariant` for Phase 6 |
-| `Progress` | `Progress.tsx` | determinate (value 0–1) + indeterminate sweep; `role="progressbar"` |
-| `Slider` + `RangeSlider` | `Slider.tsx` | native range inputs; range uses two overlaid inputs + accent filled track |
+| `Badge` | `Badge.tsx` | neutral / green variants |
+| `Progress` | `Progress.tsx` | determinate (value 0–1, `role="progressbar"`) or an indeterminate `WaveformLoader` |
+| `Slider` | `Slider.tsx` | native range input; accent-filled track and a diamond thumb |
 | `Tooltip` | `Tooltip.tsx` | hover + focus (bubbles from focusable child); CSS-positioned |
-| `LoadingSpinner` | `LoadingSpinner.tsx` | SVG spinner; `<output>` element; `motion-reduce:animate-none` |
+| `WaveformLoader` | `WaveformLoader.tsx` | bars drawing in and out in `currentColor`; static under `prefers-reduced-motion` |
 | `Tabs` | `Tabs.tsx` | roving tabIndex; Arrow/Home/End; controlled + uncontrolled |
 | `ToastProvider` + `useToast` | `Toast.tsx` | context provider; auto-dismiss; `<output>` items |
 | `EmptyState` | `EmptyState.tsx` | icon slot, title, description, optional action |
-| `Alert` | `Alert.tsx` | error/success/warning/info; optional retry action button |
+| `Alert` | `Alert.tsx` | error/success/warning/info (info takes the accent); optional retry action button |
 
 `cn()` class-merge helper in `src/lib/cn.ts` (no new dependency).
 
@@ -261,28 +281,29 @@ Each phase is independently shippable. Build order matters: 2 (primitives) unblo
 2. Visit [http://localhost:5173/dev/ui](http://localhost:5173/dev/ui).
 3. Check each primitive renders in all variants. Key keyboard checks:
    - **Modal**: click "Open modal" → Tab cycles within dialog; Shift+Tab wraps; Esc closes;
-     click outside the card closes; focus returns to trigger.
+     click the scrim closes; focus returns to trigger.
    - **Tabs**: Arrow Right/Left moves between tabs without leaving the tab list.
    - **Tooltip**: Tab to "Hover or focus" button → tooltip appears; Tab away → hides.
    - **Toast**: click "Show toast" → banner appears bottom-right, auto-dismisses after ~4s;
      click × to dismiss early.
-   - **Slider/RangeSlider**: drag or arrow-key the thumbs; readout updates.
+   - **Slider**: drag or arrow-key the thumb; readout updates.
 4. `npm run typecheck && npm run build && npx biome check --write src` — all must pass.
 
 ## Phase 3 — App shell & landing  *(done)*
 
-**Goal:** the minimal header shell, the landing link-input flow, and the editor's
+**Goal:** the app shell, the new-recording link-input flow, and the editor's
 extraction-progress entry state.
 
 **Built:**
 
 | File | Purpose |
 |---|---|
-| `src/components/layout/AppShell.tsx` | Full-height flex column: header + full-bleed `<main>` |
-| `src/components/layout/AppHeader.tsx` | Wordmark (font-serif) + Arabic (font-arabic-display) + "New" button |
+| `src/components/layout/AppShell.tsx` | Picks the layout by route: `EditorShell` for `/p/:projectId`, `LibraryShell` otherwise |
+| `src/components/layout/LibraryShell.tsx` | The Sanctuary: dome landing on a cold launch, then the library header (logo, lamp ring, theme switch, settings) |
+| `src/components/layout/EditorShell.tsx` | 88 px binding rail: app mark (home), Library, New recording, theme switch, settings |
 | `src/components/JobProgress.tsx` | Renders both yt-dlp and `{ stage, status }` progress shapes |
 | `src/lib/youtube.ts` | `isLikelyYouTubeUrl()` — loose regex accepting watch/shorts/live/youtu.be |
-| `src/pages/LandingPage.tsx` | Rewritten: `Card` + `Input` + `Button`; validate, mutate, navigate |
+| `src/features/projects/NewRecordingSheet.tsx` | The New recording sheet over the library (`/new`): link field + file drop zone; validate, mutate, navigate |
 | `src/pages/EditorPage.tsx` | Extraction entry state machine (see below) |
 
 **Editor entry state machine** (component-local state, no Zustand yet):
@@ -295,8 +316,8 @@ router state present?
          job succeeded        → enable useProject
   no  → enable useProject immediately
 
-useProject loading   → <LoadingSpinner />
-useProject 404       → <EmptyState> + "Back to start" link
+useProject loading   → <WaveformLoader />
+useProject 404       → <EmptyState> + "Back to library" action
 useProject error     → <Alert variant="error">
 useProject success   → ready placeholder (Phase 4 fills this)
 ```
@@ -304,7 +325,7 @@ useProject success   → ready placeholder (Phase 4 fills this)
 **Retry model:** the submitted URL is carried in router state (`{ jobId, url }`). On
 failure, "Try again" re-POSTs `POST /projects` with the same URL and navigates to the
 new `project_id` with `replace: true`. If no URL is available (deep-link entry), the
-button says "Back to start" and navigates to `/`.
+button says "Back to start" and navigates to `/new`.
 
 **Refresh / deep-link:** no sessionStorage; a bare `/p/:id` load attempts `useProject`
 directly. 404 → `EmptyState`; 200 → ready.
@@ -320,9 +341,9 @@ cd frontend && npm run dev
 ```
 
 **Happy path:**
-1. Open [http://localhost:5173](http://localhost:5173).
+1. Open [http://localhost:5173](http://localhost:5173) and choose **New recording**.
 2. Paste a real YouTube link (short video recommended — test with a ~2 min recitation).
-3. Click **Start** → button shows spinner while `POST /projects` resolves.
+3. Press **Enter** → the import starts while `POST /projects` resolves.
 4. Page transitions to `/p/<id>` — you see the extraction progress bar updating.
 5. Once done, page shows the ready placeholder with the video title.
 
@@ -338,11 +359,12 @@ cd frontend && npm run dev
 
 **Refresh states:**
 - Mid-extraction refresh (clear router state by navigating to the URL directly) → `EmptyState`
-  ("Nothing here yet") with a "Back to start" link.
+  ("Nothing here yet") with a "Back to library" action.
 - Refresh a succeeded project URL → loads the ready placeholder directly (no progress bar).
 
-**Header:**
-- "New" button appears on both Landing and Editor; click it → navigates to `/` (no confirm needed).
+**New recording:**
+- The library's New recording button and the editor rail's + both navigate to `/new`,
+  which opens the sheet over the library (no confirm needed).
 
 **References:** [01-layout-and-pages.md](01-layout-and-pages.md),
 [05-state-and-api-integration.md](05-state-and-api-integration.md); error status table in
@@ -357,17 +379,17 @@ substrate Phases 5-6 draw onto.
 
 | File | Purpose |
 |---|---|
-| `src/lib/themeColors.ts` | Hex mirrors of `--waveform-*`/`--silence-*`/`--marker-*` CSS vars; canvas can't read custom properties — keep in sync with `index.css` |
+| `src/lib/themeColors.ts` | Resolves the `--waveform-*`/`--silence-*`/`--selection-fill` tokens with `getComputedStyle` for the canvas; re-read when the resolved theme changes |
 | `src/lib/time.ts` | `formatClock(seconds)` -> `"m:ss"` shared by transport readout and wavesurfer plugin labels |
 | `src/features/waveform/peaks.ts` | `toWavesurferPeaks(WaveformPeaks)` -> `[max[], min[]]`; wavesurfer v7's bar renderer reads `channelData[0]` as top envelope and `channelData[1]` (via `Math.abs`) as bottom, so this gives the true min/max shape with no normalization (PCM is already `[-1,1]`); falls back to `[max[]]` on length mismatch |
-| `src/features/waveform/useWavesurfer.ts` | Lifecycle hook: instance in `useRef` (never state), create/destroy in one effect (StrictMode-safe; swallows `AbortError` on mid-load destroy); Timeline + Hover plugins; events → `playbackStore`; rate and zoom applied via two separate effects so they don't re-trigger init |
+| `src/features/waveform/useWaveformEngine.ts` | Lifecycle hook: instance in `useRef` (never state), create/destroy in one effect (StrictMode-safe); wavesurfer renders from peaks while an owned `<audio>` plays the source; Minimap overview, Timeline + Hover plugins; events → `playbackStore`; rate and zoom applied via separate effects so they don't re-trigger init |
 | `src/features/waveform/WaveformContext.tsx` | `WaveformProvider` + `useWaveformContext`: React context exposing the instance, container ref, and load state to transport and future phases — chosen over a store ref (more idiomatic) and prop-drilling (would get noisy) |
 | `src/features/waveform/WaveformView.tsx` | Container `<div>` with load/error overlays; `relative` so Phase 5/6 overlays can anchor absolutely |
-| `src/features/transport/transportControls.ts` | `togglePlay`, `zoomIn`, `zoomOut` — shared by bar buttons and keyboard handler |
-| `src/features/transport/useTransportHotkeys.ts` | Space = play/pause, `[`/`]` = zoom; skipped when target is input/textarea/select/contenteditable |
-| `src/features/transport/TransportBar.tsx` | Split into `TimeReadout` (subscribes `currentTime`+`duration` only), `PlayButton` (subscribes `isPlaying` only), `ZoomControls`, `RateSelect` — so per-frame time updates re-render only the readout node, not the bar or editor tree |
+| `src/features/transport/transportControls.ts` | `togglePlay`, `seekBy`, `zoomIn`, `zoomOut` — shared by bar buttons and keyboard handler |
+| `src/features/transport/useTransportHotkeys.ts` | Space = play/pause, ArrowLeft/ArrowRight = skip 5 s; skipped when target is input/textarea/select/contenteditable |
+| `src/features/transport/TransportBar.tsx` | Split into `Clock` (subscribes `currentTime`+`duration` only), `PlayButton` (subscribes `isPlaying` only), `RateSelect` — so per-frame time updates re-render only the clock node, not the bar or editor tree; zoom sits on the overview |
 | `src/stores/playbackStore.ts` | `currentTime`/`duration`/`isPlaying`/`rate`/`zoom` (minPxPerSec); fed from wavesurfer events; selector-subscribe to isolate per-frame renders; `reset()` on teardown |
-| `src/pages/EditorPage.tsx` | "Ready" placeholder replaced with `EditorWorkspace` → `WaveformProvider` → `EditorBody` (title + `WaveformView` + `TransportBar`); entry-state machine above is unchanged |
+| `src/pages/EditorPage.tsx` | `EditorWorkspace` → `WaveformProvider` → `EditorBody`: the ruled page with the title cartouche, overview, `WaveformView`, `TransportBar` and lower band; entry-state machine above is unchanged |
 
 **Design decisions recorded:**
 - **Peaks shape:** `[max, min]` (not max-only fallback) — v7 renderer confirmed via source inspection to use `Math.abs` on both channels.
@@ -413,14 +435,15 @@ them on export. Small additions following the `put_edl` / `render` patterns.
 non-destructive EDL, then export.
 
 **Build:** `src/features/silence/` — `SilencePanel.tsx`, `SilenceList.tsx`,
-`SilenceControls.tsx`, `regions.ts` (reconcile silences <-> wavesurfer regions),
+`SilenceControls.tsx`, `regions.ts` (silence keys; drawing lives in
+`features/cuts/regions.ts`),
 `edl.ts` (UI-action -> op mapping + derive the kept timeline); a Zustand
 `src/stores/editStore.ts` (`operations[]`, `undoStack`, `redoStack`, `selectedSilenceIds`).
 
 **Design:**
-- **Overlays:** one wavesurfer Regions entry per `SilenceSegment`; fill `--silence-fill`,
-  selected = `--silence-fill-selected` + a solid `--silence-bar-selected` left bar; hover
-  -> `Tooltip` (start/end/duration). Regions are read-only highlights in v1 (no drag);
+- **Overlays:** one wavesurfer Regions entry per `SilenceSegment`; fill `--silence-fill`
+  (ink at 8%), selected = `--silence-fill-selected` (18%); removed silences and manual
+  cuts draw as the `--cut-stripe` 45° hatch with an edge line at each end. Regions are read-only highlights in v1 (no drag);
   click toggles selection. Selection lives in `editStore`, reflected in both list and
   waveform. Reconcile in an effect keyed on `silences` + `selectedSilenceIds`.
 - **Detection controls:** `threshold_db` slider (range ~-60..-20; default **-40**) and
@@ -452,7 +475,8 @@ outline, and let the user navigate **and correct** it with persisted edits.
 
 **Built:** `src/features/markers/` — `MarkerLayer.tsx`, `MarkerChip.tsx`,
 `MarkerControls.tsx` (detect-phrases trigger + progress), `MarkerEditor.tsx`,
-`PrayerStructurePanel.tsx`, `MarkersPanel.tsx` (composes the three), `edits.ts` (pure
+`PrayerOutline.tsx` (beside the tools in the lower band), `MarkersPanel.tsx` (the Markers
+tool: detection and the editor), `edits.ts` (pure
 marker mutations), `structure.ts` (active-position selector), `useMarkerLayout.ts`
 (`time -> x` under zoom/scroll); a Zustand `src/stores/markerStore.ts` (selection only).
 API glue: `MarkersUpdate` in `types/api.ts`, `updateMarkers` in `endpoints.ts`,
@@ -460,21 +484,22 @@ API glue: `MarkersUpdate` in `types/api.ts`, `updateMarkers` in `endpoints.ts`,
 markers + structure). `WaveformView` gained an `overlay` slot anchored to the waveform box.
 
 **Design (as built):**
-- **Markers:** a vertical line + `Badge`-styled chip per `Marker`, positioned by
-  `time -> x`. `useMarkerLayout` reads the rendered `pxPerSec` (wrapper `scrollWidth /
+- **Markers:** a binding-green guide line + a marginal note (green Rub el Hizb star and
+  the note in Ibarra italic above the top rule) per `Marker`, positioned by `time -> x`. `useMarkerLayout` reads the rendered `pxPerSec` (wrapper `scrollWidth /
   duration`, the ground truth even when fitted) and scroll offset, recomputing on
-  zoom/scroll/resize. Color by `type` via `badgeVariantForMarker`; low-confidence **auto**
-  markers dim + dash. Arabic labels use `font-arabic` + `lang="ar" dir="rtl"`. Click a chip
-  -> select + seek.
+  zoom/scroll/resize. Low-confidence **auto** markers dim; the selected note takes the
+  accent and an underline. The Arabic label is the tooltip. Click a note -> select + seek.
 - **Editing (persisted, not a client overlay):** every edit computes the next `Marker[]`
   (`edits.ts`) and calls `useUpdateMarkers`; the server replaces the list, **re-derives
   structure**, and returns both. Add-at-playhead, relabel, retype, move-to-playhead, and
   delete are in `MarkerEditor`. User markers carry `source: "user"`; new markers leave `id`
   blank so the backend derives the canonical `type-time` id. **Structure is never edited
   directly** — the user corrects it by editing the boundary markers, which re-derives it.
-- **Prayer panel:** group `PrayerPosition[]` by `rakah`; click a position -> seek; the
-  active position highlights as `currentTime` advances (a zustand selector maps the playhead
-  to the active index, so the panel re-renders only when the index changes). A gentle
+- **Prayer outline:** group `PrayerPosition[]` by `rakah`, one Rub el Hizb star per rak'ah
+  and the current rak'ah's positions below; click a star or a position -> seek; `[` / `]`
+  step rak'ahs; the active position highlights as `currentTime` advances (a zustand
+  selector maps the playhead to the active index, so the outline re-renders only when the
+  index changes). A gentle
   `warning` `Alert` flags an incomplete-looking outline (no advancing markers / no tasleem);
   never a hard error — recitations vary.
 - **Timeline invariant (resolves the old open question):** the frontend works entirely on
@@ -500,7 +525,7 @@ and runs on a single-worker pool (`phrase_workers: 1`) — expect a long poll.
 it only while open so no job polls after close) and `ExportModal.tsx` (`format` / `bitrate`
 / `embed_markers` -> `ExportRequest`; `useExport` -> poll job -> on success read the
 artifact id from the job result and offer `exportDownloadUrl` as a native download link).
-Wired into the editor header beside the title. Because Phase B sources export chapters from
+Wired into the editor's title row beside the cartouche. Because Phase B sources export chapters from
 `project.markers`, whatever the user has after Phase 6 edits is exactly what `embed_markers`
 embeds — no extra bridging.
 

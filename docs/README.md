@@ -57,7 +57,7 @@ detection output. Every tuning knob lives in one strict config file,
 
 **Design records: [plans/](plans/)**
 - [vad-integration-plan.md](plans/vad-integration-plan.md): one Silero pass per source shared by silence and phrase detection.
-- [backend-project-crud-plan.md](plans/backend-project-crud-plan.md): project library, rename, delete.
+- [backend-project-crud-plan.md](plans/backend-project-crud-plan.md): recording list, rename, delete.
 - [frontend-project-library-plan.md](plans/frontend-project-library-plan.md): library page and in-editor switcher.
 - [resilient-processing.md](plans/resilient-processing.md): checkpoint and resume for long jobs (proposed).
 

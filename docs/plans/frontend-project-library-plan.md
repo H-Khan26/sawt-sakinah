@@ -1,11 +1,21 @@
-# Frontend Plan — Project Library, In-Editor Switcher, and Saving Mechanics
+# Frontend Plan — Library, In-Editor Switcher, and Saving Mechanics
 
 > Status: implemented; kept as a design record. Companion to
 > `docs/plans/backend-project-crud-plan.md`, whose contracts (`GET /projects`,
 > `PATCH /projects/{id}`, `DELETE /projects/{id}`, export naming) landed first — see
 > "Backend status" below. Scope: turn the single-document
-> app into a multi-project one — a library on entry, a collapsible in-editor switcher,
+> app into a multi-recording one — a library on entry, a collapsible in-editor switcher,
 > rename/delete, export naming, and an explicit save-state story.
+
+> **As built.** `/` is the library ("Your recordings",
+> [ProjectLibraryPage.tsx](../../frontend/src/pages/ProjectLibraryPage.tsx)) set under the
+> Sanctuary dome ([LibraryShell.tsx](../../frontend/src/components/layout/LibraryShell.tsx)):
+> recordings show as `NicheCard` niches or `FihristList` rows, each with title, length and
+> date, and a ⋯ `ProjectMenu` for Rename and Delete. `/new` opens the New recording sheet
+> (`NewRecordingSheet`) over the library. The editor has no app header: an 88 px binding
+> rail ([EditorShell.tsx](../../frontend/src/components/layout/EditorShell.tsx)) carries
+> the app mark, Library and New recording, and the title row sets the recording name in a
+> cartouche that opens the recording switcher (`ProjectSwitcher`).
 
 > **Backend status (landed).** All endpoints this plan consumes now exist:
 > - `GET /projects` -> `{ projects: ProjectSummary[] }`, sorted `updated_at`-desc.
@@ -22,18 +32,16 @@
 
 ---
 
-## 1. Where we are today
+## 1. Starting point
 
-- Routing ([App.tsx](../../frontend/src/App.tsx)): `/` = paste-a-URL landing
-  ([LandingPage.tsx](../../frontend/src/pages/LandingPage.tsx)); `/p/:projectId` = editor
-  ([EditorPage.tsx](../../frontend/src/pages/EditorPage.tsx)); `*` -> `/`.
-- There is **no way to see existing projects**. You reach a project only by creating it
+- Routing ([App.tsx](../../frontend/src/App.tsx)): `/` = a paste-a-URL form;
+  `/p/:projectId` = editor ([EditorPage.tsx](../../frontend/src/pages/EditorPage.tsx));
+  `*` -> `/`.
+- There is **no way to see existing recordings**. You reach a recording only by creating it
   (the id comes back from `POST /projects`) or by already knowing its URL. Refreshing
   `/p/:id` re-fetches by id and works, but the app never lists what exists.
-- Header ([AppHeader.tsx](../../frontend/src/components/layout/AppHeader.tsx)) is a wordmark +
-  a "New" button that navigates to `/`. Shell
-  ([AppShell.tsx](../../frontend/src/components/layout/AppShell.tsx)) is header + full-bleed
-  main; explicitly "no sidebar, single-document tool."
+- A slim app header holds the app name and a "New" button that navigates to `/`; the shell
+  is header + full-bleed main, a single-document tool with no sidebar.
 - Server state is React Query; local UI state is Zustand
   ([editStore.ts](../../frontend/src/stores/editStore.ts),
   [markerStore.ts](../../frontend/src/stores/markerStore.ts)). Edits already persist per-mutation
@@ -51,14 +59,14 @@ metadata management (rename/delete/export naming), and making the existing autos
 
 | Route | View | Notes |
 |---|---|---|
-| `/` | **Project library** (new) | List of projects; entry point for the whole app |
-| `/new` | **New project** (paste URL) | The current `LandingPage` form, moved here |
-| `/p/:projectId` | Editor | Core unchanged; header gains a switcher |
+| `/` | **Library** ("Your recordings") | List of recordings; entry point for the whole app |
+| `/new` | **New recording** sheet | Paste a URL or drop a file; opens over the library |
+| `/p/:projectId` | Editor | Core unchanged; the title cartouche is the switcher |
 | `*` | -> `/` | unchanged |
 
 Decision: entering the app lands on the **library**, not on the last project. This is the
-clearest model for "multiple projects and switching." (Optional enhancement in 7.4:
-remember and offer the last-opened project.)
+clearest model for "multiple recordings and switching." (Optional enhancement in 7.4:
+remember and offer the last-opened recording.)
 
 ---
 
@@ -103,67 +111,65 @@ blank names — validate/trim in the rename UI before firing to avoid the round-
 
 ---
 
-## 4. Project library page (`/`)
+## 4. Library page (`/`)
 
 New `frontend/src/pages/ProjectLibraryPage.tsx`.
 
 - **Data:** `useProjects()`. States: loading spinner; error `Alert`; empty state
-  ("No projects yet — start from a link", CTA -> `/new`, reuse existing `EmptyState`).
-- **Layout:** responsive card grid, sorted by `updated_at` desc (server already sorts;
-  keep client-side stable). Each card shows:
+  ("No recordings yet", CTA -> `/new`).
+- **Layout:** an arcade of `NicheCard` niches or a `FihristList` (view toggle), sorted by
+  `updated_at` desc (server already sorts; keep client-side stable). The plan for each
+  entry:
   - `name` (the editable title),
   - source host + formatted `duration_sec` (reuse [lib/time.ts](../../frontend/src/lib/time.ts)),
   - relative `updated_at` ("edited 2h ago"),
   - status badges from `status` (extracted / analyzed / edited) using existing `Badge`,
   - export count when `> 0`.
-- **Primary action:** click card -> `navigate(/p/{id})`.
-- **Per-card menu** (kebab): **Rename** (inline input or small modal -> `useRenameProject`),
+- **Primary action:** click a niche or row -> `navigate(/p/{id})`.
+- **Per-recording menu** (⋯ `ProjectMenu`): **Rename** (small modal -> `useRenameProject`),
   **Delete** (confirm modal -> `useDeleteProject`), and when `export_count > 0` a
   **Download latest** shortcut (links to the newest artifact's `download_url`).
-- **New project:** a prominent "New project" card/button -> `/new`.
+- **New recording:** a "New recording" button -> `/new`.
+
+As built, each niche or row shows title, length and date only; there are no status badges
+or export counts.
 
 Delete confirmation is required (it removes audio + exports irreversibly). Rename is
 optimistic with rollback on error.
 
 ---
 
-## 5. New project flow (`/new`)
+## 5. New recording flow (`/new`)
 
-Move the current [LandingPage.tsx](../../frontend/src/pages/LandingPage.tsx) body to
-`/new` (rename to `NewProjectPage` or keep as a modal launched from the library — a route
-is simpler and deep-linkable). On success it already navigates to `/p/:id` carrying the
-`jobId` in router state; keep that. Add a "Back to library" affordance.
+`/new` stays a route (deep links, retry) and renders the library with the New recording
+sheet ([NewRecordingSheet.tsx](../../frontend/src/features/projects/NewRecordingSheet.tsx))
+open over it: a YouTube link field and a drop zone for a local file. On success it
+navigates to `/p/:id` carrying the `jobId` in router state. Closing the sheet returns to
+the library.
 
-The wordmark/"home" in the header now points to `/` (the library) rather than the paste
-form — see §6.
+The app mark on the editor rail points to `/` (the library) — see §6.
 
 ---
 
-## 6. Editor header: collapsible project switcher
+## 6. Editor title: the recording switcher
 
-Rework [AppHeader.tsx](../../frontend/src/components/layout/AppHeader.tsx) so it is
-context-aware. The header is always present (it lives in `AppShell`), but its middle region
-changes:
+Each layout carries its own chrome (see `AppShell`): the library sits under the Sanctuary
+header (logo, lamp ring, theme switch and settings), and the editor beside the binding rail
+(app mark -> `/`, Library, New recording -> `/new`, theme switch and settings).
 
-- **On `/` and `/new`:** wordmark only (as today), wordmark -> `/`.
-- **On `/p/:id`:** show the **current project name** as a button that opens a **collapsible
-  switcher** — a dropdown/popover listing projects (`useProjects()`), each row navigating to
-  `/p/{otherId}`. Include a "New project" row (-> `/new`) and a "Back to all projects" row
-  (-> `/`). The current project is marked active.
+- **On `/p/:id`:** the title row sets the **current recording name** in a cartouche
+  ([ProjectSwitcher.tsx](../../frontend/src/features/projects/ProjectSwitcher.tsx)), a
+  button that opens a popover listing recordings (`useProjects()`), each row navigating to
+  `/p/{otherId}`. It includes a "New recording" row (-> `/new`) and an "All recordings"
+  row (-> `/`). The current recording is marked active; unreadable ones are disabled.
 
-Collapsible behavior: the switcher is collapsed by default (just the current project name +
-chevron); clicking expands the list; selecting or clicking away collapses it. Keep it
-keyboard-accessible (existing UI primitives: `Tooltip`, `Button`; add a lightweight popover
-or reuse `Modal` for small screens).
+The switcher is collapsed by default (just the cartouche); clicking opens the list;
+selecting or clicking away closes it. It is keyboard-accessible.
 
-Because the switcher needs the current project's `name`, the editor passes it down, or the
-header reads it from the `queryKeys.project(id)` cache via `projectId` parsed from the route
-(`useParams`). Prefer reading from cache so the header has no prop coupling to `EditorPage`.
+The editor passes the current recording's `name` and id to the switcher as props.
 
-Rename entry point: allow renaming from the switcher header too (click the name to edit), so
-users can rename without returning to the library.
-
-The existing "New" (+) button stays, now clearly navigating to `/new`.
+Rename entry point: the current recording's name heads the popover and opens the rename
+dialog, so users can rename without returning to the library.
 
 ---
 
@@ -176,7 +182,7 @@ new metadata saves.
 
 ### 7.1 Save-state indicator
 
-Add a small status element in the editor header driven by the existing mutations:
+Add a small status element in the editor's title row driven by the existing mutations:
 
 - Derive `saving` from `usePutEdl().isPending || useUpdateMarkers().isPending`.
 - Derive `error` from either mutation's `isError`.
@@ -208,7 +214,7 @@ discrete-edit model; note and defer.
 
 ### 7.4 Startup / last-opened (optional enhancement)
 
-Persist the last-opened `projectId` in `localStorage`. On landing at `/`, the library can
+Persist the last-opened `projectId` in `localStorage`. On arriving at `/`, the library can
 surface a "Resume {name}" shortcut. Entry still defaults to the library (§2); this is a
 convenience, not the default path.
 
@@ -232,22 +238,23 @@ In [ExportModal.tsx](../../frontend/src/features/export/ExportModal.tsx):
 ## 9. Component / file summary
 
 New:
-- `pages/ProjectLibraryPage.tsx` — the library grid (§4).
-- `pages/NewProjectPage.tsx` — moved paste-URL flow (§5), or a modal variant.
-- `features/projects/ProjectSwitcher.tsx` — collapsible in-editor switcher (§6).
-- `features/projects/ProjectCard.tsx`, `RenameDialog.tsx`, `DeleteDialog.tsx` — library bits.
+- `pages/ProjectLibraryPage.tsx` — the library (§4).
+- `features/projects/NewRecordingSheet.tsx` — the New recording sheet over the library (§5).
+- `features/projects/ProjectSwitcher.tsx` — the title cartouche and recording switcher (§6).
+- `features/projects/NicheCard.tsx`, `FihristList.tsx`, `ProjectMenu.tsx`,
+  `RenameDialog.tsx`, `DeleteDialog.tsx` — library bits.
 - `components/SaveStatus.tsx` — save-state indicator (§7.1).
 
 Changed:
 - [App.tsx](../../frontend/src/App.tsx) — add `/` (library) and `/new`; keep `/p/:id`.
-- [AppHeader.tsx](../../frontend/src/components/layout/AppHeader.tsx) — context-aware header +
-  switcher mount; wordmark -> `/`.
+- [components/layout/](../../frontend/src/components/layout/) — `LibraryShell` (Sanctuary
+  header) and `EditorShell` (binding rail; app mark -> `/`).
 - [api/endpoints.ts](../../frontend/src/api/endpoints.ts),
   [api/hooks.ts](../../frontend/src/api/hooks.ts),
   [types/api.ts](../../frontend/src/types/api.ts) — list/rename/delete + new fields (§3).
 - [ExportModal.tsx](../../frontend/src/features/export/ExportModal.tsx) — name input (§8).
-- [EditorPage.tsx](../../frontend/src/pages/EditorPage.tsx) — mount `SaveStatus`; expose
-  current project name to the header via cache (§6, §7.1).
+- [EditorPage.tsx](../../frontend/src/pages/EditorPage.tsx) — mount `ProjectSwitcher`,
+  `SaveStatus` and Export in the title row (§6, §7.1).
 
 ---
 
@@ -257,7 +264,7 @@ Changed:
    so this is unblocked.
 2. Library page + routing split `/` and `/new` (§2, §4, §5). Delivers "project pages upon
    entering."
-3. Context-aware header + collapsible switcher (§6). Delivers in-editor switching.
+3. Title cartouche switcher (§6). Delivers in-editor switching.
 4. Save-state indicator + failure handling (§7.1, §7.2). Makes the existing autosave visible
    and robust.
 5. Export naming UI (§8). Small, independent.
@@ -270,8 +277,9 @@ landed, and its types are already in `api.ts`.
 
 ## 11. Notes / decisions to confirm
 
-- Entry = library (not auto-open last project). Changeable if you prefer resume-on-launch.
+- Entry = library (not auto-open last recording). Changeable if you prefer resume-on-launch.
 - Rename is available from both the library and the in-editor switcher.
 - Delete requires confirmation and removes audio + exports; the shared download cache is
   untouched (backend plan §3.2).
-- No pagination/search in v1 (single user, modest project counts).
+- No pagination (single user, modest recording counts); a search field joins the
+  library's heading row from 12 recordings on.

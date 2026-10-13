@@ -33,17 +33,24 @@ edit that interpretation. See [../audio/03-phrase-detection.md](../audio/03-phra
 
 ## Timeline markers
 
-- Render each `Marker` as a vertical line on the waveform with a small label chip
-  (`Badge`-styled). Color by type (takbir = purple accent; tasmi'/tahmid/tasleem = variants).
+- Render each `Marker` as a binding-green guide line (`--marker-line`) down through the
+  bars, with a marginal note above the top rule: a small green Rub el Hizb star and the
+  note (`Takbīr · sujood`) in Ibarra italic. The Arabic label is the tooltip. The selected
+  marker's note takes the accent and an underline; a note that would run into the next
+  one reduces to its star.
 - Show confidence visually (e.g. lower opacity / dashed for low-confidence auto markers)
   so the user knows which to verify.
 - Click marker → seek to it; drag → adjust time (updates state + backend); right-click /
   menu → relabel or delete.
 - "Add marker at playhead" action for manual annotation.
 
-## Prayer-structure panel
+## Prayer outline
 
-A `Card` showing the derived outline:
+The prayer outline (`PrayerOutline`) sits beside the tools in the editor's lower band. Its
+header reads "Outline" and "Rak'ah 2 of 20" with previous/next buttons; a row of Rub el
+Hizb stars, one per rak'ah, shows the current one filled, earlier ones as gold outlines
+and later ones as hairlines; below them the current rak'ah's positions list with their
+start times. The derived structure it renders:
 
 ```
 Rak'ah 1
@@ -58,7 +65,8 @@ Rak'ah 2
 Tasleem        ...
 ```
 
-- Click any position → seek there; current position highlights as audio plays.
+- Click any position → seek there; a star seeks to its rak'ah; `[` / `]` step rak'ahs;
+  the current position highlights as audio plays.
 - Allow the user to **correct** the structure: reassign a marker's position type,
   insert/remove a boundary, set rak'ah counts. The state model should make positions a
   function of markers + manual overrides.
@@ -74,6 +82,6 @@ Tasleem        ...
 ## Relationship to silence editing
 
 Markers and silence regions coexist on the same waveform. Keep them visually distinct
-(silences = filled regions; markers = vertical lines + chips). Editing silence (cuts)
+(silences = ink bands; cuts = hatched; markers = green lines + marginal notes). Editing silence (cuts)
 shifts the timeline — decide and document how markers/positions are remapped after a
 render (the backend should recompute or offset marker times relative to the EDL).

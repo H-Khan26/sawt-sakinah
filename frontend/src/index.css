@@ -70,8 +70,7 @@
     text-rendering: optimizeLegibility;
   }
 
-  h1,
-  .font-heading {
+  h1 {
     font-family: "Ibarra Real Nova", Georgia, serif;
   }
 
@@ -79,19 +78,6 @@
   :lang(ar) {
     font-family: "IBM Plex Sans Arabic", "Noto Naskh Arabic", sans-serif;
   }
-}
-
-/* Indeterminate <Progress> bar sweep. Stilled via motion-reduce:animate-none. */
-@keyframes progress-indeterminate {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(350%);
-  }
-}
-.animate-progress-indeterminate {
-  animation: progress-indeterminate 1.2s var(--ease-out) infinite;
 }
 
 /* ---------------------------------------------------------------------------

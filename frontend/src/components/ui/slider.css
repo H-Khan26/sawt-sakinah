@@ -1,5 +1,5 @@
-/* Range inputs (Slider, RangeSlider): a 2 px track in the tertiary ground, the filled part in the
-   accent up to --fill, and a diamond thumb (a rotated square) outlined in the accent. */
+/* Range input (Slider): a 2 px track in the tertiary ground, the filled part in the accent up to
+   --fill, and a diamond thumb (a rotated square) outlined in the accent. */
 .range-diamond {
   appearance: none;
   -webkit-appearance: none;
@@ -58,24 +58,4 @@
 }
 .range-diamond:focus-visible::-moz-range-thumb {
   box-shadow: 0 0 0 3px var(--color-accent-soft);
-}
-
-/* Two overlaid inputs share one drawn track; only their thumbs take pointer input. */
-.range-diamond.range-pair {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.range-diamond.range-pair::-webkit-slider-runnable-track {
-  background: transparent;
-}
-.range-diamond.range-pair::-moz-range-track,
-.range-diamond.range-pair::-moz-range-progress {
-  background: transparent;
-}
-.range-diamond.range-pair::-webkit-slider-thumb {
-  pointer-events: auto;
-}
-.range-diamond.range-pair::-moz-range-thumb {
-  pointer-events: auto;
 }
