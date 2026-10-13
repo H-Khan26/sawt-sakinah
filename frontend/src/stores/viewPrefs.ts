@@ -15,7 +15,8 @@
  * `silenceDetector` is the silence-detection mode last chosen in the silence panel.
  *
  * `theme` is the colour theme (`system` follows the OS; see `src/theme/theme.ts`), `landing`
- * whether the app opens under the dome, and `libraryView` the library's layout.
+ * whether the app opens under the dome, and `libraryView` the library's layout. `hydrated` turns
+ * true once the stored values have loaded (or failed to), for choices that must not flash a default.
  */
 import { patchPreferences, queryKeys } from "@/api/endpoints";
 import { usePreferences } from "@/api/hooks";
@@ -31,6 +32,8 @@ import { useEffect } from "react";
 import { create } from "zustand";
 
 interface ViewPrefsState {
+  /** The stored values have loaded, or failed to load and the defaults stand. */
+  hydrated: boolean;
   showDeleted: boolean;
   setShowDeleted: (v: boolean) => void;
   toggleShowDeleted: () => void;
@@ -49,7 +52,7 @@ const LIBRARY_VIEWS: readonly LibraryView[] = ["icons", "list"];
 
 /** Keys the user changed before the initial load landed; hydration must not overwrite them. */
 const touched = new Set<keyof PreferencesPatch>();
-let hydrated = false;
+let loaded = false;
 
 /** The latest queued save; each save waits for it, so the server applies them in order. */
 let saving: Promise<void> = Promise.resolve();
@@ -68,6 +71,7 @@ function save(patch: PreferencesPatch) {
 }
 
 export const useViewPrefs = create<ViewPrefsState>()((set, get) => ({
+  hydrated: false,
   showDeleted: false,
   setShowDeleted: (showDeleted) => {
     set({ showDeleted });
@@ -97,9 +101,9 @@ export const useViewPrefs = create<ViewPrefsState>()((set, get) => ({
 }));
 
 function hydrate(prefs: AppPreferences) {
-  if (hydrated) return;
-  hydrated = true;
-  const next: Partial<ViewPrefsState> = {};
+  if (loaded) return;
+  loaded = true;
+  const next: Partial<ViewPrefsState> = { hydrated: true };
   if (!touched.has("show_deleted")) next.showDeleted = prefs.show_deleted;
   if (
     !touched.has("silence_detector") &&
@@ -117,8 +121,9 @@ function hydrate(prefs: AppPreferences) {
 
 /** Load the stored preferences into {@link useViewPrefs}. Mount once, near the app root. */
 export function useSyncViewPrefs() {
-  const { data } = usePreferences();
+  const { data, isError } = usePreferences();
   useEffect(() => {
     if (data) hydrate(data);
-  }, [data]);
+    else if (isError) useViewPrefs.setState({ hydrated: true });
+  }, [data, isError]);
 }

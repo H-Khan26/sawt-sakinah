@@ -58,17 +58,27 @@ function AppearanceSection() {
 
   return (
     <Section title="Appearance">
-      <div>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <span aria-hidden="true" className="text-sm text-text">
+          Theme
+        </span>
         <SegmentedControl label="Theme" options={THEME_OPTIONS} value={theme} onChange={setTheme} />
       </div>
-      <label className="flex items-center gap-2 text-sm text-text-secondary">
+      <label className="flex cursor-pointer items-start gap-2">
         <input
           type="checkbox"
-          className="accent-accent h-4 w-4 cursor-pointer"
+          className="accent-accent mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
           checked={landing}
+          aria-describedby="landing-hint"
           onChange={(e) => setLanding(e.target.checked)}
         />
-        Open under the dome
+        <span className="flex flex-col gap-0.5">
+          <span className="text-sm text-text">Open under the dome</span>
+          <span id="landing-hint" className="text-sm text-text-tertiary">
+            Each launch starts on the dome; scroll or press Enter to come down to your recordings.
+            Off, the app opens on them directly.
+          </span>
+        </span>
       </label>
     </Section>
   );

@@ -5,10 +5,15 @@ import { useSvgId } from "./useSvgId";
 
 const TILE = latticePath();
 
+const length = (v: number | string) => (typeof v === "number" ? `${v}px` : v);
+
 export interface LatticeProps {
-  /** Fades the lattice in from transparent at `maskFrom` px to full at `maskTo` px from the top. */
-  maskFrom?: number;
-  maskTo?: number;
+  /**
+   * Fades the lattice in from transparent at `maskFrom` to full at `maskTo` from the top: px as
+   * numbers, or any CSS length (e.g. a `calc()` over custom properties).
+   */
+  maskFrom?: number | string;
+  maskTo?: number | string;
   /** Shifts the tile grid, in px. */
   offsetX?: number;
   offsetY?: number;
@@ -23,7 +28,7 @@ export function Lattice({ maskFrom, maskTo, offsetX = 0, offsetY = 0, className 
   const id = useSvgId("lattice");
   let style: CSSProperties | undefined;
   if (maskFrom !== undefined && maskTo !== undefined) {
-    const mask = `linear-gradient(transparent ${maskFrom}px, black ${maskTo}px)`;
+    const mask = `linear-gradient(transparent ${length(maskFrom)}, black ${length(maskTo)})`;
     style = { maskImage: mask, WebkitMaskImage: mask };
   }
   return (

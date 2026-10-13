@@ -1,54 +1,55 @@
 import { useCreateProject, useUploadProject } from "@/api/hooks";
-import { Alert, Button, Card, Input, Progress, Tabs } from "@/components/ui";
+import { Alert, Button, Input, Modal, Progress } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { isLikelyYouTubeUrl } from "@/lib/youtube";
-import { ArrowLeft, UploadCloud } from "lucide-react";
+import { UploadCloud, X } from "lucide-react";
 import type { DragEvent, FormEvent } from "react";
 import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import type { EditorLocationState } from "./EditorPage";
+import { useOpenImport } from "./useOpenImport";
 
 /**
- * New-project flow: either paste a YouTube link or upload a local media file, then navigate
- * to the editor carrying the resulting job id. Both paths POST to the backend (the real
- * validator) and hand off to the same `useJob` poll in the editor. Reached from the library.
+ * The "New recording" sheet over the library: a YouTube link field (focused, Enter starts the
+ * import) and, under it, a drop zone that uploads a local file. Both POST to the backend (the
+ * real validator) and open the editor on the returned job. Closing calls `onClose`.
  */
-export function NewProjectPage() {
-  const navigate = useNavigate();
-
-  const goToEditor = (project_id: string, job_id: string, url?: string) => {
-    const state: EditorLocationState = { jobId: job_id, url };
-    navigate(`/p/${project_id}`, { state });
-  };
+export function NewRecordingSheet({ onClose }: { onClose: () => void }) {
+  const openImport = useOpenImport();
 
   return (
-    <div className="flex min-h-full items-center justify-center p-6">
-      <Card className="w-full max-w-lg">
-        <div className="flex flex-col gap-5">
-          <button
-            type="button"
-            onClick={() => navigate("/")}
-            className="inline-flex items-center gap-1.5 self-start text-sm text-text-secondary hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus rounded"
-          >
-            <ArrowLeft size={16} />
-            Back to library
-          </button>
-
-          <div className="text-center">
-            <h1 className="font-serif text-3xl text-accent">New project</h1>
-            <p className="mt-1 text-text-secondary">
-              Paste a YouTube link or upload a recording to clean up a Quran recitation.
-            </p>
-          </div>
-
-          <Tabs
-            items={[
-              { id: "link", label: "Paste link", content: <LinkForm onReady={goToEditor} /> },
-              { id: "upload", label: "Upload file", content: <UploadForm onReady={goToEditor} /> },
-            ]}
-          />
+    <Modal open onClose={onClose} ariaLabel="New recording" className="max-w-lg">
+      <div className="relative flex flex-col gap-5 p-6">
+        <div className="pr-10">
+          <h2 className="font-display text-[26px] leading-tight text-text">New recording</h2>
+          <p className="mt-1 text-sm text-text-secondary">
+            Paste a YouTube link, or add an audio or video file.
+          </p>
         </div>
-      </Card>
-    </div>
+
+        <LinkForm onReady={openImport} />
+
+        <div
+          aria-hidden="true"
+          className="flex items-center gap-3 font-sans text-xs uppercase tracking-[0.16em] text-text-tertiary"
+        >
+          <span className="h-px flex-1 bg-border" />
+          or
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
+        <UploadForm onReady={openImport} />
+
+        {/* After the fields in the DOM, so the modal focuses the link field first. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Close"
+          onClick={onClose}
+          className="absolute right-4 top-4 text-text-secondary"
+        >
+          <X size={18} />
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -56,7 +57,7 @@ interface ReadyHandler {
   onReady: (projectId: string, jobId: string, url?: string) => void;
 }
 
-/** The original paste-a-link path. */
+/** Paste a YouTube link and press Enter. */
 function LinkForm({ onReady }: ReadyHandler) {
   const create = useCreateProject();
   const [url, setUrl] = useState("");
@@ -67,7 +68,7 @@ function LinkForm({ onReady }: ReadyHandler) {
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     setTouched(true);
-    if (!isLikelyYouTubeUrl(url)) return;
+    if (create.isPending || !isLikelyYouTubeUrl(url)) return;
     create.mutate(
       { url: url.trim() },
       { onSuccess: ({ project_id, job_id }) => onReady(project_id, job_id, url.trim()) },
@@ -75,7 +76,7 @@ function LinkForm({ onReady }: ReadyHandler) {
   };
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex flex-col gap-3">
       <Input
         label="YouTube link"
         placeholder="https://www.youtube.com/watch?v=…"
@@ -83,13 +84,13 @@ function LinkForm({ onReady }: ReadyHandler) {
         onChange={(e) => setUrl(e.target.value)}
         onBlur={() => setTouched(true)}
         invalid={invalid}
-        hint={invalid ? "That doesn't look like a YouTube link." : undefined}
+        hint={invalid ? "That doesn't look like a YouTube link." : "Press Enter to import."}
+        readOnly={create.isPending}
         autoFocus
         inputMode="url"
+        enterKeyHint="go"
       />
-      <Button type="submit" loading={create.isPending} disabled={url.trim().length === 0}>
-        Start
-      </Button>
+      {create.isPending && <Progress label="Starting the import" />}
       {create.isError && (
         <Alert variant="error" title="Couldn't start extraction">
           {create.error.message}
@@ -115,14 +116,19 @@ const ACCEPTED_EXTENSIONS = [
 ];
 const ACCEPT_ATTR = [...ACCEPTED_EXTENSIONS, "audio/*", "video/*"].join(",");
 
-/** Drag-and-drop / click-to-browse upload path. Starts the upload as soon as a file is chosen. */
+/**
+ * Drop a file or choose one; the upload starts as soon as a file is picked. A drop here is
+ * marked handled (`preventDefault`) so the library's drop-anywhere handler skips it.
+ */
 function UploadForm({ onReady }: ReadyHandler) {
   const uploadProject = useUploadProject();
   const inputRef = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const busy = uploadProject.isPending;
 
   const start = (file: File) => {
+    if (busy) return;
     setProgress(0);
     uploadProject.mutate(
       { file, onProgress: setProgress },
@@ -137,10 +143,8 @@ function UploadForm({ onReady }: ReadyHandler) {
     if (file) start(file);
   };
 
-  const busy = uploadProject.isPending;
-
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <button
         type="button"
         disabled={busy}
@@ -151,13 +155,14 @@ function UploadForm({ onReady }: ReadyHandler) {
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-60 ${
-          dragging ? "border-accent bg-accent-soft" : "border-border hover:border-border-focus"
-        }`}
+        className={cn(
+          "flex flex-col items-center justify-center gap-1.5 rounded border-2 border-dashed px-6 py-7 text-center transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-60",
+          dragging ? "border-accent bg-accent-soft" : "border-border hover:border-border-focus",
+        )}
       >
-        <UploadCloud size={28} className="text-text-tertiary" />
+        <UploadCloud size={24} className="text-text-tertiary" />
         <span className="text-sm text-text">
-          {busy ? "Uploading…" : "Drag a file here, or click to browse"}
+          {busy ? "Uploading…" : "Drop a file here, or choose a file"}
         </span>
         <span className="text-xs text-text-tertiary">
           MP3, WAV, M4A, FLAC, iPhone video (MOV/MP4), voice notes (OPUS/OGG), and more
