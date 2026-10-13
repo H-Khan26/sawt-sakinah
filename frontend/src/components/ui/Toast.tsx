@@ -4,14 +4,26 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState } fro
 
 export type ToastVariant = "error" | "success" | "warning" | "info";
 
+/** A button shown beside the message (e.g. Undo); clicking it runs `onClick` and dismisses. */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastRecord {
   id: number;
   message: ReactNode;
   variant: ToastVariant;
+  action?: ToastAction;
 }
 
 interface ToastApi {
-  toast: (message: ReactNode, variant?: ToastVariant, durationMs?: number) => number;
+  toast: (
+    message: ReactNode,
+    variant?: ToastVariant,
+    durationMs?: number,
+    action?: ToastAction,
+  ) => number;
   dismiss: (id: number) => void;
 }
 
@@ -42,9 +54,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toast = useCallback(
-    (message: ReactNode, variant: ToastVariant = "info", durationMs = DEFAULT_DURATION) => {
+    (
+      message: ReactNode,
+      variant: ToastVariant = "info",
+      durationMs = DEFAULT_DURATION,
+      action?: ToastAction,
+    ) => {
       const id = nextId.current++;
-      setToasts((prev) => [...prev, { id, message, variant }]);
+      setToasts((prev) => [...prev, { id, message, variant, action }]);
       if (durationMs > 0) {
         window.setTimeout(() => dismiss(id), durationMs);
       }
@@ -68,6 +85,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             )}
           >
             <div className="flex-1">{t.message}</div>
+            {t.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  t.action?.onClick();
+                  dismiss(t.id);
+                }}
+                className="rounded font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+              >
+                {t.action.label}
+              </button>
+            )}
             <button
               type="button"
               aria-label="Dismiss"

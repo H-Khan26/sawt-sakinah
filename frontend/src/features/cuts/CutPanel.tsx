@@ -1,16 +1,16 @@
 /**
  * Manual cut editing: mark a range by playhead (I/O keys) or by typing timestamps, commit it
  * as a non-destructive `cut`, and manage committed cuts (restore = uncut). Shares the EDL and
- * the undo history with the silence panel via `useEdlEditor`; nothing is rendered destructively
+ * the undo history with the silence tool via `useEdlEditor`; nothing is rendered destructively
  * until export, and the waveform engine skips committed cuts live during playback.
  */
-import { Button, PanelSection } from "@/components/ui";
+import { Button } from "@/components/ui";
+import { FieldLabel } from "@/features/editor/FieldLabel";
 import { ExportModal } from "@/features/export/ExportModal";
 import { activeSilences } from "@/features/silence/active";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import type { TimeMap } from "@/features/waveform/timeMap";
 import { cn } from "@/lib/cn";
-import { useThemeColors } from "@/lib/themeColors";
 import { formatClock, formatClockPrecise, parseClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
 import type { EditOperation, ProjectView } from "@/types/api";
@@ -22,7 +22,7 @@ import { isTypingTarget } from "./useEditHotkeys";
 import { useEdlEditor } from "./useEdlEditor";
 
 const INPUT_CLASS =
-  "h-8 w-24 rounded border border-border bg-background px-2 text-sm tabular-nums text-text " +
+  "h-9 w-28 rounded border border-border bg-surface px-2.5 text-sm tabular-nums text-text " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus";
 
 /**
@@ -84,47 +84,32 @@ function TimeInput({
   );
 }
 
-function Swatch({ color, label }: { color: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: color }} aria-hidden />
-      {label}
-    </span>
-  );
-}
-
-function EditLegend() {
-  const { selectionColors, cutColors, silenceColors } = useThemeColors();
-  return (
-    <div className="flex flex-col gap-2 rounded border border-border bg-background-secondary/40 p-3 text-xs text-text-secondary">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Key k="I" /> set start
-        <Key k="O" /> set end
-        <Key k="Del" /> cut range
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Key k="K" /> keep only
-        <Key k="E" /> export selection
-        <Key k="N" /> new project
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Key k="Ctrl+Z" /> undo
-        <Key k="Ctrl+Shift+Z" /> redo
-      </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-text-tertiary">
-        <Swatch color={selectionColors.fill} label="pending range" />
-        <Swatch color={cutColors.fillSelected} label="cut" />
-        <Swatch color={silenceColors.fillSelected} label="silence" />
-      </div>
-    </div>
-  );
-}
-
 function Key({ k }: { k: string }) {
   return (
     <kbd className="rounded border border-border bg-background px-1.5 py-0.5 font-sans text-[0.7rem] text-text">
       {k}
     </kbd>
+  );
+}
+
+/** The cut tool's shortcuts, as one wrapping line of key caps. */
+function KeyHints() {
+  const hints: [string, string][] = [
+    ["I", "start"],
+    ["O", "end"],
+    ["Del", "cut"],
+    ["K", "keep only"],
+    ["E", "export"],
+    ["N", "new recording"],
+  ];
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-text-tertiary">
+      {hints.map(([k, label]) => (
+        <span key={k} className="inline-flex items-center gap-1.5">
+          <Key k={k} /> {label}
+        </span>
+      ))}
+    </p>
   );
 }
 
@@ -190,7 +175,7 @@ export function CutPanel({ project }: { project: ProjectView }) {
     editor.applyOps(ops, removeCutsByKey(ops, new Set(selectedCutKeys)));
   };
 
-  // Selection-action shortcuts (E export, N new project, K keep-only), co-located here since the
+  // Selection-action shortcuts (E export, N new recording, K keep-only), co-located here since the
   // range + modal state live in this component. Read via a ref so the listener subscribes once
   // while acting on fresh state; suppressed while typing or while a selection modal is open.
   const hotkeyRef = useRef({ keepOnlyRange, setExportOpen, setSplitOpen, rangeReady, busy });
@@ -221,138 +206,127 @@ export function CutPanel({ project }: { project: ProjectView }) {
   }, [modalOpen]);
 
   return (
-    <PanelSection id="cuts" className="border-b border-border">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-[6rem_6rem_auto] items-end gap-2">
-              <label
-                htmlFor="cut-start"
-                className="flex flex-col gap-1 text-xs text-text-secondary"
-              >
-                Start
-                <TimeInput
-                  id="cut-start"
-                  value={selectionStart}
-                  timeMap={timeMap}
-                  onCommit={setSelectionStart}
-                  ariaLabel="Cut start"
-                />
-              </label>
-              <label htmlFor="cut-end" className="flex flex-col gap-1 text-xs text-text-secondary">
-                End
-                <TimeInput
-                  id="cut-end"
-                  value={selectionEnd}
-                  timeMap={timeMap}
-                  onCommit={setSelectionEnd}
-                  ariaLabel="Cut end"
-                />
-              </label>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={clearSelectionRange}
-                disabled={selectionStart == null && selectionEnd == null}
-              >
-                Clear
-              </Button>
-
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setSelectionStart(controller.getSourceTime())}
-                disabled={!isReady}
-                title="Set start to the playhead (I)"
-              >
-                Set in
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setSelectionEnd(controller.getSourceTime())}
-                disabled={!isReady}
-                title="Set end to the playhead (O)"
-              >
-                Set out
-              </Button>
-              <Button size="sm" variant="danger" onClick={cutRange} disabled={!rangeReady || busy}>
-                Cut
-              </Button>
-            </div>
-
-            {/* Selection actions: operate on the marked range. Enabled only when it's valid. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={keepOnlyRange}
-                disabled={!rangeReady || busy}
-                title="Trim everything outside the selection (K)"
-              >
-                Keep only
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setExportOpen(true)}
-                disabled={!rangeReady}
-                title="Export the selection as an audio file (E)"
-              >
-                Export selection…
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setSplitOpen(true)}
-                disabled={!rangeReady}
-                title="Create a new project from the selection (N)"
-              >
-                New project…
-              </Button>
-            </div>
-          </div>
-
-          <EditLegend />
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+        <label htmlFor="cut-start" className="flex flex-col gap-1.5">
+          <FieldLabel>Start</FieldLabel>
+          <TimeInput
+            id="cut-start"
+            value={selectionStart}
+            timeMap={timeMap}
+            onCommit={setSelectionStart}
+            ariaLabel="Cut start"
+          />
+        </label>
+        <label htmlFor="cut-end" className="flex flex-col gap-1.5">
+          <FieldLabel>End</FieldLabel>
+          <TimeInput
+            id="cut-end"
+            value={selectionEnd}
+            timeMap={timeMap}
+            onCommit={setSelectionEnd}
+            ariaLabel="Cut end"
+          />
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setSelectionStart(controller.getSourceTime())}
+            disabled={!isReady}
+            title="Set start to the playhead (I)"
+          >
+            Set in
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setSelectionEnd(controller.getSourceTime())}
+            disabled={!isReady}
+            title="Set end to the playhead (O)"
+          >
+            Set out
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={clearSelectionRange}
+            disabled={selectionStart == null && selectionEnd == null}
+          >
+            Clear
+          </Button>
         </div>
+      </div>
 
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3 text-sm text-text-secondary">
-            <button
-              type="button"
-              className="flex items-center gap-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
-              onClick={() => setCutsOpen((v) => !v)}
-              aria-expanded={cutsOpen}
-            >
-              <ChevronRight
-                size={16}
-                className={cn("transition-transform duration-fast", cutsOpen && "rotate-90")}
-                aria-hidden
-              />
-              Manual cuts <span className="tabular-nums text-text">{cuts.length}</span>
-            </button>
-            {cutsOpen && (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={restoreSelected}
-                disabled={selectedCutKeys.length === 0 || busy}
-              >
-                Restore selected
-              </Button>
-            )}
-          </div>
+      {/* Selection actions: operate on the marked range. Enabled only when it's valid. */}
+      <div className="flex flex-wrap items-center gap-2 border-t border-dotted border-border pt-4">
+        <Button onClick={cutRange} disabled={!rangeReady || busy} title="Cut the range (Delete)">
+          Cut range
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={keepOnlyRange}
+          disabled={!rangeReady || busy}
+          title="Trim everything outside the selection (K)"
+        >
+          Keep only
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => setExportOpen(true)}
+          disabled={!rangeReady}
+          title="Export the selection as an audio file (E)"
+        >
+          Export selection…
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => setSplitOpen(true)}
+          disabled={!rangeReady}
+          title="Create a new recording from the selection (N)"
+        >
+          New recording…
+        </Button>
+      </div>
 
-          {cutsOpen && (
-            <CutList
-              cuts={cuts}
-              timeMap={timeMap}
-              selectedIds={selectedIds}
-              onToggle={toggleSelected}
-              onSeek={(t) => controller.setSourceTime(t)}
+      <KeyHints />
+
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3 text-sm text-text-secondary">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+            onClick={() => setCutsOpen((v) => !v)}
+            aria-expanded={cutsOpen}
+          >
+            <ChevronRight
+              size={16}
+              className={cn("transition-transform duration-fast", cutsOpen && "rotate-90")}
+              aria-hidden
             />
+            Manual cuts <span className="tabular-nums text-text">{cuts.length}</span>
+          </button>
+          {cutsOpen && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={restoreSelected}
+              disabled={selectedCutKeys.length === 0 || busy}
+            >
+              Restore selected
+            </Button>
           )}
         </div>
+
+        {cutsOpen && (
+          <CutList
+            cuts={cuts}
+            timeMap={timeMap}
+            selectedIds={selectedIds}
+            onToggle={toggleSelected}
+            onSeek={(t) => controller.setSourceTime(t)}
+          />
+        )}
       </div>
 
       {exportOpen && range && (
@@ -361,7 +335,7 @@ export function CutPanel({ project }: { project: ProjectView }) {
       {splitOpen && range && (
         <SplitModal project={project} range={range} onClose={() => setSplitOpen(false)} />
       )}
-    </PanelSection>
+    </div>
   );
 }
 
@@ -386,13 +360,13 @@ function CutList({
     );
   }
   return (
-    <ul className="max-h-64 divide-y divide-border overflow-y-auto">
+    <ul className="max-h-48 divide-y divide-border overflow-y-auto border-y border-border">
       {cuts.map((op, i) => {
         const key = cutKey(op);
         const selected = selectedIds.has(key);
         const end = op.end ?? op.start;
         return (
-          <li key={key} className="flex items-center gap-3 py-2 text-sm">
+          <li key={key} className="flex items-center gap-3 py-1.5 text-sm">
             <input
               type="checkbox"
               className="accent-accent h-4 w-4 cursor-pointer"

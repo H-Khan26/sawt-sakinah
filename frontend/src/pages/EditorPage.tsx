@@ -3,16 +3,14 @@ import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { SaveStatus } from "@/components/SaveStatus";
 import { Alert, EmptyState, WaveformLoader } from "@/components/ui";
-import { CutPanel } from "@/features/cuts/CutPanel";
 import { useEditHotkeys } from "@/features/cuts/useEditHotkeys";
 import { useEditRegions } from "@/features/cuts/useEditRegions";
+import { LowerBand } from "@/features/editor/LowerBand";
 import { RuledPage } from "@/features/editor/RuledPage";
 import { ExportButton } from "@/features/export/ExportButton";
 import { MarkerLayer } from "@/features/markers/MarkerLayer";
-import { MarkersPanel } from "@/features/markers/MarkersPanel";
 import { ProjectSwitcher } from "@/features/projects/ProjectSwitcher";
 import { OpenSettingsButton } from "@/features/settings/OpenSettingsButton";
-import { SilencePanel } from "@/features/silence/SilencePanel";
 import { TransportBar } from "@/features/transport/TransportBar";
 import { useTransportHotkeys } from "@/features/transport/useTransportHotkeys";
 import { CheckForUpdatesLink, mentionsUpdate } from "@/features/updates/UpdateBanner";
@@ -182,7 +180,8 @@ function EditorWorkspace({ project }: { project: ProjectView }) {
 
 /**
  * The ruled page, top to bottom: the title cartouche with the save state and Export, the
- * overview, the waveform with its marginal notes, the transport, then the tools.
+ * overview, the waveform with its marginal notes, the transport, then the tools and the outline.
+ * When the page is fixed to the window the last row takes the remaining height.
  */
 function EditorBody({ project }: { project: ProjectView }) {
   const ops = project.edl.operations;
@@ -192,7 +191,7 @@ function EditorBody({ project }: { project: ProjectView }) {
   useEditRegions(project.silences, ops);
   useEditHotkeys(project.id, ops);
   return (
-    <RuledPage className="grid grid-cols-[minmax(0,1fr)] content-start gap-y-4 px-8 pb-5 pt-6">
+    <RuledPage className="grid grid-cols-[minmax(0,1fr)] content-start gap-y-4 px-8 pb-5 pt-6 group-[.is-fit]/page:grid-rows-[auto_auto_auto_auto_minmax(0,1fr)]">
       <div className="flex min-w-0 items-center justify-center gap-6">
         <ProjectSwitcher projectId={project.id} currentName={project.name} />
         <SaveStatus projectId={project.id} />
@@ -208,9 +207,7 @@ function EditorBody({ project }: { project: ProjectView }) {
         }
       />
       <TransportBar project={project} />
-      <CutPanel project={project} />
-      <SilencePanel project={project} />
-      <MarkersPanel project={project} />
+      <LowerBand project={project} />
     </RuledPage>
   );
 }

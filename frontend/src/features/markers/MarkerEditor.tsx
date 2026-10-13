@@ -7,6 +7,7 @@
  */
 import { useUpdateMarkers } from "@/api/hooks";
 import { Button, Input } from "@/components/ui";
+import { FieldLabel } from "@/features/editor/FieldLabel";
 import { formatClock } from "@/lib/time";
 import { useMarkerStore } from "@/stores/markerStore";
 import { usePlaybackStore } from "@/stores/playbackStore";
@@ -20,19 +21,10 @@ import {
   patchMarker,
   removeMarker,
 } from "./edits";
-
-/** Readable dropdown labels for the marker types. */
-const TYPE_DISPLAY: Record<string, string> = {
-  takbir: "Takbir",
-  tasmi: "Tasmi'",
-  tahmid: "Tahmid",
-  tasleem: "Tasleem",
-  custom: "Custom",
-};
-const typeDisplay = (t: string): string => TYPE_DISPLAY[t] ?? t;
+import { phraseTypeName } from "./names";
 
 const SELECT_CLASS =
-  "h-8 rounded border border-border bg-background px-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50";
+  "h-9 rounded border border-border bg-surface px-2.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50";
 
 export function MarkerEditor({ project }: { project: ProjectView }) {
   const markers = project.markers;
@@ -53,7 +45,7 @@ export function MarkerEditor({ project }: { project: ProjectView }) {
     setLabelDraft(selected?.label ?? "");
   }, [selected?.id]);
 
-  const playhead = (): number => usePlaybackStore.getState().currentTime;
+  const playhead = (): number => usePlaybackStore.getState().sourceTime;
 
   const addAtPlayhead = () => {
     update.mutate(addMarker(markers, newUserMarker(playhead(), newType)));
@@ -91,8 +83,8 @@ export function MarkerEditor({ project }: { project: ProjectView }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm text-text-secondary">
-          New marker type
+        <label className="flex flex-col gap-1.5">
+          <FieldLabel>New marker type</FieldLabel>
           <select
             className={SELECT_CLASS}
             value={newType}
@@ -101,12 +93,12 @@ export function MarkerEditor({ project }: { project: ProjectView }) {
           >
             {EDITABLE_MARKER_TYPES.map((t) => (
               <option key={t} value={t}>
-                {typeDisplay(t)}
+                {phraseTypeName(t)}
               </option>
             ))}
           </select>
         </label>
-        <Button size="sm" onClick={addAtPlayhead} disabled={busy}>
+        <Button variant="secondary" onClick={addAtPlayhead} disabled={busy}>
           Add marker at playhead
         </Button>
       </div>
@@ -134,8 +126,8 @@ export function MarkerEditor({ project }: { project: ProjectView }) {
             }}
           />
 
-          <label className="flex flex-col gap-1 text-sm text-text-secondary">
-            Type
+          <label className="flex flex-col gap-1.5">
+            <FieldLabel>Type</FieldLabel>
             <select
               className={SELECT_CLASS}
               value={selected.type}
@@ -144,7 +136,7 @@ export function MarkerEditor({ project }: { project: ProjectView }) {
             >
               {typeOptions.map((t) => (
                 <option key={t} value={t}>
-                  {typeDisplay(t)}
+                  {phraseTypeName(t)}
                 </option>
               ))}
             </select>

@@ -4,6 +4,8 @@
  * wavesurfer draws to a `<canvas>`, which cannot resolve CSS custom properties, so the values are
  * read from the computed style of `<html>` for the theme in effect. {@link useThemeColors}
  * re-reads them when the resolved theme changes; consumers re-apply them to the renderer.
+ * Overlays drawn as DOM styles (the cut hatch, marker lines, the overview box) use the tokens
+ * directly instead.
  */
 import { type ResolvedTheme, useResolvedTheme } from "@/theme/theme";
 
@@ -18,12 +20,8 @@ export interface ThemeColors {
   };
   /** Detected silence bands (`--silence-fill*`). */
   silenceColors: { fill: string; fillSelected: string };
-  /** Committed manual cuts (`--cut-stripe*`). */
-  cutColors: { fill: string; fillSelected: string };
   /** The pending in/out range (`--selection-fill`). */
   selectionColors: { fill: string };
-  /** Marker guide lines (`--marker-line`). */
-  markerColors: { line: string };
 }
 
 /** Resolve the waveform and region tokens for the theme currently applied to `<html>`. */
@@ -40,12 +38,7 @@ export function readThemeColors(): ThemeColors {
       fill: read("--silence-fill"),
       fillSelected: read("--silence-fill-selected"),
     },
-    cutColors: {
-      fill: read("--cut-stripe"),
-      fillSelected: read("--cut-stripe-selected"),
-    },
     selectionColors: { fill: read("--selection-fill") },
-    markerColors: { line: read("--marker-line") },
   };
 }
 

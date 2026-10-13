@@ -1,14 +1,15 @@
 /**
- * Silence-detection controls: a detector mode switch, the mode's tuning sliders, and a detect
- * button.
+ * Silence detection: the detector mode, the mode's tuning sliders, and the detect action.
+ * `useSilenceDetection` holds the state and runs the jobs; `SilenceControls` renders the
+ * detector and slider fields, and the panel places the detect button beside its summary.
  *
  * Two modes, each mapping to a backend detector:
- * - Speech detection (`detector: "vad"`): Silero speech probabilities. "Speech threshold" is
+ * - Voice activity (`detector: "vad"`): Silero speech probabilities. "Speech threshold" is
  *   `speech_threshold` (0..1 probability cutoff; higher is stricter about what counts as speech,
  *   so more audio is treated as silence). The first run computes the speech map server-side;
  *   later runs reuse it (`has_speech_map`) and are cheap.
- * - Energy gate (`detector: "ffmpeg"`): the ffmpeg `silencedetect` level gate. "Silence
- *   threshold" is `threshold_db`.
+ * - Energy (`detector: "ffmpeg"`): the ffmpeg `silencedetect` level gate. "Silence threshold" is
+ *   `threshold_db`.
  * "Minimum gap" is `min_silence_duration` in both modes. Only the fields relevant to the active
  * mode are sent; the backend fills its own defaults for the rest.
  *
@@ -23,7 +24,8 @@
  * (`fallback`) as an inline warning rather than as a failure.
  */
 import { useDetectSilence, useJob } from "@/api/hooks";
-import { Button, Slider } from "@/components/ui";
+import { SegmentedControl, Slider } from "@/components/ui";
+import { FieldLabel } from "@/features/editor/FieldLabel";
 import { useViewPrefs } from "@/stores/viewPrefs";
 import type { JobRecord, SilenceDetector, SilenceJobResult, SilenceParams } from "@/types/api";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -34,8 +36,8 @@ const MIN_GAP = { min: 0.2, max: 10, step: 0.1, default: 3.0 };
 const DEBOUNCE_MS = 400;
 
 const MODES: { value: SilenceDetector; label: string }[] = [
-  { value: "vad", label: "Speech detection" },
-  { value: "ffmpeg", label: "Energy gate" },
+  { value: "vad", label: "Voice activity" },
+  { value: "ffmpeg", label: "Energy" },
 ];
 
 interface SliderValues {
@@ -65,7 +67,28 @@ function silenceResult(job: JobRecord | undefined): SilenceJobResult | undefined
   };
 }
 
-export function SilenceControls({
+export interface SilenceDetection {
+  mode: SilenceDetector;
+  changeMode: (next: SilenceDetector) => void;
+  threshold: number;
+  setThreshold: (v: number) => void;
+  sensitivity: number;
+  setSensitivity: (v: number) => void;
+  minGap: number;
+  setMinGap: (v: number) => void;
+  /** Run detection now with the current mode and values. */
+  detectNow: () => void;
+  /** A detection request or job is in flight. */
+  detecting: boolean;
+  /** The last detection job failed. */
+  failed: boolean;
+  /** The server used the energy gate in place of the requested VAD. */
+  fellBack: boolean;
+  /** The next VAD run computes this recording's speech map first. */
+  showFirstRunHint: boolean;
+}
+
+export function useSilenceDetection({
   projectId,
   hasDetected,
   hasSpeechMap,
@@ -74,7 +97,7 @@ export function SilenceControls({
   hasDetected: boolean;
   /** Whether the backend already holds this recording's speech map (VAD re-detects are instant). */
   hasSpeechMap: boolean;
-}) {
+}): SilenceDetection {
   const mode = useViewPrefs((s) => s.silenceDetector);
   const setMode = useViewPrefs((s) => s.setSilenceDetector);
   const [threshold, setThreshold] = useState(THRESHOLD.default);
@@ -144,35 +167,49 @@ export function SilenceControls({
   // speech analysis alongside it would contradict that.
   const showFirstRunHint = mode === "vad" && !hasSpeechMap && !fellBack;
 
+  return {
+    mode,
+    changeMode,
+    threshold,
+    setThreshold,
+    sensitivity,
+    setSensitivity,
+    minGap,
+    setMinGap,
+    detectNow,
+    detecting,
+    failed: job.data?.state === "failed",
+    fellBack,
+    showFirstRunHint,
+  };
+}
+
+/** The detector switch and the active mode's two sliders, laid out as one wrapping row. */
+export function SilenceControls({ detection }: { detection: SilenceDetection }) {
+  const d = detection;
   return (
-    <div className="flex flex-col gap-4">
-      <fieldset className="min-w-0">
-        <legend className="mb-1 text-sm text-text-secondary">Detector</legend>
-        <div className="flex gap-2">
-          {MODES.map((m) => (
-            <Button
-              key={m.value}
-              size="sm"
-              variant={mode === m.value ? "primary" : "secondary"}
-              aria-pressed={mode === m.value}
-              onClick={() => changeMode(m.value)}
-              disabled={detecting}
-            >
-              {m.label}
-            </Button>
-          ))}
-        </div>
-      </fieldset>
-      {mode === "vad" ? (
+    <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
+      <div className="flex flex-col gap-1.5">
+        <FieldLabel>Detector</FieldLabel>
+        <SegmentedControl
+          label="Detector"
+          options={MODES}
+          value={d.mode}
+          onChange={d.changeMode}
+          disabled={d.detecting}
+        />
+      </div>
+      {d.mode === "vad" ? (
         <Slider
           label="Speech threshold"
           min={SENSITIVITY.min}
           max={SENSITIVITY.max}
           step={SENSITIVITY.step}
-          value={sensitivity}
-          onChange={setSensitivity}
+          value={d.sensitivity}
+          onChange={d.setSensitivity}
           format={(v) => v.toFixed(2)}
-          disabled={detecting}
+          disabled={d.detecting}
+          className="min-w-[160px] flex-1 pb-1.5"
         />
       ) : (
         <Slider
@@ -180,10 +217,11 @@ export function SilenceControls({
           min={THRESHOLD.min}
           max={THRESHOLD.max}
           step={THRESHOLD.step}
-          value={threshold}
-          onChange={setThreshold}
+          value={d.threshold}
+          onChange={d.setThreshold}
           format={(v) => `${v} dB`}
-          disabled={detecting}
+          disabled={d.detecting}
+          className="min-w-[160px] flex-1 pb-1.5"
         />
       )}
       <Slider
@@ -191,32 +229,12 @@ export function SilenceControls({
         min={MIN_GAP.min}
         max={MIN_GAP.max}
         step={MIN_GAP.step}
-        value={minGap}
-        onChange={setMinGap}
+        value={d.minGap}
+        onChange={d.setMinGap}
         format={(v) => `${v.toFixed(1)} s`}
-        disabled={detecting}
+        disabled={d.detecting}
+        className="min-w-[160px] flex-1 pb-1.5"
       />
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-3">
-          <Button size="sm" onClick={detectNow} loading={detecting}>
-            {hasDetected ? "Re-detect silence" : "Detect silence"}
-          </Button>
-          {job.data?.state === "failed" && (
-            <span className="text-sm text-danger">Detection failed. Try again.</span>
-          )}
-        </div>
-        {fellBack && (
-          <span className="text-sm text-warning">
-            Speech detection is unavailable on this server; the energy gate was used instead. Switch
-            to Energy gate to tune the dB threshold.
-          </span>
-        )}
-        {showFirstRunHint && (
-          <span className="text-xs text-text-secondary">
-            First run analyses speech for this recording.
-          </span>
-        )}
-      </div>
     </div>
   );
 }

@@ -26,7 +26,7 @@ export type { RangeSliderProps, SliderProps } from "./Slider";
 export { Tabs } from "./Tabs";
 export type { TabItem, TabsProps } from "./Tabs";
 export { ToastProvider, useToast } from "./Toast";
-export type { ToastVariant } from "./Toast";
+export type { ToastAction, ToastVariant } from "./Toast";
 export { Tooltip } from "./Tooltip";
 export type { TooltipProps, TooltipSide } from "./Tooltip";
 export { WaveformLoader } from "./WaveformLoader";
