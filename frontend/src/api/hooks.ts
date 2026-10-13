@@ -224,7 +224,7 @@ export function usePutEdl(projectId: string) {
 /**
  * Persist the marker list and patch the cached project. The server re-derives prayer
  * structure from the markers and returns the full view, so we patch markers, structure,
- * and status together — keeping `PrayerStructurePanel` in sync in one shot.
+ * and status together — keeping the prayer outline in sync in one shot.
  */
 export function useUpdateMarkers(projectId: string) {
   const queryClient = useQueryClient();
