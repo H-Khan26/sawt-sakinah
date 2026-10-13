@@ -7,6 +7,18 @@ export function formatClock(seconds: number): string {
 }
 
 /**
+ * Format a time as `h:mm:ss` from an hour up (`1:02:14`) and `m:ss` below it (`4:52`), for
+ * whole-recording lengths and rak'ah starts. Negative/NaN clamps to `0:00`.
+ */
+export function formatHms(seconds: number): string {
+  const s = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
+  if (s < 3600) return formatClock(s);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${h}:${m.toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
+}
+
+/**
  * Format seconds as `m:ss.d` with one decimal (e.g. `3:07.4`) for the editing readouts,
  * where sub-second precision matters when marking cut points. Negative/NaN clamps to `0:00.0`.
  */

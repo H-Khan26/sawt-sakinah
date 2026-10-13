@@ -1,4 +1,5 @@
 import { useProjects } from "@/api/hooks";
+import { Cartouche } from "@/components/ornament";
 import { cn } from "@/lib/cn";
 import { Check, ChevronDown, LayoutGrid, Pencil, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -6,12 +7,14 @@ import { useNavigate } from "react-router-dom";
 import { RenameDialog } from "./RenameDialog";
 
 /**
- * In-editor project switcher: a collapsed button showing the current project name, expanding
- * to a popover that lists all projects (navigate between them), plus rows to start a new
- * project or return to the library. The current project's name is also the rename entry
- * point. Sits on the dome ground of the editor bar and reads the name from props (the bar pulls
- * it from the project cache). Unreadable
- * projects are listed but disabled, with the reason as their tooltip.
+ * The editor title and recording switcher in one: the recording name set in the {@link Cartouche}
+ * is a button that opens a popover beneath it. The popover lists all recordings (navigate between
+ * them), plus rows to start a new recording or return to the library; the current recording's
+ * name heads it as the rename entry point. Unreadable recordings are listed but disabled, with
+ * the reason as their tooltip.
+ *
+ * The root sizes to the title (360 px minimum, 60% of the title row at most) so the actions
+ * that follow it sit beside the cartouche.
  */
 export function ProjectSwitcher({
   projectId,
@@ -46,25 +49,34 @@ export function ProjectSwitcher({
   };
 
   return (
-    <div className="relative" ref={rootRef}>
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex max-w-[16rem] items-center gap-1.5 rounded px-2.5 py-1.5 font-serif text-lg text-dome-on hover:bg-dome-on/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dome-on sm:max-w-xs"
-      >
-        <span className="truncate">{currentName}</span>
-        <ChevronDown
-          size={18}
-          className={cn("shrink-0 transition-transform", open && "rotate-180")}
-        />
-      </button>
+    <div className="relative flex min-w-0 max-w-[60%] shrink" ref={rootRef}>
+      <Cartouche className="w-full !max-w-none">
+        <h1 className="flex min-w-0 max-w-full justify-center">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            title={currentName}
+            onClick={() => setOpen((v) => !v)}
+            className="flex min-w-0 max-w-full items-center gap-2 rounded px-1 font-display text-[26px] leading-tight focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[color:var(--cartouche-ink-2)]"
+          >
+            <span className="truncate">{currentName}</span>
+            <ChevronDown
+              size={18}
+              aria-hidden="true"
+              className={cn(
+                "shrink-0 text-[color:var(--cartouche-ink-2)] transition-transform",
+                open && "rotate-180",
+              )}
+            />
+          </button>
+        </h1>
+      </Cartouche>
 
       {open && (
         <div
           role="menu"
-          className="absolute left-1/2 z-40 mt-2 w-72 -translate-x-1/2 overflow-hidden rounded-card border border-border bg-surface text-text shadow-xl"
+          className="absolute left-1/2 top-full z-40 mt-2 w-72 -translate-x-1/2 overflow-hidden rounded-card border border-border bg-surface text-text shadow-xl"
         >
           <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
             <span
@@ -75,7 +87,7 @@ export function ProjectSwitcher({
             </span>
             <button
               type="button"
-              aria-label="Rename current project"
+              aria-label="Rename current recording"
               onClick={() => {
                 setOpen(false);
                 setRenaming(true);
@@ -124,7 +136,7 @@ export function ProjectSwitcher({
               onClick={() => go("/new")}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-background-secondary"
             >
-              <Plus size={15} /> New project
+              <Plus size={15} /> New recording
             </button>
             <button
               type="button"
@@ -132,7 +144,7 @@ export function ProjectSwitcher({
               onClick={() => go("/")}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-background-secondary"
             >
-              <LayoutGrid size={15} /> All projects
+              <LayoutGrid size={15} /> All recordings
             </button>
           </div>
         </div>

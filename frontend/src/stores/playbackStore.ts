@@ -20,6 +20,8 @@ export const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5] as const;
 
 interface PlaybackState {
   currentTime: number;
+  /** The playhead on the source timeline (seconds), alongside the edited `currentTime`. */
+  sourceTime: number;
   duration: number;
   isPlaying: boolean;
   rate: number;
@@ -28,7 +30,8 @@ interface PlaybackState {
   /** Most-zoomed-out `minPxPerSec` for the loaded file (fit-to-width); recomputed on ready. */
   zoomMin: number;
 
-  setCurrentTime: (t: number) => void;
+  /** Set the playhead: its edited time and the source time it maps from. */
+  setPlayhead: (edited: number, source: number) => void;
   setDuration: (d: number) => void;
   setIsPlaying: (playing: boolean) => void;
   setRate: (rate: number) => void;
@@ -40,6 +43,7 @@ interface PlaybackState {
 
 const INITIAL = {
   currentTime: 0,
+  sourceTime: 0,
   duration: 0,
   isPlaying: false,
   rate: 1,
@@ -49,7 +53,7 @@ const INITIAL = {
 
 export const usePlaybackStore = create<PlaybackState>((set) => ({
   ...INITIAL,
-  setCurrentTime: (currentTime) => set({ currentTime }),
+  setPlayhead: (currentTime, sourceTime) => set({ currentTime, sourceTime }),
   setDuration: (duration) => set({ duration }),
   setIsPlaying: (isPlaying) => set({ isPlaying }),
   setRate: (rate) => set({ rate }),

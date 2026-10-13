@@ -1,5 +1,7 @@
 import { cn } from "@/lib/cn";
+import type { CSSProperties } from "react";
 import { useId } from "react";
+import "./slider.css";
 
 interface CommonProps {
   min: number;
@@ -17,7 +19,26 @@ export interface SliderProps extends CommonProps {
   onChange: (value: number) => void;
 }
 
-/** Single-thumb slider. Native range input styled to the accent token. */
+/** Field label row: the name in small tracked capitals, the formatted value on the right. */
+function SliderLabel({
+  htmlFor,
+  label,
+  value,
+}: { htmlFor?: string; label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <label htmlFor={htmlFor} className="text-xs uppercase tracking-[0.16em] text-text-tertiary">
+        {label}
+      </label>
+      <span className="whitespace-nowrap text-sm tabular-nums text-text">{value}</span>
+    </div>
+  );
+}
+
+const percent = (value: number, min: number, max: number): number =>
+  ((value - min) / (max - min || 1)) * 100;
+
+/** Single-thumb slider: a native range input with a hairline track and a diamond thumb. */
 export function Slider({
   min,
   max,
@@ -30,13 +51,11 @@ export function Slider({
   className,
 }: SliderProps) {
   const id = useId();
+  const fill = { "--fill": `${percent(value, min, max)}%` } as CSSProperties;
   return (
-    <div className={cn("flex flex-col gap-1", className)}>
+    <div className={cn("flex flex-col gap-1.5", className)}>
       {label && (
-        <div className="flex items-center justify-between text-sm text-text-secondary">
-          <label htmlFor={id}>{label}</label>
-          <span className="tabular-nums text-text">{format ? format(value) : value}</span>
-        </div>
+        <SliderLabel htmlFor={id} label={label} value={format ? format(value) : `${value}`} />
       )}
       <input
         id={id}
@@ -47,7 +66,8 @@ export function Slider({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="accent-accent h-2 w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+        className="range-diamond"
+        style={fill}
       />
     </div>
   );
@@ -59,7 +79,7 @@ export interface RangeSliderProps extends CommonProps {
 }
 
 /**
- * Two-thumb range slider built from two overlaid native inputs plus a filled track.
+ * Two-thumb range slider built from two overlaid native inputs plus a drawn track.
  * The lower thumb is clamped below the upper and vice-versa on change.
  */
 export function RangeSlider({
@@ -74,27 +94,24 @@ export function RangeSlider({
   className,
 }: RangeSliderProps) {
   const [lo, hi] = value;
-  const span = max - min || 1;
-  const loPct = ((lo - min) / span) * 100;
-  const hiPct = ((hi - min) / span) * 100;
+  const loPct = percent(lo, min, max);
+  const hiPct = percent(hi, min, max);
 
   const setLo = (v: number) => onChange([Math.min(v, hi), hi]);
   const setHi = (v: number) => onChange([lo, Math.max(v, lo)]);
 
   return (
-    <div className={cn("flex flex-col gap-1", className)}>
+    <div className={cn("flex flex-col gap-1.5", className)}>
       {label && (
-        <div className="flex items-center justify-between text-sm text-text-secondary">
-          <span>{label}</span>
-          <span className="tabular-nums text-text">
-            {format ? `${format(lo)} – ${format(hi)}` : `${lo} – ${hi}`}
-          </span>
-        </div>
+        <SliderLabel
+          label={label}
+          value={format ? `${format(lo)} – ${format(hi)}` : `${lo} – ${hi}`}
+        />
       )}
       <div className="relative h-5">
-        <div className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-background-tertiary" />
+        <div className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 bg-background-tertiary" />
         <div
-          className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-accent"
+          className="absolute top-1/2 h-0.5 -translate-y-1/2 bg-accent"
           style={{ left: `${loPct}%`, right: `${100 - hiPct}%` }}
         />
         <input
@@ -106,7 +123,7 @@ export function RangeSlider({
           value={lo}
           disabled={disabled}
           onChange={(e) => setLo(Number(e.target.value))}
-          className="pointer-events-none absolute inset-0 h-5 w-full appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-moz-range-thumb]:pointer-events-auto"
+          className="range-diamond range-pair"
         />
         <input
           type="range"
@@ -117,7 +134,7 @@ export function RangeSlider({
           value={hi}
           disabled={disabled}
           onChange={(e) => setHi(Number(e.target.value))}
-          className="pointer-events-none absolute inset-0 h-5 w-full appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-moz-range-thumb]:pointer-events-auto"
+          className="range-diamond range-pair"
         />
       </div>
     </div>

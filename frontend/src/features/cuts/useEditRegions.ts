@@ -14,7 +14,7 @@ import { useThemeColors } from "@/lib/themeColors";
 import { useEditStore } from "@/stores/editStore";
 import type { EditOperation, SilenceSegment } from "@/types/api";
 import { useEffect, useMemo, useRef } from "react";
-import { manualCuts } from "./cutEdl";
+import { cutSpanKeys, manualCuts } from "./cutEdl";
 import { SELECTION_REGION_ID, reconcileEditRegions } from "./regions";
 
 export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[]): void {
@@ -27,6 +27,7 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
   // Draw only the silence that survives manual cuts; classify manual cuts against that same
   // active set so a removed clipped-silence isn't also drawn as a manual-cut region.
   const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
+  const removedIds = useMemo(() => cutSpanKeys(ops), [ops]);
   const cuts = useMemo(() => manualCuts(ops, active), [ops, active]);
 
   // Reconcile overlays whenever the inputs, the selection, the mapping or the theme's colours
@@ -35,6 +36,7 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
     if (!regions || !isReady) return;
     reconcileEditRegions(regions, {
       silences: active,
+      removedIds,
       manualCuts: cuts,
       selectedIds,
       selectionStart,
@@ -43,7 +45,18 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
       colors,
     });
     return () => regions.clearRegions();
-  }, [regions, isReady, active, cuts, selectedIds, selectionStart, selectionEnd, timeMap, colors]);
+  }, [
+    regions,
+    isReady,
+    active,
+    removedIds,
+    cuts,
+    selectedIds,
+    selectionStart,
+    selectionEnd,
+    timeMap,
+    colors,
+  ]);
 
   // Click a region -> select it (silence/cut) and seek there. Region coordinates are edited-time,
   // so invert through the map to seek in source time. Read store actions via getState to avoid

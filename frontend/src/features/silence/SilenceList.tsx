@@ -1,6 +1,7 @@
 /**
- * The detected-silence rows: index, span, duration, and a selection checkbox. Clicking a
- * row seeks to the span and adds it to the selection; the checkbox toggles selection.
+ * The detected-silence rows, compact and scrolling: index, span, duration, and a selection
+ * checkbox. Clicking a row seeks to the span and adds it to the selection; the checkbox toggles
+ * selection.
  * Selection lives in `editStore` and is reflected in both this list and the waveform.
  */
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
@@ -22,18 +23,16 @@ export function SilenceList({
   const selectedIds = useEditStore((s) => s.selectedIds);
   const toggleSelected = useEditStore((s) => s.toggleSelected);
 
-  if (silences.length === 0) {
-    return <p className="py-2 text-sm text-text-tertiary">No silence detected yet.</p>;
-  }
+  if (silences.length === 0) return null;
 
   return (
-    <ul className="max-h-64 divide-y divide-border overflow-y-auto">
+    <ul className="max-h-48 divide-y divide-border overflow-y-auto border-y border-border">
       {silences.map((seg, i) => {
         const key = silenceKey(seg);
         const selected = selectedIds.has(key);
         const removed = removedIds.has(key);
         return (
-          <li key={key} className="flex items-center gap-3 py-2 text-sm">
+          <li key={key} className="flex items-center gap-3 py-1.5 text-sm">
             <input
               type="checkbox"
               className="accent-accent h-4 w-4 cursor-pointer"

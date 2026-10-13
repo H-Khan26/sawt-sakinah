@@ -1,0 +1,81 @@
+/* Range inputs (Slider, RangeSlider): a 2 px track in the tertiary ground, the filled part in the
+   accent up to --fill, and a diamond thumb (a rotated square) outlined in the accent. */
+.range-diamond {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.range-diamond:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.range-diamond:focus-visible {
+  outline: none;
+}
+.range-diamond::-webkit-slider-runnable-track {
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--fill, 0%),
+    var(--color-background-tertiary) var(--fill, 0%)
+  );
+}
+.range-diamond::-moz-range-track {
+  height: 2px;
+  background: var(--color-background-tertiary);
+}
+.range-diamond::-moz-range-progress {
+  height: 2px;
+  background: var(--color-accent);
+}
+.range-diamond::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -5.5px;
+  border: 2px solid var(--color-accent);
+  border-radius: 0;
+  background: var(--color-surface);
+  transform: rotate(45deg);
+}
+.range-diamond::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--color-accent);
+  border-radius: 0;
+  background: var(--color-surface);
+  transform: rotate(45deg);
+}
+.range-diamond:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+  background: var(--color-accent-soft);
+}
+.range-diamond:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+/* Two overlaid inputs share one drawn track; only their thumbs take pointer input. */
+.range-diamond.range-pair {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.range-diamond.range-pair::-webkit-slider-runnable-track {
+  background: transparent;
+}
+.range-diamond.range-pair::-moz-range-track,
+.range-diamond.range-pair::-moz-range-progress {
+  background: transparent;
+}
+.range-diamond.range-pair::-webkit-slider-thumb {
+  pointer-events: auto;
+}
+.range-diamond.range-pair::-moz-range-thumb {
+  pointer-events: auto;
+}

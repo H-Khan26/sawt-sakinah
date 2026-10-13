@@ -17,7 +17,11 @@ export interface TabsProps {
   onValueChange?: (id: string) => void;
   /** `underline` marks the active tab with a rule; `ribbon` hangs a bookmark ribbon behind its label. */
   variant?: "underline" | "ribbon";
+  /** Keep inactive panels mounted (hidden), so their state and effects survive a tab switch. */
+  keepMounted?: boolean;
   className?: string;
+  /** Classes for each tab panel (default `pt-4`). */
+  panelClassName?: string;
 }
 
 /**
@@ -30,7 +34,9 @@ export function Tabs({
   defaultId,
   onValueChange,
   variant = "underline",
+  keepMounted = false,
   className,
+  panelClassName,
 }: TabsProps) {
   const baseId = useId();
   const [internal, setInternal] = useState(defaultId ?? items[0]?.id);
@@ -112,9 +118,9 @@ export function Tabs({
           id={`${baseId}-panel-${tab.id}`}
           aria-labelledby={`${baseId}-tab-${tab.id}`}
           hidden={tab.id !== active}
-          className="pt-4"
+          className={panelClassName ?? "pt-4"}
         >
-          {tab.id === active && tab.content}
+          {(keepMounted || tab.id === active) && tab.content}
         </div>
       ))}
     </div>
