@@ -150,7 +150,7 @@ def split_project(
     the job once the segment has been rendered and imported."""
     validate_id(project_id, "project_id")
     if not store.exists(project_id):
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
     jobs.ensure_capacity()
     new_id = uuid4().hex
     store.prepare(new_id)
@@ -171,7 +171,7 @@ def get_project(project_id: str, store=Depends(get_store)) -> ProjectView:
     validate_id(project_id, "project_id")
     project = store.load(project_id)
     if project is None:
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
     return to_project_view(project)
 
 
@@ -187,7 +187,7 @@ def patch_project(
     try:
         updated = store.rename(project_id, req.name)
     except KeyError:
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
     return to_project_view(updated)
 
 
@@ -197,7 +197,7 @@ def delete_project(project_id: str, store=Depends(get_store)) -> Response:
     in which case nothing was removed."""
     validate_id(project_id, "project_id")
     if not store.delete(project_id):
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
     return Response(status_code=204)
 
 
@@ -222,7 +222,7 @@ def put_edl(
     try:
         updated = store.update(project_id, mutate)
     except KeyError:
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
     return updated.edl
 
 
@@ -255,5 +255,5 @@ def put_markers(
     try:
         updated = store.update(project_id, mutate)
     except KeyError:
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
     return to_project_view(updated)

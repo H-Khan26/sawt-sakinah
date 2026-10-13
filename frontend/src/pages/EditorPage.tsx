@@ -133,7 +133,7 @@ export function EditorPage() {
   if (project.isLoading || project.isPending) {
     return (
       <RuledPage centered>
-        <WaveformLoader size={32} label="Loading project" className="text-accent" />
+        <WaveformLoader size={32} label="Loading recording" className="text-accent" />
       </RuledPage>
     );
   }

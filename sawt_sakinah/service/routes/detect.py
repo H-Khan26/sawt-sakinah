@@ -25,7 +25,7 @@ def detect_silence_endpoint(
 ) -> JobAccepted:
     validate_id(project_id, "project_id")
     if not store.exists(project_id):
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
     job = jobs.submit(
         JobKind.detect_silence,
         silence_worker(store, settings, project_id, params),
@@ -44,7 +44,7 @@ def detect_phrases_endpoint(
 ) -> JobAccepted:
     validate_id(project_id, "project_id")
     if not store.exists(project_id):
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
     # Pin the job to a concrete model and fail fast (409 ModelNotInstalledError) when it
     # isn't downloaded, rather than queueing a job that can only fail.
     model_id = request.params.model_size or selected_model()

@@ -1,11 +1,11 @@
 /**
- * "New project from selection" dialog: carve the selected source-time range into a fresh,
- * independent project. Renders the range with edits inside it applied (server-side), imports
- * it as a new project, then navigates to that project's editor carrying the job id — so the
- * editor's normal extraction-style `useJob` poll shows the render+import progress.
+ * "New recording from selection" dialog: carve the selected source-time range into a fresh,
+ * independent recording. Renders the range with edits inside it applied (server-side), imports
+ * it as a new recording, then navigates to its editor carrying the job id — so the editor's
+ * normal extraction-style `useJob` poll shows the render+import progress.
  */
 import { useSplitProject } from "@/api/hooks";
-import { Alert, Button, Input, Modal } from "@/components/ui";
+import { Alert, Button, Input, Modal, ModalTitle } from "@/components/ui";
 import { formatClock } from "@/lib/time";
 import type { EditorLocationState } from "@/pages/EditorPage";
 import type { ProjectView } from "@/types/api";
@@ -43,14 +43,12 @@ export function SplitModal({
   };
 
   return (
-    <Modal open onClose={onClose} ariaLabel="New project from selection">
-      <div className="border-b border-border px-5 py-3 font-serif text-lg">
-        New project from selection
-      </div>
+    <Modal open onClose={onClose} ariaLabel="New recording from selection">
+      <ModalTitle>New recording from selection</ModalTitle>
 
       <div className="flex flex-col gap-4 px-5 py-4">
         <div className="rounded border border-border bg-background-secondary/40 px-3 py-2 text-sm text-text-secondary">
-          A new project will be created from{" "}
+          A new recording will be created from{" "}
           <span className="tabular-nums text-text">{rangeLabel}</span>{" "}
           <span className="text-text-tertiary">
             ({(range.end - range.start).toFixed(1)}s, edits inside applied)
@@ -59,7 +57,7 @@ export function SplitModal({
         </div>
 
         <Input
-          label="Project name"
+          label="Recording name"
           placeholder={project.name}
           value={name}
           disabled={split.isPending}
@@ -67,7 +65,7 @@ export function SplitModal({
         />
 
         {split.isError && (
-          <Alert variant="error" title="Couldn't create the project">
+          <Alert variant="error" title="Couldn't create the recording">
             {split.error.message}
           </Alert>
         )}
@@ -78,7 +76,7 @@ export function SplitModal({
           Cancel
         </Button>
         <Button onClick={submit} loading={split.isPending}>
-          Create project
+          Create recording
         </Button>
       </div>
     </Modal>

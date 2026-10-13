@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/assets/wordmark.png" alt="Sawt Sakinah" width="520">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-horizontal-gold.svg">
+    <img src="docs/assets/logo-horizontal-oxblood.svg" alt="Sawt Sakinah" width="520">
+  </picture>
 </p>
 
 <p align="center">

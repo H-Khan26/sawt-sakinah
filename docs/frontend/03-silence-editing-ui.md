@@ -22,16 +22,17 @@ The UI never trims audio itself — it manipulates the EDL and asks the backend 
 
 ## Waveform highlighting
 
-- Draw each `SilenceSegment` as a region overlay (wavesurfer Regions). Fill with a
-  low-alpha purple overlay; selected regions get higher alpha + a solid
-  left accent bar.
+- Draw each `SilenceSegment` as a region overlay (wavesurfer Regions): a flat band of
+  ink at 8% (`--silence-fill`), deepening to 18% when selected. Removed silences and
+  manual cuts show as a vermilion 45° hatch (`--cut-stripe`) with an edge line at each
+  end.
 - Hover a region → tooltip with start/end/duration (`Tooltip`).
 - Click a region → toggle selection; selection state lives in app state and reflects in
   both the waveform and the list.
 
 ## Silence panel
 
-A `Card` beside/below the waveform:
+The Silence tool, under the Silence ribbon tab in the editor's lower band:
 
 - **Detection controls** (tunable defaults — the engine exposes these):
   - `threshold_db` slider (e.g. -60..-20 dB) — "how quiet counts as silent".
@@ -68,6 +69,6 @@ A `Card` beside/below the waveform:
 
 ## Theming
 
-Reuse the theme tokens: selected = purple accent; destructive actions = `danger`
-button variant (red); sliders/inputs = ported `Slider`/`Input`; counts/labels =
-`Badge`. Keep destructive actions guarded (confirm on "remove all" / irreversible export).
+Reuse the theme tokens: silences = `--silence-fill`, cuts = the `--cut-stripe` hatch;
+destructive actions = `danger` button variant (the error colour); sliders/inputs =
+`Slider`/`Input`; counts/labels = `Badge`. Keep destructive actions guarded (confirm on "remove all" / irreversible export).

@@ -4,7 +4,7 @@
  * A header ("Outline", "Rak'ah 2 of 20", previous/next), a row of Rub el Hizb stars — one per
  * rak'ah, in pairs — and the current rak'ah's positions with their start times. The current
  * rak'ah is the one holding the playhead: its star is filled, earlier ones are gold outlines and
- * later ones hairlines. A star seeks to its rak'ah's first position, a position to its start;
+ * later ones outlines in tertiary ink. A star seeks to its rak'ah's first position, a position to its start;
  * `[` and `]` step rak'ahs. Structure is server state (re-derived from the markers on every
  * edit); this only renders it, plus a gentle notice when the outline looks incomplete (never a
  * hard error; recitations vary).

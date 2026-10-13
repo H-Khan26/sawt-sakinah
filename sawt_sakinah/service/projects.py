@@ -59,8 +59,8 @@ _DELETE_ATTEMPTS = 6
 #: too, so a crafted id can never name a path outside the root.
 PROJECT_ID = re.compile(r"[0-9a-f]{8,64}")
 
-DAMAGED_MESSAGE = "Its project file is damaged and can't be read."
-IN_USE_MESSAGE = "The project is still in use. Close its playback and try again."
+DAMAGED_MESSAGE = "Its data file is damaged and can't be read."
+IN_USE_MESSAGE = "The recording is still in use. Close its playback and try again."
 
 
 def _now() -> datetime:
@@ -205,7 +205,7 @@ class ProjectStore:
             raise
         except OSError as exc:
             raise ProjectUnreadableError(
-                f"Its project file can't be read ({exc.strerror or exc})."
+                f"Its data file can't be read ({exc.strerror or exc})."
             ) from exc
         try:
             raw = json.loads(text)
@@ -439,7 +439,7 @@ def _unreadable_summary(child: Path, reason: str) -> ProjectSummary:
         stamp = _now()
     return ProjectSummary(
         id=child.name,
-        name="Unreadable project",
+        name="Unreadable recording",
         source_kind="unknown",
         duration_sec=0.0,
         created_at=stamp,

@@ -1,5 +1,5 @@
 import { useRenameProject } from "@/api/hooks";
-import { Button, Input, Modal, useToast } from "@/components/ui";
+import { Button, Input, Modal, ModalTitle, useToast } from "@/components/ui";
 import type { FormEvent } from "react";
 import { useState } from "react";
 
@@ -42,7 +42,7 @@ export function RenameDialog({
   return (
     <Modal open onClose={onClose} ariaLabel="Rename recording">
       <form onSubmit={onSubmit}>
-        <div className="border-b border-border px-5 py-3 font-serif text-lg">Rename recording</div>
+        <ModalTitle>Rename recording</ModalTitle>
         <div className="px-5 py-4">
           <Input
             label="Recording name"

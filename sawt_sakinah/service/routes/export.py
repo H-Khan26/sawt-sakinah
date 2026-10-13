@@ -37,7 +37,7 @@ def export_endpoint(
 ) -> JobAccepted:
     validate_id(project_id, "project_id")
     if not store.exists(project_id):
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
     job = jobs.submit(
         JobKind.export,
         export_worker(store, settings, project_id, req),
@@ -57,7 +57,7 @@ def download_export(
     validate_id(artifact_id, "artifact_id")
     project = store.load(project_id)
     if project is None:
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
 
     artifact = next((a for a in project.exports if a.id == artifact_id), None)
     if artifact is None:

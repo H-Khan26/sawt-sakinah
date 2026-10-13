@@ -1,7 +1,7 @@
 import { cn } from "@/lib/cn";
 import type { HTMLAttributes } from "react";
 
-export type BadgeVariant = "neutral" | "accent" | "green" | "danger";
+export type BadgeVariant = "neutral" | "green";
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
@@ -9,9 +9,7 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 
 const VARIANTS: Record<BadgeVariant, string> = {
   neutral: "bg-background-tertiary text-text-secondary",
-  accent: "bg-accent text-accent-on",
   green: "bg-green text-accent-on",
-  danger: "bg-danger text-accent-on",
 };
 
 export function Badge({ variant = "neutral", className, children, ...rest }: BadgeProps) {

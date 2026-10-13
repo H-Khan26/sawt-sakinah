@@ -16,7 +16,7 @@ import type {
   UpdateStatus,
 } from "@/types/api";
 /** React Query hooks over the typed endpoints. Server state lives here, not in stores. */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import {
   checkYtdlp,
@@ -68,7 +68,7 @@ export function useProject(projectId: string | undefined) {
   });
 }
 
-/** The project library list. Refetches on focus so the grid stays fresh across tabs. */
+/** The library's recordings. Refetches on focus so the grid stays fresh across tabs. */
 export function useProjects() {
   return useQuery({
     queryKey: queryKeys.projects,
@@ -265,12 +265,14 @@ export function useSplitProject(projectId: string) {
 // --- app preferences, info and updates ---------------------------------------
 
 /** Backend-stored preferences. Loaded once per session; writes patch the cache directly. */
+export const preferencesQuery = queryOptions({
+  queryKey: queryKeys.preferences,
+  queryFn: ({ signal }) => getPreferences(signal),
+  staleTime: Number.POSITIVE_INFINITY,
+});
+
 export function usePreferences() {
-  return useQuery({
-    queryKey: queryKeys.preferences,
-    queryFn: ({ signal }) => getPreferences(signal),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
+  return useQuery(preferencesQuery);
 }
 
 /** PATCH a subset of preferences, optimistically applied to the cache and rolled back on error. */

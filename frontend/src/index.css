@@ -59,6 +59,14 @@
     height: 100%;
   }
 
+  /* Scrollbars: thin, in the theme's tertiary ink over a clear track. */
+  html {
+    scrollbar-color: color-mix(in srgb, var(--color-text-tertiary) 55%, transparent) transparent;
+  }
+  * {
+    scrollbar-width: thin;
+  }
+
   body {
     margin: 0;
     background-color: var(--color-background);
@@ -70,28 +78,19 @@
     text-rendering: optimizeLegibility;
   }
 
-  h1,
-  .font-heading {
+  h1 {
     font-family: "Ibarra Real Nova", Georgia, serif;
+  }
+
+  /* Controls without a ring of their own keep the browser's focus outline, in the focus token. */
+  :focus-visible {
+    outline-color: var(--color-border-focus);
   }
 
   /* Arabic text spans should set dir="rtl"; this just selects the right face. */
   :lang(ar) {
     font-family: "IBM Plex Sans Arabic", "Noto Naskh Arabic", sans-serif;
   }
-}
-
-/* Indeterminate <Progress> bar sweep. Stilled via motion-reduce:animate-none. */
-@keyframes progress-indeterminate {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(350%);
-  }
-}
-.animate-progress-indeterminate {
-  animation: progress-indeterminate 1.2s var(--ease-out) infinite;
 }
 
 /* ---------------------------------------------------------------------------

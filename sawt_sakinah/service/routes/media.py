@@ -28,7 +28,7 @@ def get_audio(project_id: str, request: Request, store=Depends(get_store)):
     validate_id(project_id, "project_id")
     local = store.audio_path(project_id)
     if local is None:
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
     if not local.exists():
         raise HTTPException(status_code=404, detail="audio not found")
     return ranged_file_response(
@@ -54,7 +54,7 @@ def get_waveform(project_id: str, store=Depends(get_store), settings=Depends(get
 
     local = store.audio_path(project_id)
     if local is None:
-        raise HTTPException(status_code=404, detail="project not found")
+        raise HTTPException(status_code=404, detail="recording not found")
 
     peaks = compute_peaks(local, ffmpeg_bin=settings.ffmpeg_bin)
     _cache_peaks(cache, peaks)

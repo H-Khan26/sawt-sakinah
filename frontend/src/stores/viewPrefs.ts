@@ -2,10 +2,10 @@
  * Editor preferences shared across projects, stored by the backend (`/app/preferences`).
  *
  * The desktop window's port, and so its origin, changes every launch, so browser storage would
- * forget these. The store holds the live values for synchronous reads; {@link useSyncViewPrefs}
+ * forget these. The store holds the live values for synchronous reads; {@link loadViewPrefs}
  * hydrates it once from `GET /app/preferences`, and each setter applies its change locally first
- * and then PATCHes it, one request at a time. A failed load or save leaves the local value in place, so the UI keeps
- * working on defaults.
+ * and then PATCHes it, one request at a time. A failed load or save leaves the local value in
+ * place, so the UI keeps working on defaults.
  *
  * `showDeleted` controls whether cut ("deleted") audio is visible on the waveform. The default is
  * off: the waveform collapses cut spans out so the view isn't polluted by removed audio (a live
@@ -19,7 +19,7 @@
  * true once the stored values have loaded (or failed to), for choices that must not flash a default.
  */
 import { patchPreferences, queryKeys } from "@/api/endpoints";
-import { usePreferences } from "@/api/hooks";
+import { preferencesQuery } from "@/api/hooks";
 import { queryClient } from "@/lib/queryClient";
 import type {
   AppPreferences,
@@ -28,7 +28,6 @@ import type {
   SilenceDetector,
   ThemePreference,
 } from "@/types/api";
-import { useEffect } from "react";
 import { create } from "zustand";
 
 interface ViewPrefsState {
@@ -119,11 +118,13 @@ function hydrate(prefs: AppPreferences) {
   useViewPrefs.setState(next);
 }
 
-/** Load the stored preferences into {@link useViewPrefs}. Mount once, near the app root. */
-export function useSyncViewPrefs() {
-  const { data, isError } = usePreferences();
-  useEffect(() => {
-    if (data) hydrate(data);
-    else if (isError) useViewPrefs.setState({ hydrated: true });
-  }, [data, isError]);
+/**
+ * Load the stored preferences into {@link useViewPrefs} (and the preferences query cache). Call
+ * once at startup, before the first render, so the request goes out with nothing ahead of it and
+ * the landing decision waits only on it.
+ */
+export function loadViewPrefs(): void {
+  queryClient.fetchQuery(preferencesQuery).then(hydrate, () => {
+    useViewPrefs.setState({ hydrated: true });
+  });
 }

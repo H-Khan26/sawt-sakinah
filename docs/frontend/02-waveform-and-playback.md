@@ -11,8 +11,11 @@ markers are drawn onto. Press-and-play must feel immediate.
 
 ## Requirements
 
-- Waveform rendering of the full track, themed to the app tokens (purple played / grey
-  unplayed, see [00-overview.md](00-overview.md)).
+- Waveform rendering of the full track, themed to the app tokens (played bars in the
+  accent, oxblood by day and gold at night; unplayed bars in a muted tone; see
+  [00-overview.md](00-overview.md)). An overview strip above it shows the whole recording
+  with the visible range boxed in gold (`WaveformOverview`), and a diamond on the top rule
+  marks the playhead (`PlayheadDiamond`).
 - Transport: play, pause, seek by click/drag, current-time + duration display,
   optional zoom and playback-rate.
 - **Region overlays** for silent segments (highlight, hover, select) — see
@@ -26,7 +29,7 @@ markers are drawn onto. Press-and-play must feel immediate.
 
 1. **wavesurfer.js v7** *(adopted)*
    - Vanilla-JS, framework-agnostic — wrapped in a hand-rolled React hook
-     (`useWavesurfer.ts`: init in a `useEffect`, destroy in its cleanup; the instance
+     (`useWaveformEngine.ts`: init in a `useEffect`, destroy in its cleanup; the instance
      lives in a `useRef`, never in state).
    - First-class **Regions** plugin (silence highlights, selectable) and
      **Timeline/Hover** plugins — these map directly onto the silence regions and the
@@ -65,7 +68,8 @@ markers are drawn onto. Press-and-play must feel immediate.
 
 ## Transport details
 
-- Spacebar = play/pause; click/drag on waveform = seek; optional `[`/`]` or buttons for
-  zoom; playback-rate selector (useful for scrutinizing fast recitation).
+- Spacebar = play/pause; ArrowLeft / ArrowRight = skip 5 s; click/drag on waveform =
+  seek; zoom with the overview's buttons or Ctrl/⌘ + wheel; playback-rate selector
+  (useful for scrutinizing fast recitation).
 - Show current position relative to markers (e.g. "Rak'ah 2 · sujood") by reading the
   active prayer position from state.
