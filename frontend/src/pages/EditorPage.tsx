@@ -1,13 +1,16 @@
 import { ApiError } from "@/api/client";
 import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
-import { Alert, EmptyState, WaveformLoader, WorkbenchPanel } from "@/components/ui";
+import { SaveStatus } from "@/components/SaveStatus";
+import { Alert, EmptyState, WaveformLoader } from "@/components/ui";
 import { CutPanel } from "@/features/cuts/CutPanel";
 import { useEditHotkeys } from "@/features/cuts/useEditHotkeys";
 import { useEditRegions } from "@/features/cuts/useEditRegions";
+import { RuledPage } from "@/features/editor/RuledPage";
 import { ExportButton } from "@/features/export/ExportButton";
 import { MarkerLayer } from "@/features/markers/MarkerLayer";
 import { MarkersPanel } from "@/features/markers/MarkersPanel";
+import { ProjectSwitcher } from "@/features/projects/ProjectSwitcher";
 import { OpenSettingsButton } from "@/features/settings/OpenSettingsButton";
 import { SilencePanel } from "@/features/silence/SilencePanel";
 import { TransportBar } from "@/features/transport/TransportBar";
@@ -50,7 +53,7 @@ function extractionErrorTitle(job: JobRecord | undefined): string {
 
 /**
  * Editor entry. Drives the pre-editor view state off the extraction job + project
- * presence. The waveform and editing panels (Phases 4-6) replace the "ready" placeholder.
+ * presence; every state renders on the ruled page, the pre-ready ones centred on it.
  *
  * - With a tracked `jobId` (arrived from the landing page): poll it, show progress, and
  *   only fetch the project once it has succeeded (GET /projects 404s until then).
@@ -90,9 +93,10 @@ export function EditorPage() {
   // --- extraction failed -----------------------------------------------------
   if (jobId && jobState === "failed") {
     return (
-      <div className="mx-auto flex max-w-lg flex-col gap-4 p-8">
+      <RuledPage centered>
         <Alert
           variant="error"
+          className="w-full max-w-lg"
           title={extractionErrorTitle(job.data)}
           action={{
             label: url ? "Try again" : "Back to start",
@@ -112,25 +116,25 @@ export function EditorPage() {
             </div>
           )}
         </Alert>
-      </div>
+      </RuledPage>
     );
   }
 
   // --- extracting ------------------------------------------------------------
   if (jobId && jobState !== "succeeded") {
     return (
-      <div className="flex min-h-full items-center justify-center p-8">
+      <RuledPage centered>
         <JobProgress job={job.data} title="Extracting audio…" />
-      </div>
+      </RuledPage>
     );
   }
 
   // --- loading the project ---------------------------------------------------
   if (project.isLoading || project.isPending) {
     return (
-      <div className="flex min-h-full items-center justify-center p-8">
+      <RuledPage centered>
         <WaveformLoader size={32} label="Loading project" className="text-accent" />
-      </div>
+      </RuledPage>
     );
   }
 
@@ -138,19 +142,21 @@ export function EditorPage() {
   if (project.isError) {
     if (!jobId && project.error instanceof ApiError && project.error.status === 404) {
       return (
-        <EmptyState
-          title="Nothing here yet"
-          description="This project's extraction is still in progress, or the project doesn't exist."
-          action={{ label: "Back to library", onClick: () => navigate("/") }}
-        />
+        <RuledPage centered>
+          <EmptyState
+            title="Nothing here yet"
+            description="This recording's extraction is still in progress, or the recording doesn't exist."
+            action={{ label: "Back to library", onClick: () => navigate("/") }}
+          />
+        </RuledPage>
       );
     }
     return (
-      <div className="mx-auto flex max-w-lg flex-col gap-4 p-8">
-        <Alert variant="error" title="Couldn't load the project">
+      <RuledPage centered>
+        <Alert variant="error" title="Couldn't load the recording" className="w-full max-w-lg">
           {project.error.message}
         </Alert>
-      </div>
+      </RuledPage>
     );
   }
 
@@ -160,8 +166,8 @@ export function EditorPage() {
 
 /**
  * The editor proper, mounted once the project is loaded. `WaveformProvider` owns the
- * wavesurfer instance and exposes it (via context) to the transport, the region layer
- * (silence + manual cuts + pending selection), and the marker layer, which slot in around
+ * wavesurfer instance and exposes it (via context) to the overview, the transport, the region
+ * layer (silence + manual cuts + pending selection), and the marker layer, which slot in around
  * `WaveformView`.
  */
 function EditorWorkspace({ project }: { project: ProjectView }) {
@@ -172,6 +178,10 @@ function EditorWorkspace({ project }: { project: ProjectView }) {
   );
 }
 
+/**
+ * The ruled page, top to bottom: the title cartouche with the save state and Export, the
+ * waveform, the transport, then the tools.
+ */
 function EditorBody({ project }: { project: ProjectView }) {
   const ops = project.edl.operations;
   useTransportHotkeys();
@@ -180,18 +190,17 @@ function EditorBody({ project }: { project: ProjectView }) {
   useEditRegions(project.silences, ops);
   useEditHotkeys(project.id, ops);
   return (
-    <div className="mx-auto w-full max-w-6xl p-6">
-      <WorkbenchPanel>
-        <div className="flex items-center justify-between gap-4 px-5 py-4">
-          <h1 className="font-serif text-2xl text-accent">{project.name}</h1>
-          <ExportButton project={project} />
-        </div>
-        <WaveformView overlay={<MarkerLayer markers={project.markers} />} />
-        <TransportBar project={project} />
-        <CutPanel project={project} />
-        <SilencePanel project={project} />
-        <MarkersPanel project={project} />
-      </WorkbenchPanel>
-    </div>
+    <RuledPage className="grid grid-cols-[minmax(0,1fr)] content-start gap-y-4 px-8 pb-5 pt-6">
+      <div className="flex min-w-0 items-center justify-center gap-6">
+        <ProjectSwitcher projectId={project.id} currentName={project.name} />
+        <SaveStatus projectId={project.id} />
+        <ExportButton project={project} />
+      </div>
+      <WaveformView overlay={<MarkerLayer markers={project.markers} />} />
+      <TransportBar project={project} />
+      <CutPanel project={project} />
+      <SilencePanel project={project} />
+      <MarkersPanel project={project} />
+    </RuledPage>
   );
 }

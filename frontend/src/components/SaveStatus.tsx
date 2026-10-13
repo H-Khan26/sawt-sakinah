@@ -5,13 +5,13 @@ import { AlertTriangle, Check } from "lucide-react";
 import { useEffect } from "react";
 
 /**
- * Save-state indicator for the editor bar, drawn on the dome ground. The editor's EDL/marker edits PUT synchronously
+ * Save-state indicator beside the editor title. The editor's EDL/marker edits PUT synchronously
  * per commit; this surfaces that autosave so the user knows closing is safe:
  *
  * - `Saving…` while any edit-save mutation is in flight,
  * - `Save failed — Retry` when the most recent edit-save ended in error (with a button that
  *   re-fires that exact mutation), auto-retry having already been exhausted,
- * - `All changes saved` otherwise (idle state is fully persisted server-side).
+ * - `Saved` otherwise (idle state is fully persisted server-side).
  *
  * It also guards `beforeunload` while a save is genuinely in flight — never when idle, so
  * normal closes stay seamless.
@@ -58,7 +58,7 @@ export function SaveStatus({ projectId }: { projectId: string }) {
 
   if (pending > 0) {
     return (
-      <span className="flex items-center gap-1.5 text-sm text-dome-on/80">
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-sm text-text-secondary">
         <WaveformLoader size={12} bars={4} />
         Saving…
       </span>
@@ -67,13 +67,13 @@ export function SaveStatus({ projectId }: { projectId: string }) {
 
   if (failed) {
     return (
-      <span className="flex items-center gap-1.5 text-sm text-dome-on">
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-sm text-danger">
         <AlertTriangle size={14} />
         Save failed
         <button
           type="button"
           onClick={retry}
-          className="ml-1 rounded underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dome-on"
+          className="ml-1 rounded underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
         >
           Retry
         </button>
@@ -82,9 +82,9 @@ export function SaveStatus({ projectId }: { projectId: string }) {
   }
 
   return (
-    <span className="flex items-center gap-1.5 text-sm text-dome-on/80">
+    <span className="flex items-center gap-1.5 whitespace-nowrap text-sm text-text-secondary">
       <Check size={14} />
-      All changes saved
+      Saved
     </span>
   );
 }
