@@ -21,14 +21,92 @@ import { ZOOM_MAX, clampZoom, usePlaybackStore } from "@/stores/playbackStore";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import HoverPlugin from "wavesurfer.js/plugins/hover";
+import MinimapPlugin from "wavesurfer.js/plugins/minimap";
 import RegionsPlugin from "wavesurfer.js/plugins/regions";
 import TimelinePlugin from "wavesurfer.js/plugins/timeline";
 import type { RenderPeaks } from "./editedPeaks";
+import { OVERVIEW_HEIGHT, TIMELINE_HEIGHT, WAVE_HEIGHT } from "./layout";
 import { toWavesurferPeaks } from "./peaks";
 import type { Span, TimeMap } from "./timeMap";
 
 /** Don't retrigger a skip right at a cut's tail edge, so seeking to the end doesn't re-fire. */
 const EDGE_EPSILON = 0.05;
+
+/** Pointer travel (px) below which a press on the overview's range box counts as a click. */
+const CLICK_SLOP = 3;
+
+type WaveformColors = ReturnType<typeof useThemeColors>["waveformColors"];
+
+/**
+ * Mount the overview (Minimap plugin) into `el`: the whole recording in the theme's bar
+ * colours, with the visible range as a box. A click or drag on the bars seeks; dragging the box
+ * scrolls the main waveform, and a press on the box without moving seeks to that point.
+ * `seekEdited` moves playback to an edited-timeline time. Returns a disposer.
+ */
+function mountOverview(
+  ws: WaveSurfer,
+  el: HTMLElement,
+  colors: WaveformColors,
+  seekEdited: (t: number) => void,
+): () => void {
+  const minimap = MinimapPlugin.create({
+    container: el,
+    height: OVERVIEW_HEIGHT,
+    waveColor: colors.unplayed,
+    progressColor: colors.played,
+    cursorWidth: 0,
+    barWidth: 1,
+    barGap: 1,
+    barRadius: 0,
+    // Scaled to the loudest peak, so the faint strip still shows the recording's shape.
+    normalize: true,
+    dragToSeek: true,
+    // The box is a DOM element, so it takes the token directly and follows a theme change.
+    overlayColor: "var(--selection-fill)",
+  });
+  ws.registerPlugin(minimap);
+
+  const seekAt = (fraction: number) => seekEdited(fraction * ws.getDuration());
+  const offs = [minimap.on("click", seekAt), minimap.on("drag", seekAt)];
+
+  const box = el.querySelector<HTMLElement>('[part="minimap-overlay"]');
+  const onDown = (e: PointerEvent) => {
+    if (!box || e.button !== 0) return;
+    e.preventDefault();
+    box.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startScroll = ws.getScroll();
+    const scale = ws.getWrapper().scrollWidth / Math.max(1, el.clientWidth);
+    let moved = false;
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      if (Math.abs(dx) > CLICK_SLOP) moved = true;
+      if (moved) ws.setScroll(startScroll + dx * scale);
+    };
+    const onUp = (ev: PointerEvent) => {
+      box.removeEventListener("pointermove", onMove);
+      box.removeEventListener("pointerup", onUp);
+      box.removeEventListener("pointercancel", onUp);
+      if (moved || ev.type === "pointercancel") return;
+      const rect = el.getBoundingClientRect();
+      seekAt(Math.min(1, Math.max(0, (ev.clientX - rect.left) / Math.max(1, rect.width))));
+    };
+    box.addEventListener("pointermove", onMove);
+    box.addEventListener("pointerup", onUp);
+    box.addEventListener("pointercancel", onUp);
+  };
+  if (box) {
+    // The plugin leaves its box click-through; here it is the drag handle for the visible range.
+    box.style.pointerEvents = "auto";
+    box.addEventListener("pointerdown", onDown);
+  }
+
+  return () => {
+    box?.removeEventListener("pointerdown", onDown);
+    for (const off of offs) off();
+    minimap.destroy();
+  };
+}
 
 /** Source-time playback surface every feature drives (seek, play, read the playhead). */
 export interface WaveformController {
@@ -44,6 +122,8 @@ export interface WaveformController {
 
 interface UseWaveformEngineArgs {
   container: RefObject<HTMLElement>;
+  /** Element the overview (whole-recording minimap) renders into. */
+  overview: RefObject<HTMLElement>;
   projectId: string;
   /** Peaks + duration to render (source envelope, or the collapsed edited envelope). */
   render: RenderPeaks | undefined;
@@ -63,6 +143,7 @@ interface UseWaveformEngineResult {
 
 export function useWaveformEngine({
   container,
+  overview,
   projectId,
   render,
   timeMap,
@@ -104,7 +185,7 @@ export function useWaveformEngine({
     if (!audio || !ws) return;
     const edited = timeMapRef.current.toEdited(audio.currentTime);
     ws.setTime(edited);
-    usePlaybackStore.getState().setCurrentTime(edited);
+    usePlaybackStore.getState().setPlayhead(edited, audio.currentTime);
   });
 
   // Per-frame loop while playing: skip cut spans, then sync the cursor to the edited time.
@@ -121,6 +202,17 @@ export function useWaveformEngine({
     syncCursor.current();
     if (!audio.paused && !audio.ended) rafRef.current = requestAnimationFrame(tick.current);
   });
+
+  // Seek playback to a time on the edited timeline (a click on the waveform or the overview).
+  const seekEdited = useRef((editedTime: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = timeMapRef.current.toSource(editedTime);
+    if (audio.paused) syncCursor.current();
+  });
+
+  /** Unmounts the overview; replaced whenever it is re-mounted for a new theme. */
+  const unmountOverviewRef = useRef<(() => void) | null>(null);
 
   // --- playback element (owns the audio; source-time clock) ------------------
   // One effect owns the `<audio>` and all its listeners: play/pause drive the store and the
@@ -202,12 +294,12 @@ export function useWaveformEngine({
       barWidth: 1,
       barGap: 1,
       barRadius: 0,
-      height: 200,
+      height: WAVE_HEIGHT,
       normalize: false,
       interact: true,
       plugins: [
         TimelinePlugin.create({
-          height: 28,
+          height: TIMELINE_HEIGHT,
           formatTimeCallback: (sec) => formatTimelineTime(sec, renderRef.current?.duration ?? sec),
           style: { color: "var(--color-text-tertiary)", fontSize: "13px" },
         }),
@@ -228,6 +320,10 @@ export function useWaveformEngine({
     lastLoadedRef.current = first;
     setWavesurfer(ws);
     setRegions(regionsPlugin);
+    const overviewEl = overview.current;
+    if (overviewEl) {
+      unmountOverviewRef.current = mountOverview(ws, overviewEl, colors, seekEdited.current);
+    }
 
     ws.on("ready", () => {
       const store = usePlaybackStore.getState();
@@ -243,18 +339,15 @@ export function useWaveformEngine({
       syncCursor.current();
     });
     // A click on the renderer seeks: map the edited click position back to source time.
-    ws.on("interaction", (editedTime: number) => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      audio.currentTime = timeMapRef.current.toSource(editedTime);
-      if (audio.paused) syncCursor.current();
-    });
+    ws.on("interaction", seekEdited.current);
     ws.on("error", (err) => {
       if (err?.name === "AbortError") return;
       setError(err instanceof Error ? err : new Error(String(err)));
     });
 
     return () => {
+      unmountOverviewRef.current?.();
+      unmountOverviewRef.current = null;
       wsRef.current = null;
       lastLoadedRef.current = null;
       setWavesurfer(null);
@@ -267,7 +360,7 @@ export function useWaveformEngine({
       }
       usePlaybackStore.getState().reset();
     };
-  }, [container, projectId, hasRender]);
+  }, [container, overview, projectId, hasRender]);
 
   // Re-render the waveform when the edited envelope changes (an edit, or the view toggle). Reuses
   // the instance so regions/zoom survive; the persistent "ready" handler above fires on reload and
@@ -281,17 +374,29 @@ export function useWaveformEngine({
     });
   }, [render, isReady]);
 
-  // Re-apply the canvas colours when the theme changes.
+  // Re-apply the canvas colours when the theme changes. The overview's canvases are owned by the
+  // plugin, so it is mounted afresh with the new colours first; the redraw that `setOptions`
+  // triggers then places its range box.
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws || appliedColorsRef.current === waveformColors) return;
     appliedColorsRef.current = waveformColors;
+    const overviewEl = overview.current;
+    if (unmountOverviewRef.current && overviewEl) {
+      unmountOverviewRef.current();
+      unmountOverviewRef.current = mountOverview(
+        ws,
+        overviewEl,
+        waveformColors,
+        seekEdited.current,
+      );
+    }
     ws.setOptions({
       waveColor: waveformColors.unplayed,
       progressColor: waveformColors.played,
       cursorColor: waveformColors.cursor,
     });
-  }, [waveformColors]);
+  }, [waveformColors, overview]);
 
   // Apply store-driven zoom to the live renderer.
   useEffect(() => {

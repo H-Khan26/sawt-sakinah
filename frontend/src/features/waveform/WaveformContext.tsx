@@ -25,6 +25,8 @@ import { type WaveformController, useWaveformEngine } from "./useWaveformEngine"
 interface WaveformContextValue {
   /** Attach to the element wavesurfer renders into (see `WaveformView`). */
   containerRef: RefObject<HTMLDivElement>;
+  /** Attach to the element the overview renders into (see `WaveformOverview`). */
+  overviewRef: RefObject<HTMLDivElement>;
   /** The live renderer instance, or null before creation / after teardown. */
   wavesurfer: WaveSurfer | null;
   /** Regions plugin for silence/cut/selection overlays; null before creation / after teardown. */
@@ -54,6 +56,7 @@ export function WaveformProvider({
   const ops = project.edl.operations;
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const overviewRef = useRef<HTMLDivElement>(null);
   const peaksQuery = useWaveform(projectId);
   const sourcePeaks = peaksQuery.data;
 
@@ -75,6 +78,7 @@ export function WaveformProvider({
 
   const { wavesurfer, regions, isReady, error, controller } = useWaveformEngine({
     container: containerRef,
+    overview: overviewRef,
     projectId,
     render,
     timeMap,
@@ -84,6 +88,7 @@ export function WaveformProvider({
   const value = useMemo<WaveformContextValue>(
     () => ({
       containerRef,
+      overviewRef,
       wavesurfer,
       regions,
       controller,

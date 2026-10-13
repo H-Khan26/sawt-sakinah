@@ -1,4 +1,5 @@
 import { silenceKey } from "@/features/silence/regions";
+import { WAVE_HEIGHT } from "@/features/waveform/layout";
 import type { TimeMap } from "@/features/waveform/timeMap";
 /**
  * Reconciles *all* waveform overlays onto the single shared Regions plugin: detected-silence
@@ -9,9 +10,13 @@ import type { TimeMap } from "@/features/waveform/timeMap";
  * - silence  -> id `start:end`      (see `silenceKey`)
  * - cut      -> id `cut:start:end`  (see `cutKey`)
  * - pending  -> id `selection`      (the not-yet-committed range)
+ *
+ * Silence is a flat band; cut audio (a manual cut, or a removed silence while deleted audio is
+ * shown) is a 45° hatch with an edge line at each end.
  */
 import type { ThemeColors } from "@/lib/themeColors";
 import type { EditOperation, SilenceSegment } from "@/types/api";
+import type { Region } from "wavesurfer.js/plugins/regions";
 import type RegionsPlugin from "wavesurfer.js/plugins/regions";
 import { cutKey } from "./cutEdl";
 
@@ -20,6 +25,8 @@ export const SELECTION_REGION_ID = "selection";
 
 export interface EditRegionsState {
   silences: SilenceSegment[];
+  /** Keys of silences marked for removal (a matching `cut` op exists). */
+  removedIds: Set<string>;
   /** Committed manual-cut ops (already filtered to exclude detected-silence cuts). */
   manualCuts: EditOperation[];
   /** Selected silence/cut keys (drives fill emphasis). */
@@ -33,6 +40,26 @@ export interface EditRegionsState {
   colors: ThemeColors;
 }
 
+/** Keep a region between the waveform's rules, clear of the time ruler beneath. */
+function fitToBars(region: Region): Region {
+  if (region.element) region.element.style.height = `${WAVE_HEIGHT}px`;
+  return region;
+}
+
+/**
+ * Draw a region as cut audio: the hatch stripes and edge lines are DOM styles, so they take the
+ * tokens directly and follow a theme change on their own.
+ */
+function hatch(region: Region, selected: boolean): void {
+  if (!region.element) return;
+  const stripe = selected ? "var(--cut-stripe-selected)" : "var(--cut-stripe)";
+  const style = region.element.style;
+  style.backgroundImage = `repeating-linear-gradient(45deg, ${stripe} 0 2px, transparent 2px 7px)`;
+  style.borderLeft = "1px solid var(--color-error)";
+  style.borderRight = "1px solid var(--color-error)";
+  style.boxSizing = "border-box";
+}
+
 /**
  * Clear and re-add every overlay region from the current app state. All state is authored in
  * source time; coordinates are projected onto the (possibly collapsed) edited timeline via
@@ -40,9 +67,17 @@ export interface EditRegionsState {
  * omitted and any silence that collapses to zero width (e.g. a removed one) is skipped.
  */
 export function reconcileEditRegions(regions: RegionsPlugin, state: EditRegionsState): void {
-  const { silences, manualCuts, selectedIds, selectionStart, selectionEnd, timeMap, colors } =
-    state;
-  const { silenceColors, cutColors, selectionColors } = colors;
+  const {
+    silences,
+    removedIds,
+    manualCuts,
+    selectedIds,
+    selectionStart,
+    selectionEnd,
+    timeMap,
+    colors,
+  } = state;
+  const { silenceColors, selectionColors } = colors;
   regions.clearRegions();
 
   for (const seg of silences) {
@@ -50,14 +85,19 @@ export function reconcileEditRegions(regions: RegionsPlugin, state: EditRegionsS
     const start = timeMap.toEdited(seg.start);
     const end = timeMap.toEdited(seg.end);
     if (end <= start) continue;
-    regions.addRegion({
-      id: key,
-      start,
-      end,
-      drag: false,
-      resize: false,
-      color: selectedIds.has(key) ? silenceColors.fillSelected : silenceColors.fill,
-    });
+    const selected = selectedIds.has(key);
+    const removed = removedIds.has(key);
+    const region = fitToBars(
+      regions.addRegion({
+        id: key,
+        start,
+        end,
+        drag: false,
+        resize: false,
+        color: removed ? "transparent" : selected ? silenceColors.fillSelected : silenceColors.fill,
+      }),
+    );
+    if (removed) hatch(region, selected);
   }
 
   // Cut regions mark deleted audio in place — only meaningful when that audio is still on the
@@ -65,14 +105,17 @@ export function reconcileEditRegions(regions: RegionsPlugin, state: EditRegionsS
   if (timeMap.identity) {
     for (const op of manualCuts) {
       const key = cutKey(op);
-      regions.addRegion({
-        id: key,
-        start: op.start,
-        end: op.end ?? op.start,
-        drag: false,
-        resize: false,
-        color: selectedIds.has(key) ? cutColors.fillSelected : cutColors.fill,
-      });
+      const region = fitToBars(
+        regions.addRegion({
+          id: key,
+          start: op.start,
+          end: op.end ?? op.start,
+          drag: false,
+          resize: false,
+          color: "transparent",
+        }),
+      );
+      hatch(region, selectedIds.has(key));
     }
   }
 
@@ -82,14 +125,16 @@ export function reconcileEditRegions(regions: RegionsPlugin, state: EditRegionsS
     if (b > a) {
       // The selection is the one interactive region: drag its body to move it, its edges to
       // fine-tune. `region-updated` writes the new bounds back to the store (see useEditRegions).
-      regions.addRegion({
-        id: SELECTION_REGION_ID,
-        start: a,
-        end: b,
-        drag: true,
-        resize: true,
-        color: selectionColors.fill,
-      });
+      fitToBars(
+        regions.addRegion({
+          id: SELECTION_REGION_ID,
+          start: a,
+          end: b,
+          drag: true,
+          resize: true,
+          color: selectionColors.fill,
+        }),
+      );
     }
   }
 }

@@ -19,6 +19,11 @@ export const CUT_PREFIX = "cut:";
 /** Stable selection key for a committed manual cut op (`cut:start:end`). */
 export const cutKey = (op: EditOperation): string => `${CUT_PREFIX}${op.start}:${op.end}`;
 
+/** `start:end` keys of every `cut` op; a silence whose `silenceKey` is in it is marked removed. */
+export function cutSpanKeys(ops: EditOperation[]): Set<string> {
+  return new Set(ops.filter((op) => op.type === "cut").map((op) => `${op.start}:${op.end}`));
+}
+
 /** The `cut` ops in `ops` that don't match any detected silence span (i.e. user-authored). */
 export function manualCuts(ops: EditOperation[], silences: SilenceSegment[]): EditOperation[] {
   const silenceKeys = new Set(silences.map(silenceKey));

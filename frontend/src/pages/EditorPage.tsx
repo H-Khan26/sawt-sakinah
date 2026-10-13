@@ -16,7 +16,9 @@ import { SilencePanel } from "@/features/silence/SilencePanel";
 import { TransportBar } from "@/features/transport/TransportBar";
 import { useTransportHotkeys } from "@/features/transport/useTransportHotkeys";
 import { CheckForUpdatesLink, mentionsUpdate } from "@/features/updates/UpdateBanner";
+import { PlayheadDiamond } from "@/features/waveform/PlayheadDiamond";
 import { WaveformProvider } from "@/features/waveform/WaveformContext";
+import { WaveformOverview } from "@/features/waveform/WaveformOverview";
 import { WaveformView } from "@/features/waveform/WaveformView";
 import type { JobRecord, ProjectView } from "@/types/api";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -180,7 +182,7 @@ function EditorWorkspace({ project }: { project: ProjectView }) {
 
 /**
  * The ruled page, top to bottom: the title cartouche with the save state and Export, the
- * waveform, the transport, then the tools.
+ * overview, the waveform with its marginal notes, the transport, then the tools.
  */
 function EditorBody({ project }: { project: ProjectView }) {
   const ops = project.edl.operations;
@@ -196,7 +198,15 @@ function EditorBody({ project }: { project: ProjectView }) {
         <SaveStatus projectId={project.id} />
         <ExportButton project={project} />
       </div>
-      <WaveformView overlay={<MarkerLayer markers={project.markers} />} />
+      <WaveformOverview />
+      <WaveformView
+        overlay={
+          <>
+            <MarkerLayer markers={project.markers} structure={project.structure} />
+            <PlayheadDiamond />
+          </>
+        }
+      />
       <TransportBar project={project} />
       <CutPanel project={project} />
       <SilencePanel project={project} />

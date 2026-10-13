@@ -1,5 +1,4 @@
 import { cn } from "@/lib/cn";
-import type { MarkerType } from "@/types/api";
 import type { HTMLAttributes } from "react";
 
 export type BadgeVariant = "neutral" | "accent" | "green" | "danger";
@@ -14,22 +13,6 @@ const VARIANTS: Record<BadgeVariant, string> = {
   green: "bg-green text-accent-on",
   danger: "bg-danger text-accent-on",
 };
-
-/**
- * Maps a detected marker `type` to a badge variant, so marker chips colour consistently: takbir
- * uses the accent, the other known phrase types binding green, and custom markers neutral.
- */
-export const markerTypeVariant: Record<string, BadgeVariant> = {
-  takbir: "accent",
-  tasmi: "green",
-  tahmid: "green",
-  tasleem: "green",
-  custom: "neutral",
-};
-
-export function badgeVariantForMarker(type: MarkerType): BadgeVariant {
-  return markerTypeVariant[type] ?? "neutral";
-}
 
 export function Badge({ variant = "neutral", className, children, ...rest }: BadgeProps) {
   return (
