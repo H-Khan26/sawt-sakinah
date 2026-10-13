@@ -9,7 +9,6 @@ import { LibraryShell } from "./LibraryShell";
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const editor = useMatch("/p/:projectId/*");
-  const projectId = editor?.params.projectId;
-  if (projectId) return <EditorShell projectId={projectId}>{children}</EditorShell>;
+  if (editor) return <EditorShell>{children}</EditorShell>;
   return <LibraryShell>{children}</LibraryShell>;
 }

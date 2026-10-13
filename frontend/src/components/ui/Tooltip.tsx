@@ -2,7 +2,7 @@ import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
 
-export type TooltipSide = "top" | "bottom";
+export type TooltipSide = "top" | "bottom" | "right";
 
 export interface TooltipProps {
   content: ReactNode;
@@ -10,6 +10,12 @@ export interface TooltipProps {
   side?: TooltipSide;
   className?: string;
 }
+
+const SIDES: Record<TooltipSide, string> = {
+  top: "bottom-full left-1/2 mb-1.5 -translate-x-1/2",
+  bottom: "top-full left-1/2 mt-1.5 -translate-x-1/2",
+  right: "left-full top-1/2 ml-2 -translate-y-1/2",
+};
 
 /**
  * CSS-positioned tooltip that appears on hover and on keyboard focus. The trigger
@@ -38,8 +44,8 @@ export function Tooltip({ content, children, side = "top", className }: TooltipP
           role="tooltip"
           id={id}
           className={cn(
-            "pointer-events-none absolute left-1/2 z-40 -translate-x-1/2 whitespace-nowrap rounded bg-text px-2 py-1 text-xs text-background shadow-md",
-            side === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5",
+            "pointer-events-none absolute z-40 whitespace-nowrap rounded bg-text px-2 py-1 text-xs text-background shadow-md",
+            SIDES[side],
             className,
           )}
         >
