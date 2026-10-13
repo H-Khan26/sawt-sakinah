@@ -8,7 +8,7 @@ export { EmptyState } from "./EmptyState";
 export type { EmptyStateProps } from "./EmptyState";
 export { Input } from "./Input";
 export type { InputProps } from "./Input";
-export { Modal, SimpleModal } from "./Modal";
+export { Modal, ModalTitle, SimpleModal } from "./Modal";
 export type { ModalProps, SimpleModalProps } from "./Modal";
 export { Progress } from "./Progress";
 export type { ProgressProps } from "./Progress";

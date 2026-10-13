@@ -49,7 +49,7 @@ edit that interpretation. See [../audio/03-phrase-detection.md](../audio/03-phra
 The prayer outline (`PrayerOutline`) sits beside the tools in the editor's lower band. Its
 header reads "Outline" and "Rak'ah 2 of 20" with previous/next buttons; a row of Rub el
 Hizb stars, one per rak'ah, shows the current one filled, earlier ones as gold outlines
-and later ones as hairlines; below them the current rak'ah's positions list with their
+and later ones as outlines in tertiary ink; below them the current rak'ah's positions list with their
 start times. The derived structure it renders:
 
 ```

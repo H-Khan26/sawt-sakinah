@@ -88,8 +88,8 @@
 .orn-niche.current .n-wave {
   fill: var(--niche-wave-current);
 }
-[data-theme="night"] .orn-niche.current {
-  filter: drop-shadow(0 -6px 18px color-mix(in srgb, var(--niche-current-line) 22%, transparent));
+.orn-niche.current {
+  filter: var(--niche-current-glow);
 }
 
 /* Rub el Hizb star (RubElHizb). */
@@ -115,13 +115,13 @@
 .orn-star.filled .s-num {
   fill: var(--color-on-accent);
 }
-/* Marginal-note star (green) and a rak'ah not yet reached (hairline outline). */
+/* Marginal-note star (green) and a rak'ah not yet reached (tertiary ink outline). */
 .orn-star.note .s-body {
   fill: var(--color-green);
   stroke: var(--color-green);
 }
 .orn-star.ahead .s-body {
-  stroke: var(--color-border);
+  stroke: var(--color-text-tertiary);
 }
 [data-theme="night"] .orn-star.filled {
   filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-gold) 70%, transparent));

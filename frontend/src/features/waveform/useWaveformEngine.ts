@@ -297,6 +297,8 @@ export function useWaveformEngine({
       height: WAVE_HEIGHT,
       normalize: false,
       interact: true,
+      // The overview's range box is the scroller; the renderer's own scrollbar stays hidden.
+      hideScrollbar: true,
       plugins: [
         TimelinePlugin.create({
           height: TIMELINE_HEIGHT,

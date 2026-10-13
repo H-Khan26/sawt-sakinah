@@ -70,8 +70,8 @@ export default {
         "2xl": "var(--shadow-2xl)",
       },
       transitionDuration: {
-        fast: "150ms",
-        normal: "250ms",
+        fast: "var(--duration-fast)",
+        normal: "var(--duration-normal)",
       },
     },
   },

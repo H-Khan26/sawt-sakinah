@@ -15,7 +15,6 @@
   overflow-anchor: none;
   /* Focus and paging scroll content clear of the header and its hanging lamps. */
   scroll-padding-top: calc(var(--H1) + 24px);
-  scrollbar-width: thin;
   background: var(--color-background);
   outline: none;
 }

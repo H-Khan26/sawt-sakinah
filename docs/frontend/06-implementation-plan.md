@@ -251,7 +251,7 @@ Each phase is independently shippable. Build order matters: 2 (primitives) unblo
 | `Button` | `Button.tsx` | variants primary/secondary/ghost/danger/dome, sizes sm/md/icon, `loading` spinner |
 | `SegmentedControl` | `SegmentedControl.tsx` | mutually exclusive toggle buttons on a sunk track; chosen segment fills with the accent |
 | `Input` | `Input.tsx` | forwardRef, `invalid` + hint, `useId` for label pairing |
-| `Modal` + `SimpleModal` | `Modal.tsx` | native `<dialog open>`, focus trap, Esc + scrim close |
+| `Modal` + `SimpleModal` + `ModalTitle` | `Modal.tsx` | native `<dialog open>`, focus trap, Esc + scrim close; one title bar for every dialog |
 | `Badge` | `Badge.tsx` | neutral / green variants |
 | `Progress` | `Progress.tsx` | determinate (value 0–1, `role="progressbar"`) or an indeterminate `WaveformLoader` |
 | `Slider` | `Slider.tsx` | native range input; accent-filled track and a diamond thumb |

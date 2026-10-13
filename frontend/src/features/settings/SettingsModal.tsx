@@ -20,6 +20,7 @@ import {
   Button,
   Input,
   Modal,
+  ModalTitle,
   SegmentedControl,
   type SegmentedOption,
   WaveformLoader,
@@ -38,7 +39,9 @@ import { type FormEvent, type ReactNode, useState } from "react";
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{title}</h2>
+      <h3 className="text-xs font-medium uppercase tracking-[0.16em] text-text-tertiary">
+        {title}
+      </h3>
       {children}
     </section>
   );
@@ -426,7 +429,7 @@ function TroubleshootingSection() {
 export function SettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} ariaLabel="Settings" className="max-w-xl">
-      <div className="border-b border-border px-5 py-3 font-serif text-lg">Settings</div>
+      <ModalTitle>Settings</ModalTitle>
 
       <div className="flex flex-col gap-6 px-5 py-4">
         <AppearanceSection />

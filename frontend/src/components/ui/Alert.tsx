@@ -13,11 +13,14 @@ export interface AlertProps {
   className?: string;
 }
 
-/** Border + soft tint per semantic color. Kept in sync with the Toast variants. */
+/**
+ * Border + soft tint per semantic colour, kept in sync with the Toast variants. The warning title
+ * stays in ink: the warning colour is under 4.5:1 on the page by day.
+ */
 const VARIANTS: Record<AlertVariant, { wrap: string; title: string }> = {
   error: { wrap: "border-danger/40 bg-danger/5", title: "text-danger" },
   success: { wrap: "border-success/40 bg-success/5", title: "text-success" },
-  warning: { wrap: "border-warning/40 bg-warning/5", title: "text-warning" },
+  warning: { wrap: "border-warning/40 bg-warning/5", title: "text-text" },
   info: { wrap: "border-accent/40 bg-accent-soft", title: "text-accent" },
 };
 

@@ -88,6 +88,15 @@ export function Modal({ open, onClose, children, ariaLabel, className }: ModalPr
   );
 }
 
+/** A dialog's title bar: Ibarra at title size over a hairline. */
+export function ModalTitle({ children }: { children: ReactNode }) {
+  return (
+    <h2 className="border-b border-border px-5 py-3 font-display text-[22px] leading-tight text-text">
+      {children}
+    </h2>
+  );
+}
+
 export interface SimpleModalProps {
   open: boolean;
   onClose: () => void;
@@ -114,7 +123,7 @@ export function SimpleModal({
 }: SimpleModalProps) {
   return (
     <Modal open={open} onClose={onClose} ariaLabel={typeof title === "string" ? title : undefined}>
-      <div className="border-b border-border px-5 py-3 font-serif text-lg">{title}</div>
+      <ModalTitle>{title}</ModalTitle>
       <div className="px-5 py-4 text-text-secondary">{children}</div>
       <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
         <Button variant="secondary" onClick={onClose}>

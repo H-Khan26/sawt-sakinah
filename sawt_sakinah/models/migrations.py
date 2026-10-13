@@ -21,7 +21,7 @@ from .errors import ProjectTooNewError, ProjectUnreadableError
 SCHEMA_VERSION = 1
 
 TOO_NEW_MESSAGE = (
-    "This project was saved by a newer version of Sawt Sakinah. Update the app to open it."
+    "This recording was saved by a newer version of Sawt Sakinah. Update the app to open it."
 )
 
 
@@ -61,10 +61,10 @@ def migrate(raw: object) -> dict:
         ProjectUnreadableError: If the file is not a JSON object or its version is invalid.
     """
     if not isinstance(raw, dict):
-        raise ProjectUnreadableError("Its project file is damaged (not a JSON object).")
+        raise ProjectUnreadableError("Its data file is damaged (not a JSON object).")
     version = raw.get("schema_version", 0)
     if type(version) is not int or version < 0:
-        raise ProjectUnreadableError("Its project file has an invalid schema_version.")
+        raise ProjectUnreadableError("Its data file has an invalid schema_version.")
     if version > SCHEMA_VERSION:
         raise ProjectTooNewError(TOO_NEW_MESSAGE)
     data = dict(raw)

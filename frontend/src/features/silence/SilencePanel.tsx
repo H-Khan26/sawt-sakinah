@@ -16,6 +16,7 @@ import { useEdlEditor } from "@/features/cuts/useEdlEditor";
 import { formatClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
 import type { ProjectView } from "@/types/api";
+import { AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { SilenceControls, useSilenceDetection } from "./SilenceControls";
 import { SilenceList } from "./SilenceList";
@@ -143,7 +144,12 @@ export function SilencePanel({ project }: { project: ProjectView }) {
         <div className="flex flex-col gap-1 text-sm">
           {detection.failed && <span className="text-danger">Detection failed. Try again.</span>}
           {detection.fellBack && (
-            <span className="text-warning">
+            <span className="flex items-start gap-1.5 text-text-secondary">
+              <AlertTriangle
+                size={14}
+                aria-hidden="true"
+                className="mt-[3px] shrink-0 text-warning"
+              />
               Voice activity detection is unavailable on this server; the energy detector was used
               instead. Switch to Energy to tune the dB threshold.
             </span>

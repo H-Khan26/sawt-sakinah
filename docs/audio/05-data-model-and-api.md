@@ -75,7 +75,7 @@ before versioning have none and count as 0).
   and `source_kind` that early files lack). The upgraded form is written on the next
   save; the store always writes the current version, never an older one.
 - **Newer files are refused.** A `schema_version` above the app's is never loaded or
-  rewritten: `GET /projects/{id}` answers 409 `ProjectTooNewError` ("This project was
+  rewritten: `GET /projects/{id}` answers 409 `ProjectTooNewError` ("This recording was
   saved by a newer version of Sawt Sakinah. Update the app to open it."), and a damaged
   file answers 422 `ProjectUnreadableError`.
 - **The library never breaks on one bad file.** `GET /projects` lists a project it

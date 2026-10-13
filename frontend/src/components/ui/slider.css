@@ -1,5 +1,6 @@
 /* Range input (Slider): a 2 px track in the tertiary ground, the filled part in the accent up to
-   --fill, and a diamond thumb (a rotated square) outlined in the accent. */
+   --fill, and a diamond thumb (a rotated square) outlined in the accent. Keyboard focus rings the
+   thumb in the focus token, clear of it by the page colour. */
 .range-diamond {
   appearance: none;
   -webkit-appearance: none;
@@ -53,9 +54,8 @@
   transform: rotate(45deg);
 }
 .range-diamond:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 3px var(--color-accent-soft);
-  background: var(--color-accent-soft);
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-border-focus);
 }
 .range-diamond:focus-visible::-moz-range-thumb {
-  box-shadow: 0 0 0 3px var(--color-accent-soft);
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-border-focus);
 }

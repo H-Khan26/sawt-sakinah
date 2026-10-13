@@ -10,7 +10,7 @@
 import { exportDownloadUrl } from "@/api/endpoints";
 import { useExport, useJob } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
-import { Alert, Button, Input, Modal } from "@/components/ui";
+import { Alert, Button, Input, Modal, ModalTitle } from "@/components/ui";
 import { formatClock } from "@/lib/time";
 import type { ProjectView } from "@/types/api";
 import { useEffect, useState } from "react";
@@ -84,9 +84,7 @@ export function ExportModal({
 
   return (
     <Modal open onClose={onClose} ariaLabel="Export audio">
-      <div className="border-b border-border px-5 py-3 font-serif text-lg">
-        {range ? "Export selection" : "Export audio"}
-      </div>
+      <ModalTitle>{range ? "Export selection" : "Export audio"}</ModalTitle>
 
       <div className="flex flex-col gap-4 px-5 py-4">
         {range && rangeLabel && (
