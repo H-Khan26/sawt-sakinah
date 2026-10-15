@@ -1,21 +1,36 @@
-"""Async detection endpoints (silence, phrases). Return data only -- never audio."""
+"""Async detection endpoints (silence, surahs) and the surah reference table. Return data
+only -- never audio."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel
 
-from ...detection import whisper_models
+from ...config import CONFIG
+from ...detection import quran, whisper_models
 from ..deps import get_jobs, get_settings, get_store
 from ..jobs import JobKind
-from ..schemas import JobAccepted, PhraseRequest, SilenceParams
-from ..workers import phrases_worker, silence_worker
+from ..schemas import JobAccepted, SilenceParams, SurahRequest
+from ..workers import silence_worker, surahs_worker
 from .common import validate_id
-from .models import selected_model
 
-router = APIRouter(prefix="/projects", tags=["detect"])
+router = APIRouter(tags=["detect"])
 
 
-@router.post("/{project_id}/detect/silence", response_model=JobAccepted, status_code=202)
+class SurahInfo(BaseModel):
+    """One entry of ``GET /quran/surahs`` (Tanzil metadata)."""
+
+    number: int
+    name: str  # Arabic name
+    tname: str  # transliteration
+    ename: str  # English meaning
+    ayas: int
+    type: str  # "Meccan" | "Medinan"
+
+
+@router.post(
+    "/projects/{project_id}/detect/silence", response_model=JobAccepted, status_code=202
+)
 def detect_silence_endpoint(
     project_id: str,
     params: SilenceParams = Body(default_factory=SilenceParams),
@@ -34,22 +49,23 @@ def detect_silence_endpoint(
     return JobAccepted(job_id=job.id)
 
 
-@router.post("/{project_id}/detect/phrases", response_model=JobAccepted, status_code=202)
-def detect_phrases_endpoint(
+@router.post(
+    "/projects/{project_id}/detect/surahs", response_model=JobAccepted, status_code=202
+)
+def detect_surahs_endpoint(
     project_id: str,
-    request: PhraseRequest = Body(default_factory=PhraseRequest),
+    request: SurahRequest = Body(default_factory=SurahRequest),
     store=Depends(get_store),
     jobs=Depends(get_jobs),
     settings=Depends(get_settings),
 ) -> JobAccepted:
+    """Find the surahs recited in the recording. Answers 409 ``ModelNotInstalledError``
+    when the Quran recognition model isn't downloaded, rather than queueing a job that can
+    only fail."""
     validate_id(project_id, "project_id")
     if not store.exists(project_id):
         raise HTTPException(status_code=404, detail="recording not found")
-    # Pin the job to a concrete model and fail fast (409 ModelNotInstalledError) when it
-    # isn't downloaded, rather than queueing a job that can only fail.
-    model_id = request.params.model_size or selected_model()
-    params = request.params.model_copy(update={"model_size": model_id})
-    request = request.model_copy(update={"params": params})
+    model_id = CONFIG.surahs.model
     # The model counts as in use from now until the job ends, so it can't be deleted while
     # the job waits in the queue. Marked before the install check, so a delete can't slip
     # in between.
@@ -58,13 +74,19 @@ def detect_phrases_endpoint(
         whisper_models.installed_path(model_id, settings.models_dir)
         # Dedicated single-worker pool: concurrent Whisper on one device OOMs.
         job = jobs.submit(
-            JobKind.detect_phrases,
-            phrases_worker(store, settings, project_id, request),
+            JobKind.detect_surahs,
+            surahs_worker(store, settings, project_id, model_id, request),
             project_id=project_id,
-            pool="phrase",
+            pool="transcription",
             on_finish=release,
         )
     except BaseException:
         release()
         raise
     return JobAccepted(job_id=job.id)
+
+
+@router.get("/quran/surahs", response_model=list[SurahInfo])
+def list_surahs() -> list[SurahInfo]:
+    """The 114 surahs with their names and ayah counts, for labelling passages."""
+    return [SurahInfo(**vars(s)) for s in quran.surahs()]

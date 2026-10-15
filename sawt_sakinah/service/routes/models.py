@@ -1,14 +1,13 @@
 """Whisper model management: list the catalog, download a model, delete one.
 
-The user picks the model phrase detection uses with ``PATCH /app/preferences
-{"whisper_model": id}``. Status codes:
+Surah recognition uses the model named by ``surahs.model`` in the config. Status codes:
 
 * ``GET /models`` -> 200, one :class:`WhisperModelView` per catalog model.
 * ``POST /models/{id}/download`` -> 202 with the ``download_model`` job record. A download
   already pending or running for that model is returned as is (no second job); a model
   that is already installed is refused with 409 ``ModelAlreadyInstalledError``.
 * ``DELETE /models/{id}`` -> 204 (also discards a partial download); 409
-  ``ModelBusyError`` while it is downloading or a phrase detection is queued or running
+  ``ModelBusyError`` while it is downloading or a surah detection is queued or running
   with it.
 * An unknown id is 404 ``UnknownModelError``.
 """
@@ -20,25 +19,17 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from ...config import CONFIG
 from ...detection import whisper_models
-from ...detection.phrases import evict_model
+from ...detection.transcribe import evict_model
 from ..deps import get_jobs, get_settings
 from ..jobs import JobKind, JobRecord, JobRegistry, JobState
-from ..preferences import load_preferences
-from ..schemas import WHISPER_MODELS, WhisperModelView
+from ..schemas import WhisperModelView
 from ..workers import model_download_worker
 
 router = APIRouter(prefix="/models", tags=["models"])
 
 # Guards each app's model id -> download job id map, so a model never gets two download jobs.
 _LOCK = threading.Lock()
-
-
-def selected_model() -> str:
-    """The user's selected model id, or the configured default when it is no longer offered."""
-    choice = load_preferences().whisper_model
-    return choice if choice in WHISPER_MODELS else CONFIG.phrases.model_size
 
 
 def _downloads(request: Request) -> dict[str, str]:
@@ -63,14 +54,12 @@ def _active_download(
 def list_models(
     request: Request, jobs=Depends(get_jobs), settings=Depends(get_settings)
 ) -> list[WhisperModelView]:
-    selected = selected_model()
     with _LOCK:
         downloads = _downloads(request)
-        active = {m: _active_download(jobs, downloads, m) for m in WHISPER_MODELS}
+        active = {m: _active_download(jobs, downloads, m) for m in whisper_models.catalog()}
     return [
         WhisperModelView(
             **m,
-            selected=m["id"] == selected,
             download_job_id=active[m["id"]].id if active.get(m["id"]) else None,
         )
         for m in whisper_models.list_models(settings.models_dir)

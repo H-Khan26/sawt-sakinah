@@ -1,14 +1,14 @@
-"""Arabic text normalization and the target-phrase registry.
+"""Arabic text normalization shared by the transcript and the Quran text.
 
-Whisper emits Arabic script with inconsistent diacritics, hamza seating, and letter
-forms across utterances/reciters. To match spoken phrases robustly we normalize both
-the transcript and the canonical phrases to a diacritic-insensitive skeleton, then
-fuzzy-match on that. Stdlib-only -- no heavy deps. See docs/audio/03-phrase-detection.md.
+Whisper emits Arabic script with inconsistent diacritics, hamza seating and letter forms,
+and the Quran text uses its own spelling conventions. To compare the two we reduce both
+to a diacritic-insensitive skeleton of bare letters, then fuzzy-match on that.
+Stdlib-only -- no heavy deps. See docs/audio/03-surah-recognition.md.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
 
 # Combining harakat / tanwin / sukun / shadda (U+064B..U+0652) and the superscript
 # alef (U+0670), plus the tatweel elongation (U+0640) carry no lexical content here.
@@ -31,6 +31,10 @@ _LETTER_MAP = {
     "ء": "",        # standalone hamza -> dropped
 }
 
+# Anything that is not a base Arabic letter (Quranic annotation marks, punctuation,
+# digits, Latin text) once the forms above are folded.
+_NON_LETTERS = re.compile(r"[^ء-غف-ي]+")
+
 
 def normalize_arabic(text: str) -> str:
     """Return a diacritic-insensitive, form-normalized skeleton of ``text``.
@@ -46,43 +50,10 @@ def normalize_arabic(text: str) -> str:
     return " ".join("".join(out).split())
 
 
-@dataclass(frozen=True)
-class PhraseSpec:
-    """A target phrase and how to recognise it.
+def arabic_words(text: str) -> list[str]:
+    """Split ``text`` into normalized words of bare Arabic letters.
 
-    Attributes:
-        type: Marker category ("takbir", "tasmi", "tahmid", "tasleem").
-        label: Human-readable label emitted on the marker.
-        canonical: Normalized canonical Arabic, used for whole-phrase fuzzy scoring.
-        keywords: Normalized required tokens; a candidate window must contain a fuzzy
-            match for each before it is scored (cheap, high-precision gate).
+    Runs :func:`normalize_arabic`, then treats every non-letter (punctuation, Quranic
+    marks, digits) as a separator, so ``"الرَّحِيمِ ۝"`` gives ``["الرحيم"]``.
     """
-
-    type: str
-    label: str
-    canonical: str
-    keywords: tuple[str, ...]
-
-
-def _spec(type: str, label: str, arabic: str, keywords: list[str]) -> PhraseSpec:
-    return PhraseSpec(
-        type=type,
-        label=label,
-        canonical=normalize_arabic(arabic),
-        keywords=tuple(normalize_arabic(k) for k in keywords),
-    )
-
-
-# Order matters only for stable iteration; matching is independent per phrase.
-PHRASE_REGISTRY: dict[str, PhraseSpec] = {
-    "takbir": _spec("takbir", "Allahu Akbar", "الله أكبر", ["الله", "أكبر"]),
-    "tasmi": _spec(
-        "tasmi", "Sami' Allahu liman hamidah", "سمع الله لمن حمده", ["سمع", "حمده"]
-    ),
-    "tahmid": _spec(
-        "tahmid", "Rabbana wa laka-l-hamd", "ربنا ولك الحمد", ["ربنا", "الحمد"]
-    ),
-    "tasleem": _spec(
-        "tasleem", "As-salamu alaykum", "السلام عليكم", ["السلام", "عليكم"]
-    ),
-}
+    return _NON_LETTERS.sub(" ", normalize_arabic(text)).split()

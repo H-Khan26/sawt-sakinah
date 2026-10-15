@@ -83,7 +83,7 @@ def remove_silence(
             ffprobe_bin=ffprobe_bin,
             overwrite=overwrite,
             boundary_fade=0.0,
-            embed_markers=False,
+            embed_chapters=False,
             metadata=None,
         )
 

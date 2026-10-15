@@ -96,7 +96,7 @@ _STATE_LOCK = threading.Lock()
 _DOWNLOADING: dict[Path, threading.Event] = {}
 _IN_USE: dict[Path, int] = {}
 _DELETING: set[Path] = set()
-_IN_USE_TEXT = "is in use by a running or queued phrase detection."
+_IN_USE_TEXT = "is in use by a running or queued surah detection."
 
 
 # -- catalog ----------------------------------------------------------------------------

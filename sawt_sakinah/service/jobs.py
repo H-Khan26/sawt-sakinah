@@ -2,9 +2,9 @@
 
 Extraction (yt-dlp/ffmpeg subprocess) and detection (faster-whisper / onnxruntime
 C-extensions) release the GIL during their heavy work, so threads -- not a process pool
--- give real concurrency while letting jobs share ``phrases.py``'s ``_MODEL_CACHE``
-(a process pool would reload large-v3 per process). Phrase jobs run on a dedicated,
-typically single-worker pool because concurrent Whisper on one device OOMs; quick
+-- give real concurrency while letting jobs share ``transcribe.py``'s ``_MODEL_CACHE``
+(a process pool would reload the model per process). Transcription jobs run on a
+dedicated, typically single-worker pool because concurrent Whisper on one device OOMs; quick
 extraction/silence jobs run on the general pool so a long transcription never starves
 them. State/progress is queried via :meth:`JobRegistry.get`, which returns a copy under
 the lock. At most ``service.max_pending_jobs`` jobs may be pending or running at once;
@@ -61,7 +61,7 @@ class JobState(str, Enum):
 class JobKind(str, Enum):
     extract = "extract"
     detect_silence = "detect_silence"
-    detect_phrases = "detect_phrases"
+    detect_surahs = "detect_surahs"
     export = "export"
     split = "split"
     download_model = "download_model"
@@ -108,7 +108,7 @@ class JobRegistry:
     def __init__(
         self,
         max_workers: int = CONFIG.service.max_workers,
-        phrase_workers: int = CONFIG.service.phrase_workers,
+        transcription_workers: int = CONFIG.service.transcription_workers,
         max_pending_jobs: int = CONFIG.service.max_pending_jobs,
     ) -> None:
         self._jobs: dict[str, JobRecord] = {}
@@ -120,15 +120,15 @@ class JobRegistry:
         self._pool = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix="sawt-job"
         )
-        self._phrase_pool = ThreadPoolExecutor(
-            max_workers=phrase_workers, thread_name_prefix="sawt-phrase"
+        self._transcription_pool = ThreadPoolExecutor(
+            max_workers=transcription_workers, thread_name_prefix="sawt-transcription"
         )
         # Housekeeping the app starts on its own (the yt-dlp update check) runs here, so
         # a slow download never holds a worker a user's import or export is waiting for.
         self._background_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sawt-bg")
         self._pools = {
             "default": self._pool,
-            "phrase": self._phrase_pool,
+            "transcription": self._transcription_pool,
             "background": self._background_pool,
         }
 
@@ -157,7 +157,7 @@ class JobRegistry:
         pool: str = "default",
         on_finish: Optional[Callable[[], None]] = None,
     ) -> JobRecord:
-        """Register a job and schedule ``fn`` on the chosen pool (``default``, ``phrase`` or
+        """Register a job and schedule ``fn`` on the chosen pool (``default``, ``transcription`` or
         ``background``); return its record.
 
         ``on_finish`` runs once the job ends in any way: succeeded, failed, or dropped from

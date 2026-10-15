@@ -94,22 +94,32 @@ class SilenceConfig(_Section):
     detector: str
 
 
-class PhraseConfig(_Section):
-    detector: str
-    model_size: str
+class TranscriptionConfig(_Section):
     device: str
     compute_type: str
     language: str
-    min_confidence: float
-    min_gap_between_markers: float
-    max_word_gap: float
+    beam_size: int = Field(ge=1)
     vad_filter: bool
-    snap_window: float
     clip_merge_gap: float
     clip_pad: float
-    keyword_gate: float
-    fuzzy_floor: float
-    fuzzy_weight: float
+
+
+class SurahsConfig(_Section):
+    model: str
+    word_match: float = Field(ge=0, le=100)
+    accept_min_words: int = Field(ge=1)
+    accept_min_ratio: float = Field(ge=0, le=1)
+    accept_min_margin: float = Field(ge=0, le=1)
+    unsure_min_words: int = Field(ge=1)
+    unsure_min_ratio: float = Field(ge=0, le=1)
+    promote_min_words: int = Field(ge=1)
+    max_skip: int = Field(ge=0)
+    max_pause: float = Field(gt=0)
+    anchor_max_hits: int = Field(ge=1)
+    context_window: float = Field(ge=0)
+    context_max_words: int = Field(ge=0)
+    basmala_max_gap: float = Field(ge=0)
+    edge_pad: float = Field(ge=0)
 
 
 _MODEL_ID = re.compile(r"[a-z0-9][a-z0-9.-]{0,63}")
@@ -129,13 +139,13 @@ class EditingConfig(_Section):
     out_format: str
     boundary_fade: float
     mp3_vbr_quality: str
-    embed_markers: bool
+    embed_chapters: bool
     embed_metadata: bool
 
 
 class ServiceConfig(_Section):
     max_workers: int
-    phrase_workers: int
+    transcription_workers: int
     max_pending_jobs: int
     waveform_rate: int = Field(gt=0)
     # Retired (replaced by waveform_rate); accepted and ignored so older config files still load.
@@ -159,7 +169,8 @@ class Config(_Section):
     extraction: ExtractionConfig
     segmentation: SegmentationConfig
     silence: SilenceConfig
-    phrases: PhraseConfig
+    transcription: TranscriptionConfig
+    surahs: SurahsConfig
     whisper_models: dict[str, WhisperModelConfig]
     editing: EditingConfig
     service: ServiceConfig
@@ -171,10 +182,8 @@ class Config(_Section):
         bad = [k for k in self.whisper_models if not _MODEL_ID.fullmatch(k)]
         if bad:
             raise ValueError(f"whisper_models ids must match {_MODEL_ID.pattern}: {bad}")
-        if self.phrases.model_size not in self.whisper_models:
-            raise ValueError(
-                f"phrases.model_size {self.phrases.model_size!r} is not in whisper_models"
-            )
+        if self.surahs.model not in self.whisper_models:
+            raise ValueError(f"surahs.model {self.surahs.model!r} is not in whisper_models")
         return self
 
 

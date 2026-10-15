@@ -11,6 +11,7 @@ from pydantic import BaseModel, ValidationError
 
 from ... import __version__, runtime
 from ...applog import open_folder
+from ...detection import quran
 from .. import export_folder
 from ..preferences import Preferences, PreferencesPatch, load_preferences, update_preferences
 from ..schemas import check_export_dir, cookie_browsers
@@ -26,6 +27,7 @@ class AppInfo(BaseModel):
     cookie_browsers: list[str]  # browsers offered for YouTube cookies on this OS
     export_to_folder: bool  # exports are saved to a folder (desktop) instead of downloaded
     default_export_dir: Optional[str] = None  # the Downloads folder, when saving to a folder
+    quran_text_credit: str = quran.CREDIT  # attribution the Tanzil terms ask for
 
 
 @router.get("/info", response_model=AppInfo)

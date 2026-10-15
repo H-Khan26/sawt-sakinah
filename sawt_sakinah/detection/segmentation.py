@@ -4,8 +4,8 @@ This is the only module that touches the Silero network. It runs the vendored ON
 export (``assets/silero_vad.onnx``: Silero's official 16 kHz v6 model, MIT) through
 onnxruntime over 512-sample (32 ms) frames at 16 kHz and returns one speech probability
 per frame. Everything downstream -- the ``"vad"`` silence detector, Whisper clip scoping
-and marker onset snapping in phrase detection -- consumes those probabilities through
-:class:`SpeechMap`.
+for transcription and passage edge snapping in surah matching -- consumes those
+probabilities through :class:`SpeechMap`.
 
 The network is recurrent: each frame is fed together with the last 64 samples of the
 previous frame and the LSTM state carried from it, one session call per frame. That is
@@ -17,16 +17,17 @@ but not something to repeat on every detect.
 Why probabilities are persisted rather than spans: the network pass is the expensive
 part while thresholding is instant. Storing the raw frame probabilities makes the
 sidecar threshold-independent, so every consumer re-thresholds with its own knobs (a
-live sensitivity slider, a stricter phrase pass) without touching the model again. Only
+live sensitivity slider, the transcription clips) without touching the model again. Only
 a model version bump invalidates the file.
 
 Why the fine pass uses ``bridge_gap``: Silero's segmenter glues speech runs separated by
 less than its ``min_silence`` into one span. If a consumer's coarse report threshold
 (e.g. the 3 s silence knob) were fed in there, a takbir followed 0.8 s later by
 recitation would sit in the middle of a span instead of at an edge, and the spans would
-be useless for onset snapping. So :meth:`SpeechMap.spans` always bridges with the small
+be useless for edge snapping. So :meth:`SpeechMap.spans` always bridges with the small
 ``segmentation.bridge_gap`` and each consumer applies its own coarse rule afterwards
-(silence keeps only long gaps; phrases merge spans into clips with ``clip_merge_gap``).
+(silence keeps only long gaps; transcription merges spans into clips with
+``clip_merge_gap``).
 
 Read-only like the rest of ``detection/``: :meth:`SpeechMap.save` exists so the
 extraction layer can persist the sidecar, and it is the only caller. ``onnxruntime`` is
@@ -58,7 +59,7 @@ _MODEL_SAMPLE_RATE = 16000
 _MODEL_PATH = Path(__file__).with_name("assets") / "silero_vad.onnx"
 
 _SESSION = None
-# Worker threads (silence and phrase pools) may race to create the first session; a
+# Worker threads (general and transcription pools) may race to create the first session; a
 # second InferenceSession would only waste memory, so creation is serialized.
 _SESSION_LOCK = threading.Lock()
 

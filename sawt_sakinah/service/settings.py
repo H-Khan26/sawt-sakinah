@@ -40,7 +40,7 @@ class ServiceSettings(BaseSettings):
             downloads are deduped across projects.
         models_dir: Where downloaded Whisper models live (one directory per catalog id).
         max_workers: Threads for the general job pool (extraction / silence / export).
-        phrase_workers: Threads for the dedicated phrase (Whisper) pool; keep at 1
+        transcription_workers: Threads for the dedicated transcription (Whisper) pool; keep at 1
             unless the device can run concurrent transcriptions.
         ffmpeg_bin: Name/path of the ffmpeg executable.
         ffprobe_bin: Name/path of the ffprobe executable.
@@ -70,7 +70,7 @@ class ServiceSettings(BaseSettings):
     models_dir: Path = Field(default_factory=runtime.models_dir)  # downloaded Whisper models
     # Base defaults come from the single config file; SAWT_* env vars override them.
     max_workers: int = CONFIG.service.max_workers
-    phrase_workers: int = CONFIG.service.phrase_workers
+    transcription_workers: int = CONFIG.service.transcription_workers
     ffmpeg_bin: str = CONFIG.ffmpeg.bin
     ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin
     static_dir: Optional[Path] = Field(default_factory=default_static_dir)

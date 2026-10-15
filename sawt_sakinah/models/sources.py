@@ -28,7 +28,8 @@ class AudioSource(BaseModel):
     thresholds; it is populated by the normalization step and is ``None`` until then.
     ``speech_map`` is the optional Silero speech-probability sidecar derived from the
     working copy; every speech-aware detector re-thresholds it instead of re-running
-    the network.
+    the network. ``transcript`` is the optional word-level transcript sidecar (JSON) that
+    surah matching writes, so matching can run again without transcribing.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -47,6 +48,7 @@ class AudioSource(BaseModel):
     original_filename: Optional[str] = None  # uploaded file's name; None for YouTube
     working_copy: Optional[Path] = None  # 16 kHz mono WAV for detection
     speech_map: Optional[Path] = None    # Silero speech-probability sidecar (.npz); None until computed or when the vad extra is missing
+    transcript: Optional[Path] = None    # Whisper word transcript sidecar (.json); None until surah matching transcribes
 
     def to_dict(self) -> dict:
         """JSON-safe dict (paths as strings, datetimes as ISO) for cache sidecars."""

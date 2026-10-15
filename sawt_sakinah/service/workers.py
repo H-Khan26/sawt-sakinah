@@ -23,12 +23,14 @@ import shutil
 import tempfile
 import threading
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from ..config import CONFIG
-from ..detection import detect_phrases, detect_silence, whisper_models
+from ..detection import detect_silence, match_surahs, quran, whisper_models
+from ..detection.transcribe import Word, load_transcript, save_transcript, transcribe
 from ..editing import render
 from ..extraction import extract_audio, import_file
 from ..extraction.probe import probe
@@ -42,8 +44,9 @@ from ..models import (
     InvalidInputError,
     Project,
     ProjectStatus,
+    SurahMap,
+    SurahPassage,
 )
-from ..prayer import derive_structure
 from . import export_folder
 from .jobs import TaskFn
 from .preferences import load_preferences
@@ -51,9 +54,9 @@ from .projects import ProjectStore
 from .schemas import (
     CreateProjectRequest,
     ExportRequest,
-    PhraseRequest,
     SilenceParams,
     SplitRequest,
+    SurahRequest,
 )
 from .settings import ServiceSettings
 
@@ -62,7 +65,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; segmentation needs numpy/on
 
 _log = logging.getLogger(__name__)
 
-# Serializes the lazy speech-map compute per project. Silence and phrase jobs for the
+# Serializes the lazy speech-map compute per project. Silence and surah jobs for the
 # same project run on different pools, so without this both could pay for the Silero
 # pass and race to write the same sidecar. Distinct from ``ProjectStore``'s lock, which
 # only guards the short project.json read-modify-write and must not be held for seconds.
@@ -80,29 +83,41 @@ def _speech_map_lock(project_id: str) -> threading.Lock:
         return lock
 
 
-def _edl_for_range(
-    edl: EditDecisionList, range_start: float, range_end: float, duration: float
+def _edl_for_ranges(
+    edl: EditDecisionList, ranges: list[tuple[float, float]], duration: float
 ) -> EditDecisionList:
-    """Return ``edl`` with an added ``keep`` op restricting output to ``[range_start, range_end]``.
+    """Return ``edl`` with added ``keep`` ops restricting output to ``ranges``.
 
-    The render engine intersects the keep span with the existing ``cut`` ops, so edits *inside*
-    the range are still applied while everything outside it is trimmed. The source EDL is not
-    mutated; a copy with the extra op is returned.
+    The render engine keeps the union of the keep spans and subtracts the existing ``cut``
+    ops, so edits *inside* the ranges are still applied while everything outside them is
+    trimmed and the ranges play back to back. The source EDL is not mutated; a copy with
+    the extra ops is returned.
     """
-    a = max(0.0, min(range_start, range_end))
-    b = min(duration, max(range_start, range_end))
-    keep = EditOperation(type="keep", start=a, end=b)
-    return edl.model_copy(update={"operations": list(edl.operations) + [keep]})
+    keeps = [
+        EditOperation(type="keep", start=max(0.0, min(a, b)), end=min(duration, max(a, b)))
+        for a, b in ranges
+    ]
+    return edl.model_copy(update={"operations": list(edl.operations) + keeps})
 
 
-def _range_label(range_start: float, range_end: float) -> str:
-    """A compact ``m:ss-m:ss`` label for a source-time range (used in derived names)."""
+def _clock(t: float) -> str:
+    t = max(0.0, t)
+    return f"{int(t // 60)}:{int(t % 60):02d}"
 
-    def clock(t: float) -> str:
-        t = max(0.0, t)
-        return f"{int(t // 60)}:{int(t % 60):02d}"
 
-    return f"{clock(range_start)}-{clock(range_end)}"
+def _ranges_label(ranges: list[tuple[float, float]]) -> str:
+    """A compact ``m:ss-m:ss`` label for source-time ranges (used in derived names); several
+    ranges read as their overall extent plus the count, e.g. ``1:05-9:40, 3 parts``."""
+    label = f"{_clock(ranges[0][0])}-{_clock(ranges[-1][1])}"
+    return label if len(ranges) == 1 else f"{label}, {len(ranges)} parts"
+
+
+def _chapter_title(passage: SurahPassage) -> str:
+    """``"Al-Hajj · 1–24"``, or ``"Al-Hajj · 5"`` for a single ayah."""
+    ayat = str(passage.ayah_from)
+    if passage.ayah_to != passage.ayah_from:
+        ayat += f"–{passage.ayah_to}"
+    return f"{quran.surah(passage.surah).tname} · {ayat}"
 
 
 def _copy_into(path: Path | None, audio_dir: Path) -> Path | None:
@@ -127,11 +142,11 @@ def _localize(source: AudioSource, audio_dir: Path) -> AudioSource:
 
     Keeps each project self-contained: a cache hit dedupes the expensive download/transcode
     but the project still owns its own copy, so deleting another project never strands it.
-    The mp3, the working copy and the speech-map sidecar all travel together.
+    The mp3, the working copy and the speech-map and transcript sidecars travel together.
     """
     audio_dir.mkdir(parents=True, exist_ok=True)
     updates: dict = {}
-    for field in ("local_path", "working_copy", "speech_map"):
+    for field in ("local_path", "working_copy", "speech_map", "transcript"):
         moved = _copy_into(getattr(source, field), audio_dir)
         if moved is not None:
             updates[field] = moved
@@ -340,58 +355,85 @@ def silence_worker(
     return run
 
 
-def phrases_worker(
+def _saved_words(project: Project, model_id: str) -> list[Word] | None:
+    """The project's transcript sidecar words when they came from ``model_id``, else
+    ``None`` (none saved, another model, or unreadable)."""
+    path = project.audio_source.transcript
+    if path is None:
+        return None
+    try:
+        model, words = load_transcript(path)
+    except (OSError, ValueError) as err:
+        _log.warning("transcript for project %s is unreadable (%s); transcribing", project.id, err)
+        return None
+    return words if model == model_id else None
+
+
+def surahs_worker(
     store: ProjectStore,
     settings: ServiceSettings,
     project_id: str,
-    request: PhraseRequest,
+    model_id: str,
+    request: SurahRequest,
 ) -> TaskFn:
-    params = request.params
+    """Transcribe the recording (or reuse its saved transcript) and match it to the Quran.
+
+    Progress payloads are ``{"stage": "detect", "status": "start"}``, then
+    ``{"stage": "transcribing", "done_sec", "total_sec"}`` while Whisper runs (seconds of speech handed to it), ``{"stage": "matching"}``, then the
+    terminal ``{"stage": "detect", "status": "done"}``. The transcript is saved as the
+    ``audio/transcript.json`` sidecar before matching, so re-matching never transcribes
+    again. The result counts the passages by level.
+    """
 
     def run(progress):
         progress({"stage": "detect", "status": "start"})
         project = store.load(project_id)
         if project is None:
             raise KeyError(project_id)
-        src = project.audio_source.working_copy or project.audio_source.local_path
-        # With a speech map, only the speech clips are transcribed and onsets snap to span
-        # edges; without one the full file is transcribed with Whisper's own VAD filter.
+        source = project.audio_source
+        src = source.working_copy or source.local_path
+        # With a speech map only the speech clips are transcribed and passage edges snap
+        # to span edges; without one the full file is transcribed with Whisper's own VAD.
         speech_map = _ensure_speech_map(store, project, settings.ffmpeg_bin)
         spans = speech_map.spans() if speech_map is not None else None
-        markers = detect_phrases(
-            src,
-            phrases=params.phrases,
-            references=request.references,
-            # The detect route resolves the user's selected model at submit time.
-            model_size=params.model_size or CONFIG.phrases.model_size,
-            models_dir=settings.models_dir,
-            device=params.device,
-            compute_type=params.compute_type,
-            language=params.language,
-            min_confidence=params.min_confidence,
-            min_gap_between_markers=params.min_gap_between_markers,
-            max_word_gap=params.max_word_gap,
-            vad_filter=params.vad_filter,
-            speech_spans=spans,
-            snap_window=params.snap_window,
-            clip_merge_gap=params.clip_merge_gap,
-            clip_pad=params.clip_pad,
-            total_duration=project.audio_source.duration_sec,
-            ffmpeg_bin=settings.ffmpeg_bin,
+        words = _saved_words(project, model_id) if request.reuse_transcript else None
+        if words is None:
+            words = transcribe(
+                src,
+                model=model_id,
+                models_dir=settings.models_dir,
+                speech_spans=spans,
+                total_duration=source.duration_sec,
+                ffmpeg_bin=settings.ffmpeg_bin,
+                progress=progress,
+            )
+            path = save_transcript(store.audio_dir(project_id) / "transcript.json", model_id, words)
+            store.update(
+                project_id,
+                lambda p: p.model_copy(
+                    update={"audio_source": p.audio_source.model_copy(update={"transcript": path})}
+                ),
+            )
+        progress({"stage": "matching"})
+        passages = match_surahs(words, speech_spans=spans, total_duration=source.duration_sec)
+        surah_map = SurahMap(
+            model=model_id, matched_at=datetime.now(timezone.utc), passages=passages
         )
-        structure = derive_structure(markers, total_duration=project.audio_source.duration_sec)
         store.update(
             project_id,
             lambda p: p.model_copy(
                 update={
-                    "markers": markers,
-                    "structure": structure,
+                    "surahs": surah_map,
                     "status": p.status.model_copy(update={"analyzed": True}),
                 }
             ),
         )
         progress({"stage": "detect", "status": "done"})
-        return {"markers": len(markers), "positions": len(structure)}
+        return {
+            "passages": len(passages),
+            "accept": sum(1 for x in passages if x.level == "accept"),
+            "unsure": sum(1 for x in passages if x.level == "unsure"),
+        }
 
     return run
 
@@ -433,20 +475,23 @@ def export_worker(
         # range (edits inside it stay applied), leaving the project's saved EDL untouched.
         scoped = req.range_start is not None and req.range_end is not None
         edl = (
-            _edl_for_range(
+            _edl_for_ranges(
                 project.edl,
-                req.range_start,
-                req.range_end,
+                [(req.range_start, req.range_end)],
                 project.audio_source.duration_sec,
             )
             if scoped
             else project.edl
         )
-        # Embed the project's markers (detected + user edits) as labeled chapters. Falls
-        # back to the EDL's marker ops when there are none (chapter_markers=None).
-        chapter_markers = (
-            [(m.time, m.label) for m in project.markers]
-            if req.embed_markers and project.markers
+        # Accepted surah passages become chapters, e.g. "Al-Hajj · 1–24"; unsure
+        # ones don't.
+        chapters = (
+            [
+                (x.start, x.end, _chapter_title(x))
+                for x in project.surahs.passages
+                if x.level == "accept"
+            ]
+            if req.embed_chapters and project.surahs is not None
             else None
         )
         # Rendered under a partial name so an interrupted export never looks finished.
@@ -460,8 +505,8 @@ def export_worker(
                 ffmpeg_bin=settings.ffmpeg_bin,
                 ffprobe_bin=settings.ffprobe_bin,
                 bitrate=req.bitrate,
-                embed_markers=req.embed_markers,
-                chapter_markers=chapter_markers,
+                embed_chapters=req.embed_chapters,
+                chapters=chapters,
             )
             meta = probe(partial, ffprobe_bin=settings.ffprobe_bin)
             replace_file(partial, out_path)
@@ -474,7 +519,7 @@ def export_worker(
         default_name = project.name or None
         if scoped and not req.name:
             base = project.name or project.audio_source.title
-            default_name = f"{base} ({_range_label(req.range_start, req.range_end)})"
+            default_name = f"{base} ({_ranges_label([(req.range_start, req.range_end)])})"
         name = req.name or default_name
         saved = save_error = None
         if folder is not None:
@@ -519,11 +564,11 @@ def split_worker(
     new_project_id: str,
     req: SplitRequest,
 ) -> TaskFn:
-    """Carve a source-time range out of a project into a new, independent project.
+    """Copy source-time ranges of a project into a new, independent project.
 
-    Renders ``[range_start, range_end]`` of the source (with the source project's edits inside
-    the range applied), then imports that rendered segment through the normal upload path so the
-    new project gets its own audio, working copy, and empty EDL -- ready for its own detection.
+    Renders ``req.ranges`` of the source back to back (with the source project's edits inside
+    them applied), then imports that rendered audio through the normal upload path so the new
+    project gets its own audio, working copy, and empty EDL -- ready for its own detection.
     """
 
     def run(progress):
@@ -531,10 +576,8 @@ def split_worker(
         src = store.load(src_project_id)
         if src is None:
             raise KeyError(src_project_id)
-        edl = _edl_for_range(
-            src.edl, req.range_start, req.range_end, src.audio_source.duration_sec
-        )
-        label = _range_label(req.range_start, req.range_end)
+        edl = _edl_for_ranges(src.edl, req.ranges, src.audio_source.duration_sec)
+        label = _ranges_label(req.ranges)
         name = req.name or f"{src.name or src.audio_source.title} ({label})"
 
         # A helper killed at shutdown may still hold the segment; never fail on cleanup.

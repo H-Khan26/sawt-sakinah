@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
     store = ProjectStore(settings.projects_dir)
     store.sweep()
     app.state.store = store
-    app.state.jobs = JobRegistry(settings.max_workers, settings.phrase_workers)
+    app.state.jobs = JobRegistry(settings.max_workers, settings.transcription_workers)
     try:
         yield
     finally:

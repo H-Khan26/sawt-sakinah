@@ -1,10 +1,10 @@
 """Pure span arithmetic shared by the detection modules (no I/O, no models).
 
-A span is a half-open-ish ``(start, end)`` pair in seconds. Both the silence and phrase
-detectors need the same handful of operations on ordered span lists -- merging spans that
-sit close together, inverting a speech list into its gaps, padding and clamping -- so they
-live here rather than in either consumer, keeping ``vad.py`` and ``phrases.py`` from
-importing each other.
+A span is a half-open-ish ``(start, end)`` pair in seconds. Both silence detection and
+transcription need the same handful of operations on ordered span lists -- merging spans
+that sit close together, inverting a speech list into its gaps, padding and clamping -- so
+they live here rather than in either consumer, keeping ``vad.py`` and ``transcribe.py``
+from importing each other.
 """
 
 from __future__ import annotations

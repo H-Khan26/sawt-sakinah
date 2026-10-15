@@ -1,16 +1,16 @@
 """Request DTOs and wire-facing response views.
 
-Domain pydantic models (``Project``, ``SilenceSegment``, ``Marker``, ``EditDecisionList``,
-...) are reused directly as response bodies wherever they are already path-free. This
-module adds two things on top:
+Domain pydantic models (``Project``, ``SilenceSegment``, ``SurahMap``,
+``EditDecisionList``, ...) are reused directly as response bodies wherever they are already
+path-free. This module adds two things on top:
 
 * **Request DTOs** -- the inputs the frontend posts (``CreateProjectRequest``,
-  ``SilenceParams``, ``PhraseRequest``, ``EdlUpdate``, ``ExportRequest``). The worker maps
-  these onto the many internal detection/export kwargs.
+  ``SilenceParams``, ``SurahRequest``, ``EdlUpdate``, ``ExportRequest``, ``SplitRequest``).
+  The worker maps these onto the many internal detection/export kwargs.
 * **Wire views** -- ``ProjectView`` / ``AudioSourceView`` / ``ExportArtifactView`` strip
-  server filesystem paths (``local_path``, ``working_copy``, ``speech_map``, artifact
-  ``path``) and expose endpoint URLs (or a presence flag) instead, so Windows/server
-  paths never leak to the client. The one path shown is an export the user saved to
+  server filesystem paths (``local_path``, ``working_copy``, ``speech_map``,
+  ``transcript``, artifact ``path``) and expose endpoint URLs (or a presence flag)
+  instead, so Windows/server paths never leak to the client. The one path shown is an export the user saved to
   their own folder (``saved_path``).
 """
 
@@ -28,12 +28,11 @@ from ..config import CONFIG
 from ..models import (
     EditDecisionList,
     EditOperation,
-    Marker,
-    PrayerPosition,
     Project,
     ProjectStatus,
     ProjectSummary,
     SilenceSegment,
+    SurahMap,
 )
 
 # --- allowed values ----------------------------------------------------------
@@ -46,17 +45,9 @@ EXTRACT_FORMATS = frozenset({"mp3", "m4a", "wav", "flac", "opus"}) | {
     CONFIG.extraction.audio_format
 }
 SILENCE_DETECTORS = frozenset({"vad", "ffmpeg"})
-# Only the models in the downloadable catalog (the config guarantees the default is one).
-WHISPER_MODELS = frozenset(CONFIG.whisper_models)
-# The desktop bundle ships CPU-only CTranslate2, so GPU devices and GPU compute types are refused.
-WHISPER_DEVICES = frozenset({"cpu"})
-WHISPER_COMPUTE_TYPES = frozenset(
-    {"default", "auto", "int8", "int8_float32", "int16", "float32"}
-) | {CONFIG.phrases.compute_type}
 # ffmpeg bitrate ("192k") and VBR quality ("0".."9") forms.
 _BITRATE = re.compile(r"[0-9]{2,3}[kK]")
 _VBR_QUALITY = re.compile(r"[0-9]")
-_LANGUAGE = re.compile(r"[a-z]{2,3}")
 # Browsers yt-dlp can read YouTube cookies from, in display order; Safari only on macOS.
 _COOKIE_BROWSER_ORDER = (
     "chrome", "edge", "firefox", "brave", "chromium", "vivaldi", "opera", "safari",
@@ -65,6 +56,8 @@ COOKIE_BROWSERS = frozenset(
     b for b in _COOKIE_BROWSER_ORDER if b != "safari" or sys.platform == "darwin"
 )
 _MAX_PATH_LEN = 1024
+# Ranges one split may join; each becomes a slice in the render's filter graph.
+_MAX_SPLIT_RANGES = 500
 
 
 def cookie_browsers() -> list[str]:
@@ -158,70 +151,22 @@ class SilenceParams(BaseModel):
         return _one_of(v, SILENCE_DETECTORS, "detector")
 
 
-class PhraseParams(BaseModel):
-    """Inputs for ``POST /detect/phrases`` (mapped to ``detect_phrases`` kwargs)."""
+class SurahRequest(BaseModel):
+    """Inputs for ``POST /detect/surahs``. The model and thresholds come from the config."""
 
-    phrases: Optional[list[str]] = None
-    # None uses the model the user selected (preferences), resolved when the job is submitted.
-    model_size: Optional[str] = None
-    device: str = CONFIG.phrases.device
-    compute_type: str = CONFIG.phrases.compute_type
-    language: str = CONFIG.phrases.language
-    min_confidence: float = CONFIG.phrases.min_confidence
-    min_gap_between_markers: float = CONFIG.phrases.min_gap_between_markers
-    max_word_gap: float = CONFIG.phrases.max_word_gap
-    vad_filter: bool = CONFIG.phrases.vad_filter
-    snap_window: float = CONFIG.phrases.snap_window
-    clip_merge_gap: float = CONFIG.phrases.clip_merge_gap
-    clip_pad: float = CONFIG.phrases.clip_pad
-
-    @field_validator("model_size")
-    @classmethod
-    def _check_model(cls, v: Optional[str]) -> Optional[str]:
-        # Never an arbitrary Hugging Face repo id or local path.
-        return v if v is None else _one_of(v, WHISPER_MODELS, "model_size")
-
-    @field_validator("device")
-    @classmethod
-    def _check_device(cls, v: str) -> str:
-        return _one_of(v, WHISPER_DEVICES, "device")
-
-    @field_validator("compute_type")
-    @classmethod
-    def _check_compute_type(cls, v: str) -> str:
-        return _one_of(v, WHISPER_COMPUTE_TYPES, "compute_type")
-
-    @field_validator("language")
-    @classmethod
-    def _check_language(cls, v: str) -> str:
-        if not _LANGUAGE.fullmatch(v):
-            raise ValueError("language must be a 2-3 letter language code")
-        return v
-
-
-class PhraseRequest(BaseModel):
-    params: PhraseParams = Field(default_factory=PhraseParams)
-    references: Optional[dict] = None
+    # Match the saved transcript again when it came from the current model, instead of
+    # transcribing the recording anew.
+    reuse_transcript: bool = True
 
 
 class EdlUpdate(BaseModel):
     operations: list[EditOperation] = Field(default_factory=list)
 
 
-class MarkersUpdate(BaseModel):
-    """Inputs for ``PUT /projects/{id}/markers`` -- replaces the whole marker list.
-
-    Structure is re-derived server-side from these markers, so the client never sends
-    ``PrayerPosition``s directly. User-placed markers should carry ``source="user"``.
-    """
-
-    markers: list[Marker] = Field(default_factory=list)
-
-
 class ExportRequest(BaseModel):
     format: str = CONFIG.editing.out_format
     bitrate: Optional[str] = None
-    embed_markers: bool = CONFIG.editing.embed_markers
+    embed_chapters: bool = CONFIG.editing.embed_chapters  # accepted surah passages as chapters
     name: Optional[str] = None  # file name label; defaults to the project name
     # Optional source-time range: when set, render only ``[range_start, range_end]`` (with the
     # project's existing edits inside it still applied) instead of the whole saved EDL. Leaves
@@ -253,21 +198,28 @@ class ExportRequest(BaseModel):
 
 
 class SplitRequest(BaseModel):
-    """Body of ``POST /projects/{id}/split`` -- carve a source-time range into a new project.
+    """Body of ``POST /projects/{id}/split`` -- copy source-time ranges into a new project.
 
-    The range is rendered (with the source project's edits inside it applied) and imported as
-    a fresh, independent project with its own audio and empty EDL.
+    The ranges are rendered back to back (with the source project's edits inside them
+    applied) and imported as a fresh, independent project with its own audio and empty EDL.
+    They are stored sorted, with overlapping or touching ranges merged.
     """
 
-    range_start: float
-    range_end: float
+    ranges: list[tuple[float, float]] = Field(min_length=1, max_length=_MAX_SPLIT_RANGES)
     name: Optional[str] = None  # library label for the new project; defaults to a derived name
 
-    @model_validator(mode="after")
-    def _check_range(self) -> "SplitRequest":
-        if self.range_start >= self.range_end:
-            raise ValueError("range_start must be less than range_end")
-        return self
+    @field_validator("ranges")
+    @classmethod
+    def _check_ranges(cls, v: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        merged: list[tuple[float, float]] = []
+        for a, b in sorted(v):
+            if a < 0 or a >= b:
+                raise ValueError("each range must have 0 <= start < end")
+            if merged and a <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+            else:
+                merged.append((a, b))
+        return merged
 
 
 class PatchProjectRequest(BaseModel):
@@ -301,6 +253,7 @@ class AudioSourceView(BaseModel):
     created_at: datetime
     audio_url: str
     has_speech_map: bool  # speech-aware controls (VAD silence, snapping) are available
+    has_transcript: bool  # surahs can be matched again without transcribing
 
 
 class ExportArtifactView(BaseModel):
@@ -320,8 +273,7 @@ class ProjectView(BaseModel):
     audio_source: AudioSourceView
     name: str
     silences: list[SilenceSegment]
-    markers: list[Marker]
-    structure: list[PrayerPosition]
+    surahs: Optional[SurahMap] = None
     edl: EditDecisionList
     status: ProjectStatus
     exports: list[ExportArtifactView]
@@ -337,7 +289,6 @@ class WhisperModelView(BaseModel):
     description: str
     size_mb: int
     installed: bool
-    selected: bool  # the user's chosen model (preferences.whisper_model)
     download_job_id: Optional[str] = None  # pending/running download job, if any
 
 
@@ -365,6 +316,7 @@ def to_project_view(project: Project) -> ProjectView:
         created_at=s.created_at,
         audio_url=f"/projects/{project.id}/audio",
         has_speech_map=s.speech_map is not None,
+        has_transcript=s.transcript is not None,
     )
     exports = [
         ExportArtifactView(
@@ -385,8 +337,7 @@ def to_project_view(project: Project) -> ProjectView:
         audio_source=audio,
         name=project.name,
         silences=project.silences,
-        markers=project.markers,
-        structure=project.structure,
+        surahs=project.surahs,
         edl=project.edl,
         status=project.status,
         exports=exports,

@@ -30,8 +30,8 @@ class EditOperation(BaseModel):
     Attributes:
         type: ``"cut"`` removes ``[start, end]``; ``"keep"`` retains only the listed
             keep spans (and drops the rest); ``"fade"`` applies a short fade at a
-            boundary; ``"marker"`` is a metadata point (not a mutation) that export may
-            embed as a chapter/cue.
+            boundary; ``"marker"`` is a metadata point (not a mutation), still accepted
+            so older EDLs load, and ignored by the render.
         start: Span/point start in seconds.
         end: Span end in seconds. ``None`` for a point (``marker``) or a single-edge fade.
     """

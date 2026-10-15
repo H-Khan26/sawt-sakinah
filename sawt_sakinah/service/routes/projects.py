@@ -1,5 +1,5 @@
-"""Project lifecycle: create (async extraction), list, fetch, rename, delete, and the
-EDL / marker updates."""
+"""Project lifecycle: create (async extraction), split, list, fetch, rename, delete, and
+the EDL update."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ from ..schemas import (
     CreateProjectRequest,
     CreateProjectResponse,
     EdlUpdate,
-    MarkersUpdate,
     PatchProjectRequest,
     ProjectListResponse,
     ProjectView,
@@ -28,7 +27,6 @@ from ..workers import extract_worker, import_worker, split_worker
 from ...models import EditDecisionList
 from ...models.edl import normalize_cuts
 from ...models.errors import FileTooLargeError, ProjectInUseError, UnsupportedMediaError
-from ...prayer import derive_structure
 from .common import validate_id
 
 _log = logging.getLogger(__name__)
@@ -144,9 +142,10 @@ def split_project(
     jobs=Depends(get_jobs),
     settings=Depends(get_settings),
 ) -> CreateProjectResponse:
-    """Carve a source-time range out of a project into a new, independent project.
+    """Copy one or more source-time ranges of a project into a new, independent project.
 
-    Renders the range (edits inside it applied) and imports it as a fresh project, mirroring
+    Renders the ranges back to back (edits inside them applied) and imports the result as a
+    fresh project, mirroring
     ``POST /projects``: returns the new project + job id, and ``project.json`` is written by
     the job once the segment has been rendered and imported."""
     validate_id(project_id, "project_id")
@@ -183,7 +182,7 @@ def patch_project(
     store=Depends(get_store),
 ) -> ProjectView:
     """Rename the project. Returns the full ``ProjectView`` so the client patches its
-    cache in one shot (same convention as ``PUT /markers``)."""
+    cache in one shot."""
     validate_id(project_id, "project_id")
     try:
         updated = store.rename(project_id, req.name)
@@ -227,36 +226,3 @@ def put_edl(
     except KeyError:
         raise HTTPException(status_code=404, detail="recording not found")
     return updated.edl
-
-
-@router.put("/{project_id}/markers", response_model=ProjectView)
-def put_markers(
-    project_id: str,
-    update: MarkersUpdate,
-    store=Depends(get_store),
-) -> ProjectView:
-    """Replace the marker list and re-derive prayer structure (no render).
-
-    Structure is a pure function of the markers, so it is recomputed here rather than
-    accepted from the client. Returns the full project so the client can patch its cache
-    with both the new markers and structure in one shot.
-    """
-    validate_id(project_id, "project_id")
-
-    def mutate(p):
-        structure = derive_structure(
-            update.markers, total_duration=p.audio_source.duration_sec
-        )
-        return p.model_copy(
-            update={
-                "markers": list(update.markers),
-                "structure": structure,
-                "status": p.status.model_copy(update={"analyzed": True}),
-            }
-        )
-
-    try:
-        updated = store.update(project_id, mutate)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="recording not found")
-    return to_project_view(updated)

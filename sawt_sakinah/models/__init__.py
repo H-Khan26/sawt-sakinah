@@ -5,10 +5,9 @@ frontend). Times are always in seconds (float). See docs/audio/05-data-model-and
 """
 
 from .segments import SilenceSegment
-from .markers import Marker
 from .sources import AudioSource
 from .edl import EditOperation, EditDecisionList
-from .structure import PrayerPosition
+from .surahs import SurahMap, SurahPassage
 from .project import Project, ProjectStatus, ProjectSummary, ExportArtifact
 from .errors import (
     ExtractionError,
@@ -31,11 +30,11 @@ from .errors import (
 
 __all__ = [
     "SilenceSegment",
-    "Marker",
     "AudioSource",
     "EditOperation",
     "EditDecisionList",
-    "PrayerPosition",
+    "SurahMap",
+    "SurahPassage",
     "Project",
     "ProjectStatus",
     "ProjectSummary",
