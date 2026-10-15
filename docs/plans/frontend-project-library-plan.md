@@ -6,6 +6,9 @@
 > "Backend status" below. Scope: turn the single-document
 > app into a multi-recording one — a library on entry, a collapsible in-editor switcher,
 > rename/delete, export naming, and an explicit save-state story.
+> The marker parts it describes (`markerStore`, `useUpdateMarkers`, marker edits) were
+> retired by the [Surah view](../frontend/04-surah-view.md); see
+> [docs/audio/03-surah-recognition.md](../audio/03-surah-recognition.md).
 
 > **As built.** `/` is the library ("Your recordings",
 > [ProjectLibraryPage.tsx](../../frontend/src/pages/ProjectLibraryPage.tsx)) set under the

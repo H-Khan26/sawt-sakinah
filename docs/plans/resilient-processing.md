@@ -3,6 +3,9 @@
 > Status: proposed, not started. This document describes gaps in the existing backend
 > and frontend, then proposes concrete work. Nothing here changes the shipped editor;
 > it layers on top.
+> The phrase/marker parts it describes (B5's chunked phrase detection appending to
+> `project.markers`) were retired by the [Surah view](../frontend/04-surah-view.md); see
+> [docs/audio/03-surah-recognition.md](../audio/03-surah-recognition.md).
 
 ---
 
@@ -36,10 +39,10 @@ checkpointing, no persistence of in-flight state, and no recovery on restart:
 | Audio files | Written to `<projects_root>/<id>/audio/` by yt-dlp/ffmpeg; survive restart |
 | Intermediate detection results | None — only final lists written to `project.json` |
 | Retry | None |
-| Timeout | None |
-| Graceful shutdown | `wait=False`; in-flight work abandoned |
+| Timeout | Each ffmpeg/ffprobe run stops after `ffmpeg.timeout_sec` |
+| Graceful shutdown | Queued jobs dropped; running ones get `service.shutdown_grace_sec` to stop, then are recorded as cancelled |
 | yt-dlp partial files | yt-dlp writes `.part` files; they survive restart but are never resumed |
-| Whisper model | In-memory cache per phrase-worker thread; reloaded on restart |
+| Whisper model | In-memory cache (`transcribe._MODEL_CACHE`) used by the transcription pool; reloaded on restart |
 | Frontend job state | Router `location.state` only; lost on refresh |
 
 ---
@@ -132,8 +135,8 @@ audio duration 120 min, chunk 20 min:
 
 #### B5 — Chunked Whisper transcription with intermediate saves
 
-**Gap:** `detect_phrases()` runs Whisper over the full file. A 2-hour recording at
-`large-v3` on CPU takes 45–90 minutes. One failure loses everything.
+**Gap:** `transcribe()` (surah recognition) runs Whisper over all the speech in one packed
+pass and saves `audio/transcript.json` only when it finishes. One failure loses everything.
 
 **Proposal:** Segment audio into chunks (configurable, default 10 min for phrase
 detection — smaller than silence chunks because Whisper is heavier), transcribe each

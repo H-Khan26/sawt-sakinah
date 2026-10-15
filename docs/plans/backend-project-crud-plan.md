@@ -5,6 +5,9 @@
 > the CRUD surface for projects (list, rename, delete) on top of the existing create/read,
 > add human-friendly export naming, and review the read-path (`GET`) mechanics for
 > efficiency. Single-user, local/desktop assumptions hold throughout.
+> The marker and phrase parts it describes (`PUT /projects/{id}/markers`, marker edits,
+> phrase writes) were retired by the [Surah view](../frontend/04-surah-view.md); see
+> [docs/audio/03-surah-recognition.md](../audio/03-surah-recognition.md).
 
 ---
 
