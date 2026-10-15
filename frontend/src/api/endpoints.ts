@@ -155,6 +155,3 @@ export const queryKeys = {
   models: ["models"] as const,
   ytdlp: ["app", "ytdlp"] as const,
 };
-
-/** Mutation key prefix for the per-edit autosaves, so `SaveStatus` can observe them. */
-export const editSaveKey = (projectId: string) => ["edit-save", projectId] as const;

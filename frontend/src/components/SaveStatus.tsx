@@ -1,63 +1,37 @@
-import { editSaveKey } from "@/api/endpoints";
+import { useSaveState } from "@/api/hooks";
 import { WaveformLoader } from "@/components/ui";
-import { useIsMutating, useMutationState, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check } from "lucide-react";
 import { useEffect } from "react";
 
 /**
  * Save-state indicator beside the editor title. The editor's EDL/marker edits are saved in the
- * background per commit; this surfaces that autosave so the user knows closing is safe:
+ * background per commit; this surfaces that autosave (`useSaveState`) so the user knows closing
+ * is safe:
  *
- * - `Saving…` while any edit-save mutation is in flight or queued,
- * - `Save failed — Retry` when the most recent edit-save ended in error (with a button that
- *   re-fires that mutation; an EDL save always sends the latest local edits), auto-retry
- *   having already been exhausted,
- * - `Saved` otherwise (idle state is fully persisted server-side).
+ * - `Saving…` while an EDL or marker save is queued or in flight,
+ * - `Save failed — Retry` while an EDL edit is unsaved or the latest marker save failed, auto-retry
+ *   having already been exhausted. Retry re-sends everything that failed: the latest local EDL
+ *   and the failed marker list. An unsaved EDL edit shows here for as long as it stays unsaved,
+ *   whatever was saved after it,
+ * - `Saved` otherwise (every edit is stored server-side).
  *
- * It also guards `beforeunload` while a save is in flight or has failed — never when everything
- * is saved, so normal closes stay seamless.
+ * It also guards `beforeunload` while anything is saving or unsaved — never when everything is
+ * saved, so normal closes stay seamless.
  */
 export function SaveStatus({ projectId }: { projectId: string }) {
-  const queryClient = useQueryClient();
-  const key = editSaveKey(projectId);
-  const pending = useIsMutating({ mutationKey: key });
+  const { state, retry } = useSaveState(projectId);
 
-  // Reactive view of this project's edit-save mutations, oldest-first.
-  const states = useMutationState({
-    filters: { mutationKey: key },
-    select: (m) => ({ status: m.state.status, submittedAt: m.state.submittedAt }),
-  });
-
-  const latest = states.reduce<(typeof states)[number] | null>(
-    (acc, s) => (!acc || s.submittedAt > acc.submittedAt ? s : acc),
-    null,
-  );
-  const failed = pending === 0 && latest?.status === "error";
-
-  // Warn before unload only while a write is in flight or has failed (the edit isn't stored).
   useEffect(() => {
-    if (pending === 0 && !failed) return;
+    if (state === "saved") return;
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [pending, failed]);
+  }, [state]);
 
-  const retry = () => {
-    const all = queryClient.getMutationCache().getAll();
-    const errored = all.filter((m) => {
-      const k = m.options.mutationKey;
-      return (
-        Array.isArray(k) && k[0] === "edit-save" && k[1] === projectId && m.state.status === "error"
-      );
-    });
-    const last = errored.sort((a, b) => a.state.submittedAt - b.state.submittedAt).at(-1);
-    if (last) last.execute(last.state.variables);
-  };
-
-  if (pending > 0) {
+  if (state === "saving") {
     return (
       <span className="flex items-center gap-1.5 whitespace-nowrap text-sm text-text-secondary">
         <WaveformLoader size={12} bars={4} />
@@ -66,7 +40,7 @@ export function SaveStatus({ projectId }: { projectId: string }) {
     );
   }
 
-  if (failed) {
+  if (state === "failed") {
     return (
       <span className="flex items-center gap-1.5 whitespace-nowrap text-sm text-danger">
         <AlertTriangle size={14} />
