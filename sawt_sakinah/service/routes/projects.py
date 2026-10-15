@@ -26,6 +26,7 @@ from ..schemas import (
 )
 from ..workers import extract_worker, import_worker, split_worker
 from ...models import EditDecisionList
+from ...models.edl import normalize_cuts
 from ...models.errors import FileTooLargeError, ProjectInUseError, UnsupportedMediaError
 from ...prayer import derive_structure
 from .common import validate_id
@@ -207,13 +208,15 @@ def put_edl(
     update: EdlUpdate,
     store=Depends(get_store),
 ) -> EditDecisionList:
-    """Replace the EDL operations (no render); export renders the saved EDL later."""
+    """Replace the EDL operations (no render); export renders the saved EDL later.
+
+    The cut spans are stored merged and sorted, so overlapping cuts become one range."""
     validate_id(project_id, "project_id")
 
     def mutate(p):
         edl = p.edl.model_copy(
             update={
-                "operations": update.operations,
+                "operations": normalize_cuts(update.operations, p.audio_source.duration_sec),
                 "updated_at": datetime.now(timezone.utc),
             }
         )

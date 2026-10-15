@@ -11,9 +11,13 @@ Times are always in seconds (float).
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Literal, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+# Cut spans closer than this (seconds) count as touching and merge into one.
+_TOUCH = 1e-6
 
 
 def _now() -> datetime:
@@ -53,3 +57,30 @@ class EditDecisionList(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
 
+
+def normalize_cuts(
+    operations: Sequence[EditOperation], duration: Optional[float] = None
+) -> list[EditOperation]:
+    """Return ``operations`` with the ``cut`` spans sorted, merged and clamped.
+
+    Overlapping or touching cuts merge, so the removed audio is a set of disjoint spans;
+    with a known ``duration`` each is clamped to ``[0, duration]`` and empty ones drop.
+    The other ops (and any open-ended cut) follow the cuts in their original order.
+    """
+    hi = duration if duration and duration > 0 else float("inf")
+    spans = sorted(
+        (max(0.0, op.start), min(hi, op.end))
+        for op in operations
+        if op.type == "cut" and op.end is not None
+    )
+    merged: list[tuple[float, float]] = []
+    for a, b in spans:
+        if b <= a:
+            continue
+        if merged and a <= merged[-1][1] + _TOUCH:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else:
+            merged.append((a, b))
+    cuts = [EditOperation(type="cut", start=a, end=b) for a, b in merged]
+    rest = [op for op in operations if not (op.type == "cut" and op.end is not None)]
+    return cuts + rest
