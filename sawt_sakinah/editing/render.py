@@ -13,7 +13,6 @@ Operation semantics (see docs/audio/04-editing-and-export.md):
 * ``fade``   -- apply a short fade over ``[start, end]`` (fade-in if it sits at the very
                 start of the output, otherwise fade-out), on top of the automatic
                 click-avoidance fades at every cut boundary.
-* ``marker`` -- not a mutation; optionally embedded as a chapter on export.
 
 The actual work lives in :func:`_render`, which operates on a plain file path so the
 legacy :func:`remove_silence` path can share the exact same engine.
@@ -48,8 +47,8 @@ def render(
     boundary_fade: float = DEFAULT_BOUNDARY_FADE,
     bitrate: str | None = None,
     vbr_quality: str | None = None,
-    embed_markers: bool = CONFIG.editing.embed_markers,
-    chapter_markers: Optional[Sequence[tuple[float, str]]] = None,
+    embed_chapters: bool = CONFIG.editing.embed_chapters,
+    chapters: Optional[Sequence[tuple[float, float, str]]] = None,
     embed_metadata: bool = CONFIG.editing.embed_metadata,
 ) -> Path:
     """Render ``edl`` against ``audio_source`` and write a new audio file.
@@ -70,12 +69,11 @@ def render(
         bitrate: Constant bitrate (e.g. ``"192k"``). Takes precedence over ``vbr_quality``.
         vbr_quality: VBR quality for mp3 (``"0"`` is best). Defaults to ``"0"`` for mp3
             when neither ``bitrate`` nor ``vbr_quality`` is given.
-        embed_markers: Embed chapters in the output. Uses ``chapter_markers`` when given,
-            else falls back to the EDL's ``marker`` operations.
-        chapter_markers: Source-timeline ``(time, label)`` pairs (e.g. the project's
-            detected/user markers) to embed as labeled chapters. Times are remapped to the
-            output timeline and dropped if they fall inside a cut. ``None`` uses the EDL
-            ``marker`` ops instead.
+        embed_chapters: Embed ``chapters`` in the output.
+        chapters: Source-timeline ``(start, end, label)`` spans (e.g. the project's
+            surah passages) to embed as labeled chapters. Each chapter starts at the first
+            moment of its span that survives the edits, on the output timeline; a span cut
+            entirely is dropped. ``None`` writes no chapters.
         embed_metadata: Refresh ``title`` and source-URL metadata on the output.
 
     Returns:
@@ -113,8 +111,8 @@ def render(
         boundary_fade=boundary_fade,
         bitrate=bitrate,
         vbr_quality=vbr_quality,
-        embed_markers=embed_markers,
-        chapter_markers=chapter_markers,
+        embed_chapters=embed_chapters,
+        chapters=chapters,
         metadata=metadata,
     )
 
@@ -131,8 +129,8 @@ def _render(
     boundary_fade: float = 0.0,
     bitrate: str | None = None,
     vbr_quality: str | None = None,
-    embed_markers: bool = False,
-    chapter_markers: Optional[Sequence[tuple[float, str]]] = None,
+    embed_chapters: bool = False,
+    chapters: Optional[Sequence[tuple[float, float, str]]] = None,
     metadata: Optional[dict] = None,
 ) -> Path:
     """Path-based render engine shared by :func:`render` and ``remove_silence``."""
@@ -153,10 +151,10 @@ def _render(
     base = [ffmpeg_bin, "-y" if overwrite else "-n", *ffmpeg_input(src)]
 
     meta_file: Optional[Path] = None
-    if embed_markers:
-        chapters = _chapter_lines(operations, keeps, out_total, chapter_markers)
-        if chapters:
-            meta_file = _write_ffmetadata(chapters)
+    if embed_chapters and chapters:
+        lines = _chapter_lines(keeps, out_total, chapters)
+        if lines:
+            meta_file = _write_ffmetadata(lines)
             base += ffmpeg_input(meta_file)
 
     cmd = list(base)
@@ -300,45 +298,31 @@ def _build_graph(
 
 
 def _chapter_lines(
-    operations: Sequence[EditOperation],
     keeps: list[tuple[float, float]],
     out_total: float,
-    chapter_markers: Optional[Sequence[tuple[float, str]]] = None,
+    chapters: Sequence[tuple[float, float, str]],
 ) -> list[tuple[float, float, str]]:
     """Build ``(start, end, title)`` chapters on the output timeline.
 
-    When ``chapter_markers`` (source-timeline ``(time, label)`` pairs, e.g. detected /
-    user markers) is given, chapters carry those real labels. Otherwise they fall back to
-    the EDL's ``marker`` ops with generic titles. Times are remapped to the output
-    timeline; any that fall inside a cut region are dropped. Each chapter runs until the
-    next one (the last until ``out_total``).
+    ``chapters`` are source-timeline ``(start, end, label)`` spans. Each chapter starts at
+    the first kept moment of its span, remapped to the output timeline; a span with nothing
+    kept is dropped. Each chapter runs until the next one (the last until ``out_total``);
+    when two land on the same time the later one is kept.
     """
-    if chapter_markers is not None:
-        labeled: list[tuple[float, str]] = []
-        for time, label in chapter_markers:
-            t = _remap_time(time, keeps)
-            if t is not None:
-                labeled.append((t, label))
-        labeled.sort(key=lambda e: e[0])
-        chapters: list[tuple[float, float, str]] = []
-        for i, (t, label) in enumerate(labeled):
-            end = labeled[i + 1][0] if i + 1 < len(labeled) else out_total
-            chapters.append((t, end, label))
-        return chapters
-
-    times: list[float] = []
-    for op in operations:
-        if op.type != "marker":
+    labeled: list[tuple[float, str]] = []
+    for start, end, label in sorted(chapters, key=lambda e: e[0]):
+        first = next((max(a, start) for a, b in keeps if b > start and a < end), None)
+        t = None if first is None else _remap_time(first, keeps)
+        if t is None:
             continue
-        t = _remap_time(op.start, keeps)
-        if t is not None:
-            times.append(t)
-    times.sort()
-    chapters = []
-    for i, t in enumerate(times):
-        end = times[i + 1] if i + 1 < len(times) else out_total
-        chapters.append((t, end, f"Marker {i + 1}"))
-    return chapters
+        if labeled and labeled[-1][0] >= t:
+            labeled.pop()
+        labeled.append((t, label))
+    lines: list[tuple[float, float, str]] = []
+    for i, (t, label) in enumerate(labeled):
+        end = labeled[i + 1][0] if i + 1 < len(labeled) else out_total
+        lines.append((t, end, label))
+    return lines
 
 
 def _escape_ffmetadata(value: str) -> str:

@@ -1,63 +1,77 @@
-"""Server-side waveform peak computation for fast frontend rendering.
+"""Server-side waveform levels computation for fast frontend rendering.
 
 Decodes the audio once (via the shared ffmpeg PCM decode) and reduces it to per-bucket
-min/max pairs so the frontend can draw a waveform without downloading and decoding the
-whole file. Read-only; the result is cached to ``waveform.json`` by the route.
+RMS levels at a fixed time resolution, so the frontend can draw a waveform without
+downloading and decoding the whole file. RMS (not sample peaks) because limited
+recordings pin their peaks at full scale, which hides the difference between speech
+and silence. Read-only; the result is cached to ``waveform.json`` by the route.
 """
 
 from __future__ import annotations
 
+import base64
 import math
 from pathlib import Path
 
 from ..config import CONFIG
 from ..detection._pcm import SAMPLE_RATE, decode_pcm
 
-WAVEFORM_VERSION = 1
+WAVEFORM_VERSION = 2
+
+# RMS percentile that maps to full height: the recording's loudest passages, so a single
+# click or burst doesn't flatten everything else.
+SCALE_PERCENTILE = 99.5
+
+# Scale floor for (near-)silent files, so the division and the dB label stay finite.
+MIN_SCALE = 1e-4
 
 
 def compute_peaks(
     path: str | Path,
-    buckets: int = CONFIG.service.waveform_buckets,
+    rate: int = CONFIG.service.waveform_rate,
     ffmpeg_bin: str = CONFIG.ffmpeg.bin,
 ) -> dict:
-    """Return ``{version, sample_rate, buckets, duration_sec, min[], max[]}`` for ``path``.
+    """Return ``{version, sample_rate, rate, buckets, duration_sec, scale_db, levels}``.
 
-    The signal is decoded to mono 16 kHz float32 and split into ``buckets`` equal frames;
-    each frame contributes one min and one max sample. ``buckets`` is clamped down when
-    the file has fewer samples than requested buckets.
+    The signal is decoded to mono 16 kHz float32 and split into consecutive frames of
+    ``SAMPLE_RATE / rate`` samples (the last one may be shorter). Each frame's RMS is
+    divided by the recording's ``SCALE_PERCENTILE`` RMS, clipped to ``[0, 1]`` and
+    quantized to one byte; ``levels`` is those bytes base64-encoded. ``scale_db`` is the
+    level of full height in dBFS RMS. ``rate`` in the result is the exact buckets per
+    second after rounding the frame length to whole samples.
     """
     import numpy as np
 
     pcm = decode_pcm(path, ffmpeg_bin)
     n = int(pcm.shape[0])
-    duration = n / float(SAMPLE_RATE)
-
-    if n == 0:
-        return {
-            "version": WAVEFORM_VERSION,
-            "sample_rate": SAMPLE_RATE,
-            "buckets": 0,
-            "duration_sec": 0.0,
-            "min": [],
-            "max": [],
-        }
-
-    buckets = max(1, min(buckets, n))
-    step = math.ceil(n / buckets)
-    pad = step * buckets - n
-    if pad > 0:
-        pcm = np.concatenate([pcm, np.zeros(pad, dtype=pcm.dtype)])
-
-    frames = pcm.reshape(buckets, step)
-    mins = frames.min(axis=1)
-    maxs = frames.max(axis=1)
-
-    return {
+    step = max(1, round(SAMPLE_RATE / rate))
+    result = {
         "version": WAVEFORM_VERSION,
         "sample_rate": SAMPLE_RATE,
-        "buckets": buckets,
-        "duration_sec": round(duration, 3),
-        "min": [round(float(v), 5) for v in mins],
-        "max": [round(float(v), 5) for v in maxs],
+        "rate": SAMPLE_RATE / step,
+        "buckets": 0,
+        "duration_sec": round(n / float(SAMPLE_RATE), 3),
+        "scale_db": round(20 * math.log10(MIN_SCALE), 1),
+        "levels": "",
     }
+    if n == 0:
+        return result
+
+    full = n // step
+    frames = pcm[: full * step].reshape(full, step)
+    # einsum sums the squares without materializing a squared copy of the whole signal.
+    sums = np.einsum("ij,ij->i", frames, frames, dtype=np.float64)
+    rms = np.sqrt(sums / step)
+    # A tail shorter than half a bucket is dropped rather than drawn as a full-width bucket,
+    # unless it is the whole file.
+    tail = pcm[full * step :]
+    if tail.size * 2 >= step or full == 0:
+        rms = np.append(rms, math.sqrt(float(np.dot(tail, tail)) / tail.size))
+
+    scale = max(float(np.percentile(rms, SCALE_PERCENTILE)), MIN_SCALE)
+    levels = np.round(np.clip(rms / scale, 0.0, 1.0) * 255).astype(np.uint8)
+
+    result["buckets"] = int(levels.size)
+    result["scale_db"] = round(20 * math.log10(scale), 1)
+    result["levels"] = base64.b64encode(levels.tobytes()).decode("ascii")
+    return result

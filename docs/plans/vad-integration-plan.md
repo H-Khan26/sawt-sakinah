@@ -1,15 +1,19 @@
-# Plan: One speech-probability pass, shared by silence and phrase detection
+# Plan: One speech-probability pass, shared by silence detection and surah recognition
 
 > Status: implemented; kept as a design record (revision 3). Makes Silero VAD the active backend
 > for **silence detection** and a precision aid for **takbir / phrase detection**.
 > Grounded against the code in `sawt_sakinah/detection/`, `prayer/`, `service/`,
 > `extraction/`, `frontend/`.
+> The phrase parts (takbir/phrase detection, markers, the prayer outline) were retired by
+> the [Surah view](../frontend/04-surah-view.md); see
+> [docs/audio/03-surah-recognition.md](../audio/03-surah-recognition.md). The speech map now
+> feeds silence detection and surah recognition.
 
-## 0. What the product is doing (context for every decision below)
+## 0. What the product was doing (context for every decision below)
 
-sawt-sakinah takes a recording of prayer / recitation (YouTube URL or uploaded file),
-produces a 16 kHz mono working copy, then runs **read-only detectors** that annotate the
-timeline:
+At the time of this plan, sawt-sakinah took a recording of prayer / recitation (YouTube
+URL or uploaded file), produced a 16 kHz mono working copy, then ran **read-only
+detectors** that annotated the timeline:
 
 - `SilenceSegment`s (Silero VAD by default, ffmpeg `silencedetect` as the fallback),
 - `Marker`s for the four prayer phrases in `_arabic.PHRASE_REGISTRY` (takbir, tasmi,
@@ -17,10 +21,10 @@ timeline:
 - `PrayerPosition`s derived from the takbir/tasmi/tasleem stream by a fixed state machine
   (`prayer/structure.py`, cycle qiyam → ruku → i'tidal → sujood → julus → sujood).
 
-The user then edits (cut / keep / fade / marker EDL) and exports through ffmpeg. Layers are
+The user then edited (cut / keep / fade / marker EDL) and exported through ffmpeg. Layers were
 strict: `extraction/` acquires and writes the working copy, `detection/` never writes,
-`editing/` is the only layer that renders audio. The service is FastAPI with two thread
-pools (`sawt-job`, `sawt-phrase`), threads chosen so jobs share `phrases._MODEL_CACHE`.
+`editing/` is the only layer that renders audio. The service was FastAPI with two thread
+pools (`sawt-job`, `sawt-phrase`), threads chosen so jobs shared `phrases._MODEL_CACHE`.
 Config is a strict pydantic schema over `config/defaults.yaml` (every key required,
 `extra="forbid"`), and models are frozen pydantic.
 

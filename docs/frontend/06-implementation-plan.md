@@ -2,15 +2,19 @@
 
 > Status: implemented; retained as the build record. The build plan for the Sawt Sakinah frontend, written so any agent can
 > pick up a phase and execute it without re-deriving context. Phases 0-7 are **done**
-> (code in `frontend/`), plus a small backend **marker layer** (Phase B) that Phases 6-7
-> depend on. Where the planning docs (00-05) and the live backend disagree, **the backend
-> wins** — deltas are tabulated.
+> (code in `frontend/`), plus a small backend phase (Phase B). Where the planning docs
+> (00-05) and the live backend disagree, **the backend wins** — deltas are tabulated.
+>
+> Phases B and 6 are superseded by the **Surah view** (surah recognition, the surah band
+> and the Surahs column; see [04-surah-view.md](04-surah-view.md)) and keep only a short
+> note. The orientation, contract and file map below describe the code as it is now.
 
 ## Orientation
 
 Sawt Sakinah is a single-purpose audio editor for Quran recitation: paste a YouTube link,
 the backend extracts the audio, the UI renders an interactive waveform, the user removes
-silent gaps and reviews detected takbir/prayer-position markers, then exports. The
+silent gaps and finds which surahs are recited (keeping or splitting off a surah), then
+exports. The
 frontend is a **view + control surface**; all heavy work (extraction, detection, render)
 lives in the Python engine. See [00-overview.md](00-overview.md) for the vision.
 
@@ -46,7 +50,7 @@ Override the API target with `SAWT_API_URL`. Quality gates before any commit:
 - **Theme:** "Mushaf × Mihrab", one layout by day and by night. Accent oxblood `#6A1E28`
   by day, gold `#C9AA66` at night. See [Theme tokens](#theme-tokens).
 - **Arabic type:** Amiri (logo + headings, echoes Ibarra Real Nova) + IBM Plex Sans
-  Arabic (UI labels + marker chips, echoes Jost).
+  Arabic (UI labels, echoes Jost).
 - **Shell:** the library under the Sanctuary dome (`LibraryShell`); the editor beside an
   88 px binding rail (`EditorShell`).
 - **Scope (v1):** a single in-flight recording (link input -> `/p/:projectId` editor ->
@@ -66,8 +70,9 @@ properties, Biome. Hard conventions, enforced by tooling — follow them in ever
   [endpoints.ts](../../frontend/src/api/endpoints.ts) `queryKeys`); local editor state
   (selection, playhead, zoom, in-progress EDL, undo/redo) lives in Zustand stores under
   `src/stores/`. Never duplicate server state into a store.
-- **Waveform regions/markers are a projection of app state**, reconciled in effects keyed
-  on the silence/marker lists — not their own source of truth.
+- **Waveform regions and overlays are a projection of app state**, reconciled in effects
+  keyed on the silence and cut lists (regions) or rendered from the project (the surah
+  band and tints) — not their own source of truth.
 - **Styling:** only the tokens below; no hex in components. Selected = accent;
   destructive = `danger` (the error token).
 - **Errors:** the client throws a typed [`ApiError`](../../frontend/src/api/client.ts)
@@ -79,15 +84,13 @@ properties, Biome. Hard conventions, enforced by tooling — follow them in ever
 |---|---|---|
 | Job state `done`/`failed` | `pending \| running \| succeeded \| failed` | [jobs.py](../../sawt_sakinah/service/jobs.py) |
 | `progress` is a number | arbitrary **dict** per job kind | [jobs.py](../../sawt_sakinah/service/jobs.py) / [workers.py](../../sawt_sakinah/service/workers.py) |
-| waveform returns "peaks" | `{version, sample_rate, buckets, duration_sec, min[], max[]}` | [waveform.py](../../sawt_sakinah/service/waveform.py) |
+| waveform returns "peaks" | `{version, sample_rate, rate, buckets, duration_sec, scale_db, levels}` | [waveform.py](../../sawt_sakinah/service/waveform.py) |
 | generic routes | mounted at **root** (`/projects`, `/jobs`), no `/api`; writes return `202` | [app.py](../../sawt_sakinah/service/app.py) |
 | FastAPI serves the SPA | **wired** (Phase 7): SPA served at `/` with a deep-link catch-all when `frontend/dist` exists; API routes take precedence; still no CORS | [app.py](../../sawt_sakinah/service/app.py) |
 | `SilenceSegment.mean_db` | optional; `duration` is a computed field (present in JSON) | [segments.py](../../sawt_sakinah/models/segments.py) |
-| reference clips drive detection | `references` is **ignored by the Whisper backend** (reserved for a planned embeddings detector); the reference-clip UI is **dropped from v1** | [phrases.py](../../sawt_sakinah/detection/phrases.py) |
-| marker / structure editing API | **`PUT /projects/{id}/markers`** (Phase B) replaces the marker list and re-derives structure server-side | [routes/projects.py](../../sawt_sakinah/service/routes/projects.py) |
+| analysis beyond silence | surah recognition: `POST /projects/{id}/detect/surahs` fills `Project.surahs`, which is read-only (re-run, never edited) | [routes/projects.py](../../sawt_sakinah/service/routes/projects.py) |
 
-The reference-clip row remains inert (dropped from v1); the SPA-serving and marker-API rows
-are now resolved by Phases 7 and B.
+The SPA-serving row is resolved by Phase 7.
 
 ## API contract
 
@@ -101,10 +104,11 @@ POST /projects                          { url, audio_format?, audio_quality? }
 GET  /jobs/{job_id}                      -> JobRecord
 GET  /projects/{id}                      -> ProjectView    (404 until extraction succeeds)
 POST /projects/{id}/detect/silence       SilenceParams        -> 202 { job_id }
-POST /projects/{id}/detect/phrases       PhraseRequest        -> 202 { job_id }
+POST /projects/{id}/detect/surahs        SurahRequest         -> 202 { job_id }   # 409 without the model
+GET  /quran/surahs                       -> SurahInfo[]
 PUT  /projects/{id}/edl                  { operations[] }     -> EditDecisionList
-PUT  /projects/{id}/markers              { markers[] }        -> ProjectView   # re-derives structure
-POST /projects/{id}/export               ExportRequest        -> 202 { job_id }
+POST /projects/{id}/export               ExportRequest        -> 202 { job_id }   # embed_chapters
+POST /projects/{id}/split                { ranges, name? }    -> 202 { project_id, job_id }
 GET  /projects/{id}/audio                -> audio stream (HTTP range)
 GET  /projects/{id}/waveform             -> WaveformPeaks
 GET  /projects/{id}/exports/{artifactId} -> file download
@@ -113,12 +117,18 @@ GET  /projects/{id}/exports/{artifactId} -> file download
 Wire shapes mirror the pydantic models exactly
 ([schemas.py](../../sawt_sakinah/service/schemas.py),
 [models/](../../sawt_sakinah/models/)): `ProjectView`, `AudioSourceView`,
-`SilenceSegment`, `Marker`, `PrayerPosition`, `EditOperation` (`cut|keep|fade|marker`),
+`SilenceSegment`, `SurahMap`/`SurahPassage`, `EditOperation` (`cut|keep|fade`),
 `EditDecisionList`, `ExportArtifactView`, `JobRecord`
-(`kind: extract|detect_silence|detect_phrases|export`). Sync failures return
+(`kind: extract|detect_silence|detect_surahs|export|split|download_model|...`). Sync failures return
 `{ error, detail }` with a typed status (400/403/404/422/451/502, table in
 [app.py](../../sawt_sakinah/service/app.py)); async failures surface in
 `JobRecord.error` / `error_type`.
+
+**Timeline invariant:** the editor works entirely on the original source timeline: the
+EDL, silences, surah passages and cut authoring are all source seconds. The waveform only
+presents a collapsed view through a `TimeMap` (`features/waveform/timeMap.ts`); there is no
+audio edit preview, and cuts are applied and times remapped (`_remap_time`) only at export,
+server-side.
 
 ### Jobs are the async backbone
 
@@ -131,8 +141,9 @@ success) and the [`jobToViewState`](../../frontend/src/api/viewState.ts) mapper
 
 - **extraction** — the yt-dlp hook dict (`status`, `downloaded_bytes`, `total_bytes`,
   `eta`, ...).
-- **silence / phrases / export** — `{ stage, status }` (see the `*_worker` functions in
-  [workers.py](../../sawt_sakinah/service/workers.py)).
+- **silence / surahs / export** — `{ stage, status }` (see the `*_worker` functions in
+  [workers.py](../../sawt_sakinah/service/workers.py)); surah matching also reports
+  `{ stage: "transcribing", done_sec, total_sec }` and then `{ stage: "matching" }`.
 
 ## Current frontend file map (the core from Phases 0-4)
 
@@ -178,7 +189,7 @@ frontend/
     ornament/               pure geometry builders (no React, no colours)
     features/
       waveform/
-        peaks.ts            toWavesurferPeaks: WaveformPeaks -> [max[], min[]] for wavesurfer
+        editedPeaks.ts      decodeWaveform + sliceEditedPeaks: source levels -> rendered levels
         useWaveformEngine.ts  wavesurfer as renderer + an owned <audio> for playback;
                             Minimap overview, Timeline + Hover plugins; events -> playbackStore
         WaveformContext.tsx WaveformProvider + useWaveformContext (React context, not store ref)
@@ -194,7 +205,8 @@ frontend/
       landing/              Sanctuary: dome landing and the library header
       projects/             NicheCard, FihristList, ProjectMenu, NewRecordingSheet,
                             ImportAnywhere, RenameDialog, DeleteDialog, ProjectSwitcher
-      editor/               RuledPage, LowerBand (Silence/Cut/Markers tabs + outline)
+      editor/               RuledPage, LowerBand (Silence/Cut tabs + the Surahs column)
+      surahs/               surah band and tints, Surahs column, matching (see 04-surah-view.md)
     stores/
       playbackStore.ts      currentTime/duration/isPlaying/rate/zoom; fed from wavesurfer events;
                             selector-subscribe to avoid full-tree re-renders per frame
@@ -221,7 +233,8 @@ text. Backgrounds, text, and semantic colours (error/success/warning) are listed
 --color-accent-hover  #4F161D / #DCC791   button hover / active
 --color-accent-soft   accent at 7% / 16%  subtle backgrounds; info alerts
 --color-on-accent     #FBF8F1 / #2A1E20   text on accent fills
---waveform-* / --silence-fill* / --cut-stripe* / --selection-fill / --marker-line   waveform and region tokens
+--waveform-* / --silence-fill* / --cut-stripe* / --selection-fill   waveform and region tokens
+--surah-wash-{a,b,f,sel} / --surah-ink-{a,b,f,sel}                surah tones (band, tints)
 ```
 
 ## Fonts
@@ -381,7 +394,7 @@ substrate Phases 5-6 draw onto.
 |---|---|
 | `src/lib/themeColors.ts` | Resolves the `--waveform-*`/`--silence-*`/`--selection-fill` tokens with `getComputedStyle` for the canvas; re-read when the resolved theme changes |
 | `src/lib/time.ts` | `formatClock(seconds)` -> `"m:ss"` shared by transport readout and wavesurfer plugin labels |
-| `src/features/waveform/peaks.ts` | `toWavesurferPeaks(WaveformPeaks)` -> `[max[], min[]]`; wavesurfer v7's bar renderer reads `channelData[0]` as top envelope and `channelData[1]` (via `Math.abs`) as bottom, so this gives the true min/max shape with no normalization (PCM is already `[-1,1]`); falls back to `[max[]]` on length mismatch |
+| `src/features/waveform/editedPeaks.ts` | `decodeWaveform(WaveformPeaks)` -> `0..1` RMS levels already scaled to the recording; `sliceEditedPeaks` resamples them onto the edited timeline from exact span boundaries; wavesurfer draws one channel mirrored, with `normalize: false` |
 | `src/features/waveform/useWaveformEngine.ts` | Lifecycle hook: instance in `useRef` (never state), create/destroy in one effect (StrictMode-safe); wavesurfer renders from peaks while an owned `<audio>` plays the source; Minimap overview, Timeline + Hover plugins; events → `playbackStore`; rate and zoom applied via separate effects so they don't re-trigger init |
 | `src/features/waveform/WaveformContext.tsx` | `WaveformProvider` + `useWaveformContext`: React context exposing the instance, container ref, and load state to transport and future phases — chosen over a store ref (more idiomatic) and prop-drilling (would get noisy) |
 | `src/features/waveform/WaveformView.tsx` | Container `<div>` with load/error overlays; `relative` so Phase 5/6 overlays can anchor absolutely |
@@ -394,7 +407,7 @@ substrate Phases 5-6 draw onto.
 **Design decisions recorded:**
 - **Peaks shape:** `[max, min]` (not max-only fallback) — v7 renderer confirmed via source inspection to use `Math.abs` on both channels.
 - **Instance access:** React context (`WaveformProvider`) — not a store ref, not prop-drilling.
-- **Plugins included:** Timeline axis (helps navigate multi-minute prayers) + Hover cursor tooltip. Both ship inside `wavesurfer.js/dist/plugins`; no new dependency.
+- **Plugins included:** Timeline axis (helps navigate multi-minute recordings) + Hover cursor tooltip. Both ship inside `wavesurfer.js/dist/plugins`; no new dependency.
 - **Playback rate:** `preservePitch: true` so faster review doesn't shift the reciter's pitch.
 - **Zoom baseline:** on `ready`, the fitted `clientWidth/duration` is stored in `playbackStore.zoom` as the initial `minPxPerSec`, giving the zoom ±controls a numeric starting point.
 
@@ -407,27 +420,13 @@ the computed peaks are always returned.
 **References:** [02-waveform-and-playback.md](02-waveform-and-playback.md);
 [waveform.py](../../sawt_sakinah/service/waveform.py).
 
-## Phase B — Backend marker layer  *(done)*
+## Phase B — Backend marker layer  *(done; superseded)*
 
-**Goal:** the two backend changes Phases 6-7 depend on — persist/edit markers and embed
-them on export. Small additions following the `put_edl` / `render` patterns.
-
-- **`PUT /projects/{id}/markers`** in
-  [routes/projects.py](../../sawt_sakinah/service/routes/projects.py): accepts a
-  `MarkersUpdate` (`{ markers[] }`), replaces `p.markers`, re-derives structure via
-  `derive_structure(markers, total_duration=...)`, sets `status.analyzed = True`, and
-  returns the full `ProjectView` so the client patches markers + structure in one shot.
-  `MarkersUpdate` added to [schemas.py](../../sawt_sakinah/service/schemas.py).
-- **Export embeds real marker labels:** `_chapter_lines` /`render` /`_render` in
-  [editing/render.py](../../sawt_sakinah/editing/render.py) take an optional
-  `chapter_markers: (time, label)[]`; `export_worker`
-  ([workers.py](../../sawt_sakinah/service/workers.py)) passes the project's markers when
-  `embed_markers` is set. Times are remapped through the kept timeline (markers inside cuts
-  drop out); the EDL stays a pure cut/keep/fade record. Falls back to the old EDL-`marker`-op
-  chapters when no markers are supplied.
-- **Out of scope (confirmed):** no `references`/embeddings work; no standalone
-  structure-edit endpoint (structure is always *derived* — the user corrects it by editing
-  the boundary markers); no EDL validation hardening or edit-preview render.
+Phase B added a backend API for editing detected phrase markers and wrote those markers
+as export chapters. Surah recognition replaced it: there is no marker API, and export
+writes the accepted surah passages as chapters (`embed_chapters`). See
+[04-surah-view.md](04-surah-view.md) and
+[audio/04-editing-and-export.md](../audio/04-editing-and-export.md).
 
 ## Phase 5 — Silence editing  *(done)*
 
@@ -465,57 +464,16 @@ non-destructive EDL, then export.
 **References:** [03-silence-editing-ui.md](03-silence-editing-ui.md);
 [audio/02-silence-detection.md](../audio/02-silence-detection.md),
 [audio/04-editing-and-export.md](../audio/04-editing-and-export.md);
-[edl.py](../../sawt_sakinah/models/edl.py) (`EditOperation` is `cut|keep|fade|marker`,
+[edl.py](../../sawt_sakinah/models/edl.py) (`EditOperation` is `cut|keep|fade`,
 `end` optional); `SilenceParams` in [schemas.py](../../sawt_sakinah/service/schemas.py).
 
-## Phase 6 — Markers & prayer structure  *(done)*
+## Phase 6 — Markers & prayer structure  *(done; superseded)*
 
-**Goal:** surface detected takbirs/phrases as timeline markers, render the rak'ah/position
-outline, and let the user navigate **and correct** it with persisted edits.
-
-**Built:** `src/features/markers/` — `MarkerLayer.tsx`, `MarkerChip.tsx`,
-`MarkerControls.tsx` (detect-phrases trigger + progress), `MarkerEditor.tsx`,
-`PrayerOutline.tsx` (beside the tools in the lower band), `MarkersPanel.tsx` (the Markers
-tool: detection and the editor), `edits.ts` (pure
-marker mutations), `structure.ts` (active-position selector), `useMarkerLayout.ts`
-(`time -> x` under zoom/scroll); a Zustand `src/stores/markerStore.ts` (selection only).
-API glue: `MarkersUpdate` in `types/api.ts`, `updateMarkers` in `endpoints.ts`,
-`useUpdateMarkers` in `hooks.ts` (patches the cached `ProjectView` with the returned
-markers + structure). `WaveformView` gained an `overlay` slot anchored to the waveform box.
-
-**Design (as built):**
-- **Markers:** a binding-green guide line + a marginal note (green Rub el Hizb star and
-  the note in Ibarra italic above the top rule) per `Marker`, positioned by `time -> x`. `useMarkerLayout` reads the rendered `pxPerSec` (wrapper `scrollWidth /
-  duration`, the ground truth even when fitted) and scroll offset, recomputing on
-  zoom/scroll/resize. Low-confidence **auto** markers dim; the selected note takes the
-  accent and an underline. The Arabic label is the tooltip. Click a note -> select + seek.
-- **Editing (persisted, not a client overlay):** every edit computes the next `Marker[]`
-  (`edits.ts`) and calls `useUpdateMarkers`; the server replaces the list, **re-derives
-  structure**, and returns both. Add-at-playhead, relabel, retype, move-to-playhead, and
-  delete are in `MarkerEditor`. User markers carry `source: "user"`; new markers leave `id`
-  blank so the backend derives the canonical `type-time` id. **Structure is never edited
-  directly** — the user corrects it by editing the boundary markers, which re-derives it.
-- **Prayer outline:** group `PrayerPosition[]` by `rakah`, one Rub el Hizb star per rak'ah
-  and the current rak'ah's positions below; click a star or a position -> seek; `[` / `]`
-  step rak'ahs; the active position highlights as `currentTime` advances (a zustand
-  selector maps the playhead to the active index, so the outline re-renders only when the
-  index changes). A gentle
-  `warning` `Alert` flags an incomplete-looking outline (no advancing markers / no tasleem);
-  never a hard error — recitations vary.
-- **Timeline invariant (resolves the old open question):** the frontend works entirely on
-  the **original source timeline**; there is no edit preview. Cuts are applied and marker
-  times remapped **only at export, server-side** (`_remap_time`). The waveform, silences,
-  markers, and structure all stay on the original timeline — the frontend never remaps time.
-- **Dropped from v1:** the reference-clip "Use as reference" affordance (the `references`
-  payload is inert on the Whisper backend).
-
-**References:** [04-markers-and-prayer-structure.md](04-markers-and-prayer-structure.md);
-[audio/03-phrase-detection.md](../audio/03-phrase-detection.md);
-[markers.py](../../sawt_sakinah/models/markers.py) (`Marker.id` is derived from
-`type`+`time`; `duration` is computed; `source` is `auto|user`),
-[structure.py](../../sawt_sakinah/models/structure.py); `PhraseParams`/`PhraseRequest` in
-[schemas.py](../../sawt_sakinah/service/schemas.py). Note Whisper detection is **slow**
-and runs on a single-worker pool (`phrase_workers: 1`) — expect a long poll.
+Phase 6 showed detected phrases as timeline markers with an editor and a prayer outline
+beside the tools. The **Surah view** ([04-surah-view.md](04-surah-view.md)) replaced it:
+the surah band and tints on the waveform, the Surahs column, and `[` / `]` stepping
+through surah passages. Its `time -> x` layout lives on as
+`features/waveform/useOverlayLayout.ts`.
 
 ## Phase 7 — Export + backend static mount + desktop  *(done)*
 
@@ -523,11 +481,10 @@ and runs on a single-worker pool (`phrase_workers: 1`) — expect a long poll.
 
 **Built (frontend):** `src/features/export/` — `ExportButton.tsx` (opens the modal; mounts
 it only while open so no job polls after close) and `ExportModal.tsx` (`format` / `bitrate`
-/ `embed_markers` -> `ExportRequest`; `useExport` -> poll job -> on success read the
+/ `embed_chapters` -> `ExportRequest`; `useExport` -> poll job -> on success read the
 artifact id from the job result and offer `exportDownloadUrl` as a native download link).
-Wired into the editor's title row beside the cartouche. Because Phase B sources export chapters from
-`project.markers`, whatever the user has after Phase 6 edits is exactly what `embed_markers`
-embeds — no extra bridging.
+Wired into the editor's title row beside the cartouche. "Add surahs as chapters"
+(`embed_chapters`) writes the accepted surah passages from `project.surahs` as chapters.
 
 **Built (backend static mount):** `_mount_spa` in
 [app.py](../../sawt_sakinah/service/app.py) runs after `include_router`, so API routes win.
@@ -552,5 +509,5 @@ Reachable as `python -m sawt_sakinah desktop`, `python -m sawt_sakinah.desktop`,
 [export.py](../../sawt_sakinah/service/routes/export.py) and `export_worker` in
 [workers.py](../../sawt_sakinah/service/workers.py) (returns `{ artifact_id }`);
 `ExportRequest`/`ExportArtifactView` in
-[schemas.py](../../sawt_sakinah/service/schemas.py). `embed_markers` default is `true`
-(`CONFIG.editing` in [defaults.yaml](../../sawt_sakinah/config/defaults.yaml)).
+[schemas.py](../../sawt_sakinah/service/schemas.py). `embed_chapters` defaults to
+`CONFIG.editing.embed_chapters` in [defaults.yaml](../../sawt_sakinah/config/defaults.yaml).

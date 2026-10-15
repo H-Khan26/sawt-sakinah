@@ -2,18 +2,18 @@
  * The playhead's diamond: a small rotated square sitting on the top rule above wavesurfer's own
  * cursor line. It follows the per-frame time in `playbackStore` through a subscription that
  * writes the transform straight to the element, so playback never re-renders React; zoom and
- * scroll (which change the mapping) come from `useMarkerLayout`.
+ * scroll (which change the mapping) come from `useOverlayLayout`.
  */
-import { useMarkerLayout } from "@/features/markers/useMarkerLayout";
 import { usePlaybackStore } from "@/stores/playbackStore";
 import { useEffect, useRef } from "react";
 import { NOTES_HEIGHT } from "./layout";
+import { useOverlayLayout } from "./useOverlayLayout";
 
 /** Side of the square before rotation, in px. */
 const SIZE = 10;
 
 export function PlayheadDiamond() {
-  const layout = useMarkerLayout();
+  const layout = useOverlayLayout();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

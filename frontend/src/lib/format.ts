@@ -47,3 +47,12 @@ export function formatLength(seconds: number): string {
 export function toArabicIndic(n: number): string {
   return String(n).replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
 }
+
+/** `n` with the singular or plural noun: `1 silence`, `3 silences`. */
+export const plural = (n: number, one: string, many: string): string =>
+  `${n} ${n === 1 ? one : many}`;
+
+/** An unknown value (e.g. from a job's progress dict) as a finite number, or null. */
+export function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}

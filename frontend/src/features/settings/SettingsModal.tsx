@@ -1,7 +1,8 @@
 /**
  * App settings: the appearance (theme and the dome landing), where desktop exports are saved,
- * the speech-model catalog (download, remove, choose the active model), the YouTube cookies source, the update checks (app and yt-dlp), a shortcut to the logs folder,
- * and what the app talks to over the network. Everything here is backend state (`/models`,
+ * the Quran recognition model (download or remove it, with the Quran text's credit), the YouTube
+ * cookies source, the update checks (app and yt-dlp), a shortcut to the logs folder, and what the
+ * app talks to over the network. Everything here is backend state (`/models`,
  * `/app/*`); the parent mounts this only while open. A download keeps running server-side
  * after close and resumes its progress on reopen.
  */
@@ -14,7 +15,6 @@ import {
   usePatchPreferences,
   usePickExportFolder,
   usePreferences,
-  useSelectModel,
   useUpdateStatus,
 } from "@/api/hooks";
 import {
@@ -149,32 +149,15 @@ function ExportsSection() {
   );
 }
 
-function ModelRow({
-  model,
-  onSelect,
-  selecting,
-}: {
-  model: SpeechModel;
-  onSelect: (id: string) => void;
-  selecting: boolean;
-}) {
+/** The speech model: what it does, its size and state, and download progress or Remove. */
+function ModelRow({ model }: { model: SpeechModel }) {
   const download = useModelDownload(model);
   const remove = useDeleteModel();
-  const inputId = `speech-model-${model.id}`;
 
   return (
-    <li className="flex flex-col gap-2 rounded border border-border p-3">
+    <div className="flex flex-col gap-2 rounded border border-border p-3">
       <div className="flex items-start gap-3">
-        <input
-          id={inputId}
-          type="radio"
-          name="speech-model"
-          className="accent-accent mt-1 h-4 w-4 shrink-0 cursor-pointer"
-          checked={model.selected}
-          disabled={selecting}
-          onChange={() => onSelect(model.id)}
-        />
-        <label htmlFor={inputId} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-text">{model.label}</span>
             <span className="text-sm tabular-nums text-text-tertiary">
@@ -187,14 +170,14 @@ function ModelRow({
             )}
           </span>
           <span className="text-sm text-text-secondary">{model.description}</span>
-        </label>
+        </div>
         <div className="shrink-0">
           {!model.installed && !download.active && (
             <Button size="sm" variant="secondary" onClick={download.start}>
               Download
             </Button>
           )}
-          {model.installed && !model.selected && (
+          {model.installed && (
             <Button
               size="sm"
               variant="ghost"
@@ -213,38 +196,29 @@ function ModelRow({
       {remove.isError && (
         <p className="text-sm text-danger">Couldn't remove the model: {remove.error.message}</p>
       )}
-    </li>
+    </div>
   );
 }
 
 function SpeechModelSection() {
   const models = useModels();
-  const select = useSelectModel();
+  const info = useAppInfo();
 
   return (
     <Section title="Speech model">
       <p className="text-sm text-text-secondary">
-        Phrase detection uses this model to find the takbir and other prayer phrases. It runs on
-        your computer's CPU and takes a few minutes per recording.
+        Find surahs uses this model to recognise the recitation. It runs on your computer's CPU and
+        takes a few minutes per recording.
       </p>
       {models.isPending ? (
         <WaveformLoader size={20} label="Loading models" className="text-accent" />
       ) : models.isError ? (
         <p className="text-sm text-danger">Couldn't load the model list: {models.error.message}</p>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {models.data.map((m) => (
-            <ModelRow
-              key={m.id}
-              model={m}
-              onSelect={(id) => select.mutate(id)}
-              selecting={select.isPending}
-            />
-          ))}
-        </ul>
+        models.data.map((m) => <ModelRow key={m.id} model={m} />)
       )}
-      {select.isError && (
-        <p className="text-sm text-danger">Couldn't change the model: {select.error.message}</p>
+      {info.data?.quran_text_credit && (
+        <p className="text-xs text-text-tertiary">{info.data.quran_text_credit}</p>
       )}
     </Section>
   );

@@ -33,32 +33,32 @@ VENDOR_DIR ?= $(BUILD_DIR)/vendor
 # Extra uv flags for `make lock`, e.g. LOCK_FLAGS=--upgrade or LOCK_FLAGS="-P yt-dlp".
 LOCK_FLAGS ?=
 LOCK_COMMON := --generate-hashes --emit-index-url --python-version 3.12
-LOCK_EXTRAS := --extra service --extra phrases --extra vad --extra desktop
+LOCK_EXTRAS := --extra service --extra transcription --extra vad --extra desktop
 LOCK_WINDOWS := $(LOCK_COMMON) --python-platform x86_64-pc-windows-msvc
 LOCK_MACOS := $(LOCK_COMMON) --python-platform aarch64-apple-darwin
 
 .DEFAULT_GOAL := help
-.PHONY: help requirements requirements-phrases requirements-vad requirements-all requirements-desktop requirements-bundle dev desktop lock bundle clean
+.PHONY: help requirements requirements-transcription requirements-vad requirements-all requirements-desktop requirements-bundle dev desktop lock bundle clean
 
 help:  ## List available commands
 	@$(PYTHON) -c "print('Commands:\n'\
-	'  make requirements          install everything to run the app (service + phrases + vad + desktop)\n'\
-	'  make requirements-phrases  just the Whisper phrase detection deps (faster-whisper)\n'\
-	'  make requirements-vad      just the Silero VAD speech detector (numpy + onnxruntime; no torch)\n'\
-	'  make requirements-desktop  just the pywebview desktop shell\n'\
-	'  make requirements-all      every extra, including the desktop shell (same set as requirements)\n'\
-	'  make requirements-bundle   the hash-pinned release set + PyInstaller (use a fresh venv)\n'\
-	'  make dev                   develop: backend (autoreload) + frontend, hot reload\n'\
-	'  make desktop               run the app: build the SPA + open the native window\n'\
-	'  make lock                  regenerate the Windows and macOS release lock files (needs uv)\n'\
-	'  make bundle                build the Windows zip into packaging/dist (Mac: BUNDLE_PLATFORM=macos-arm64)\n'\
-	'  make clean                 remove caches and build artifacts')"
+	'  make requirements                install everything to run the app (service + transcription + vad + desktop)\n'\
+	'  make requirements-transcription  just the Whisper surah recognition deps (faster-whisper)\n'\
+	'  make requirements-vad            just the Silero VAD speech detector (numpy + onnxruntime; no torch)\n'\
+	'  make requirements-desktop        just the pywebview desktop shell\n'\
+	'  make requirements-all            every extra, including the desktop shell (same set as requirements)\n'\
+	'  make requirements-bundle         the hash-pinned release set + PyInstaller (use a fresh venv)\n'\
+	'  make dev                         develop: backend (autoreload) + frontend, hot reload\n'\
+	'  make desktop                     run the app: build the SPA + open the native window\n'\
+	'  make lock                        regenerate the Windows and macOS release lock files (needs uv)\n'\
+	'  make bundle                      build the Windows zip into packaging/dist (Mac: BUNDLE_PLATFORM=macos-arm64)\n'\
+	'  make clean                       remove caches and build artifacts')"
 
-requirements:  ## Install everything to run the app (service + phrases + vad + desktop)
-	$(PIP) install -e ".[service,phrases,vad,desktop]"
+requirements:  ## Install everything to run the app (service + transcription + vad + desktop)
+	$(PIP) install -e ".[service,transcription,vad,desktop]"
 
-requirements-phrases:  ## Install just the Whisper phrase-detection deps
-	$(PIP) install -e ".[phrases]"
+requirements-transcription:  ## Install just the Whisper transcription deps for surah recognition
+	$(PIP) install -e ".[transcription]"
 
 requirements-vad:  ## Install just the Silero VAD speech detector (numpy + onnxruntime; no torch)
 	$(PIP) install -e ".[vad]"

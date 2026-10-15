@@ -1,8 +1,9 @@
 /**
  * Owns the waveform engine (renderer + playback) and shares it with the transport, the region
- * layer (silence + cuts + selection), and the marker layer, so features reach it without
+ * layer (silence + cuts + selection), and the surah band and tints, so features reach it without
  * prop-drilling. Only low-frequency facts live here (the instance, ready/error state, the
- * playback `controller`, and the current source<->edited `TimeMap`); the per-frame playhead
+ * playback `controller`, the current source<->edited `TimeMap`, the merged cut ranges and the
+ * decoded source levels); the per-frame playhead
  * stays in `playbackStore` so consuming this context does not couple a component to frame-rate
  * re-renders.
  *
@@ -12,13 +13,20 @@
  * derived here so the engine stays a pure mechanism.
  */
 import { useWaveform } from "@/api/hooks";
-import { mergeCutSpans } from "@/features/cuts/cutEdl";
+import { cutSpansOf } from "@/features/cuts/cutModel";
+import type { Span } from "@/lib/edl";
 import { useViewPrefs } from "@/stores/viewPrefs";
 import type { ProjectView } from "@/types/api";
 import { type ReactNode, type RefObject, createContext, useContext, useMemo, useRef } from "react";
 import type WaveSurfer from "wavesurfer.js";
 import type RegionsPlugin from "wavesurfer.js/plugins/regions";
-import { type RenderPeaks, sliceEditedPeaks, sourceRenderPeaks } from "./editedPeaks";
+import {
+  type RenderPeaks,
+  type SourceLevels,
+  decodeWaveform,
+  sliceEditedPeaks,
+  sourceRenderPeaks,
+} from "./editedPeaks";
 import { type TimeMap, buildTimeMap } from "./timeMap";
 import { type WaveformController, useWaveformEngine } from "./useWaveformEngine";
 
@@ -35,12 +43,18 @@ interface WaveformContextValue {
   controller: WaveformController;
   /** Current source <-> edited mapping (identity when deleted portions are shown). */
   timeMap: TimeMap;
+  /** The merged cut ranges (source time) — what playback skips. */
+  cutSpans: Span[];
+  /** The recording's decoded levels, for drawing any stretch of it; undefined until loaded. */
+  sourceLevels: SourceLevels | undefined;
   /** True once the waveform is rendered. */
   isReady: boolean;
   /** Peaks are still being fetched. */
   isLoadingPeaks: boolean;
   /** A peaks-fetch, audio, or render error, if any. */
   error: Error | null;
+  /** Level of the waveform's full height in dBFS RMS (fixed per recording); null until loaded. */
+  scaleDb: number | null;
 }
 
 const WaveformContext = createContext<WaveformContextValue | null>(null);
@@ -58,23 +72,28 @@ export function WaveformProvider({
   const containerRef = useRef<HTMLDivElement>(null);
   const overviewRef = useRef<HTMLDivElement>(null);
   const peaksQuery = useWaveform(projectId);
-  const sourcePeaks = peaksQuery.data;
+  const sourceLevels = useMemo(
+    () => (peaksQuery.data ? decodeWaveform(peaksQuery.data) : undefined),
+    [peaksQuery.data],
+  );
 
   const showDeleted = useViewPrefs((s) => s.showDeleted);
   const collapsed = !showDeleted;
-  const sourceDuration = sourcePeaks?.duration_sec ?? project.audio_source.duration_sec;
+  const sourceDuration = sourceLevels?.duration ?? project.audio_source.duration_sec;
 
+  const cutSpans = cutSpansOf(ops);
   const timeMap = useMemo(
-    () => buildTimeMap(ops, sourceDuration, collapsed),
-    [ops, sourceDuration, collapsed],
+    () => buildTimeMap(cutSpans, sourceDuration, collapsed),
+    [cutSpans, sourceDuration, collapsed],
   );
-  const cutSpans = useMemo(() => mergeCutSpans(ops), [ops]);
 
   const render = useMemo<RenderPeaks | undefined>(() => {
-    if (!sourcePeaks) return undefined;
-    if (timeMap.identity) return sourceRenderPeaks(sourcePeaks);
-    return sliceEditedPeaks(sourcePeaks, timeMap.keptSpans, timeMap.editedTotal);
-  }, [sourcePeaks, timeMap]);
+    if (!sourceLevels) return undefined;
+    if (timeMap.identity) return sourceRenderPeaks(sourceLevels);
+    return sliceEditedPeaks(sourceLevels, timeMap.keptSpans, timeMap.editedTotal);
+  }, [sourceLevels, timeMap]);
+
+  const scaleDb = sourceLevels?.scaleDb ?? null;
 
   const { wavesurfer, regions, isReady, error, controller } = useWaveformEngine({
     container: containerRef,
@@ -93,19 +112,25 @@ export function WaveformProvider({
       regions,
       controller,
       timeMap,
+      cutSpans,
+      sourceLevels,
       isReady,
       isLoadingPeaks: peaksQuery.isPending,
       error: error ?? (peaksQuery.error as Error | null),
+      scaleDb,
     }),
     [
       wavesurfer,
       regions,
       controller,
       timeMap,
+      cutSpans,
+      sourceLevels,
       isReady,
       peaksQuery.isPending,
       peaksQuery.error,
       error,
+      scaleDb,
     ],
   );
 

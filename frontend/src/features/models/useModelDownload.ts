@@ -7,19 +7,16 @@
 import { ApiError } from "@/api/client";
 import { queryKeys } from "@/api/endpoints";
 import { useDownloadModel, useJob } from "@/api/hooks";
+import { finiteNumber as num } from "@/lib/format";
 import type { SpeechModel } from "@/types/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-/** Backend error type for phrase detection without the selected model on disk. */
+/** Backend error type for surah matching without the model on disk. */
 export const MODEL_NOT_INSTALLED = "ModelNotInstalledError";
 
 export function isModelNotInstalled(error: unknown): boolean {
   return error instanceof ApiError && error.type === MODEL_NOT_INSTALLED;
-}
-
-function num(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 export interface ModelDownloadState {

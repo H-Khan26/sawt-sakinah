@@ -14,7 +14,7 @@ export interface RubElHizbProps {
   className?: string;
 }
 
-/** Rub el Hizb: the 8-point star that numbers list rows and marks rak'ahs, outlined or filled. */
+/** Rub el Hizb: the 8-point star that numbers list rows (the surahs), outlined or filled. */
 export function RubElHizb({ numeral, filled = false, size = 24, className }: RubElHizbProps) {
   return (
     <svg

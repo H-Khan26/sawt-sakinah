@@ -6,6 +6,9 @@
  * frame during playback; components that need it (the transport readout) subscribe to *just that
  * slice* via a selector so the editor tree does not re-render per frame. Nothing here is server
  * state — the waveform engine (`useWaveformEngine`) feeds it from the playback element.
+ *
+ * `audition` is the stretch of playback the engine is auditioning (see
+ * `WaveformController.audition`), or null; its progress is `sourceTime` within it.
  */
 import { create } from "zustand";
 
@@ -18,6 +21,15 @@ export const ZOOM_FACTOR = 1.5;
 
 export const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5] as const;
 
+/** A stretch of source time played once and stopped (see `WaveformController.audition`). */
+export interface Audition {
+  /** Source seconds it plays from and to. */
+  start: number;
+  end: number;
+  /** The cut range heard rather than skipped, or null when every cut is skipped. */
+  playCut: [number, number] | null;
+}
+
 interface PlaybackState {
   currentTime: number;
   /** The playhead on the source timeline (seconds), alongside the edited `currentTime`. */
@@ -29,6 +41,8 @@ interface PlaybackState {
   zoom: number | null;
   /** Most-zoomed-out `minPxPerSec` for the loaded file (fit-to-width); recomputed on ready. */
   zoomMin: number;
+  /** The audition playing now, or null. */
+  audition: Audition | null;
 
   /** Set the playhead: its edited time and the source time it maps from. */
   setPlayhead: (edited: number, source: number) => void;
@@ -37,6 +51,7 @@ interface PlaybackState {
   setRate: (rate: number) => void;
   setZoom: (zoom: number) => void;
   setZoomMin: (zoomMin: number) => void;
+  setAudition: (audition: Audition | null) => void;
   /** Reset to defaults when the editor unmounts or the project changes. */
   reset: () => void;
 }
@@ -49,6 +64,7 @@ const INITIAL = {
   rate: 1,
   zoom: null as number | null,
   zoomMin: ZOOM_MIN,
+  audition: null as Audition | null,
 };
 
 export const usePlaybackStore = create<PlaybackState>((set) => ({
@@ -59,6 +75,7 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   setRate: (rate) => set({ rate }),
   setZoom: (zoom) => set({ zoom }),
   setZoomMin: (zoomMin) => set({ zoomMin }),
+  setAudition: (audition) => set({ audition }),
   reset: () => set(INITIAL),
 }));
 

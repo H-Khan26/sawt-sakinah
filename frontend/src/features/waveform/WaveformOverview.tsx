@@ -1,13 +1,16 @@
 /**
  * The overview strip above the waveform: the whole recording, faint, with a gold-edged box over
  * the visible range (the engine mounts wavesurfer's Minimap plugin into it; see
- * `useWaveformEngine`). Zoom out / in sit at its right end; Ctrl/⌘ + wheel on the waveform does
+ * `useWaveformEngine`). The optional `overlay` (the surah tints) lies over the strip,
+ * click-through, sized to it; it maps the edited timeline across the full width, as the strip
+ * does. Zoom out / in sit at its right end; Ctrl/⌘ + wheel on the waveform does
  * the same.
  */
 import { Button, Tooltip } from "@/components/ui";
 import { zoomIn, zoomOut } from "@/features/transport/transportControls";
 import { ZOOM_MAX, usePlaybackStore } from "@/stores/playbackStore";
 import { Minus, Plus } from "lucide-react";
+import type { ReactNode } from "react";
 import { useWaveformContext } from "./WaveformContext";
 import { OVERVIEW_HEIGHT } from "./layout";
 import "./waveform.css";
@@ -44,17 +47,26 @@ function ZoomControls() {
   );
 }
 
-export function WaveformOverview() {
-  const { overviewRef } = useWaveformContext();
+export function WaveformOverview({ overlay }: { overlay?: ReactNode }) {
+  const { overviewRef, isReady } = useWaveformContext();
   return (
     <div className="flex items-center gap-4">
-      <div
-        ref={overviewRef}
-        role="group"
-        aria-label="Recording overview"
-        className="wf-overview min-w-0 flex-1"
-        style={{ height: OVERVIEW_HEIGHT }}
-      />
+      <div className="relative min-w-0 flex-1" style={{ height: OVERVIEW_HEIGHT }}>
+        <div
+          ref={overviewRef}
+          role="group"
+          aria-label="Recording overview"
+          className="wf-overview h-full w-full"
+        />
+        {isReady && overlay ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+          >
+            {overlay}
+          </div>
+        ) : null}
+      </div>
       <ZoomControls />
     </div>
   );

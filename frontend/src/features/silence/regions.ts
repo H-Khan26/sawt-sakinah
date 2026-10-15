@@ -3,7 +3,7 @@
  * own, so `start:end` (source seconds) keys them for selection and for the waveform regions.
  *
  * Region *drawing* lives in `features/cuts/regions.ts`, which reconciles silence overlays,
- * committed manual cuts, and the pending selection onto one shared Regions plugin.
+ * cut ranges, and the pending selection onto one shared Regions plugin.
  */
 import type { SilenceSegment } from "@/types/api";
 

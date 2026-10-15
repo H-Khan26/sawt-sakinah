@@ -10,8 +10,9 @@ Two steps, because the SPA and the Python bundle are built on different machines
               notice file: Sawt Sakinah itself, Python, every package pinned in the lock file
               (license metadata plus the license files from its dist-info), the PyInstaller
               bootloader, the helper programs fetched by fetch_binaries.py (FFmpeg, Deno),
-              the vendored Silero VAD model, the Whisper model downloaded at runtime, the
-              SPA's webfonts and, when given, the ``frontend`` output.
+              the vendored Silero VAD model and Tanzil Quran text, the Quran recognition
+              model downloaded at runtime, the SPA's webfonts and, when given, the
+              ``frontend`` output.
 
 Usage:
     python packaging/third_party.py frontend frontend -o packaging/build/frontend-licenses.txt
@@ -39,12 +40,25 @@ LICENSE_OVERRIDES = {
 
 STATIC_NOTICES = [
     (
-        "Whisper speech model (downloaded at runtime, not bundled)",
-        "MIT",
-        "Sawt Sakinah downloads a CTranslate2 conversion of OpenAI's Whisper model from the\n"
-        "Hugging Face Hub the first time phrase detection runs (for example\n"
-        "https://huggingface.co/Systran/faster-whisper-large-v3). The Whisper weights are\n"
-        "released by OpenAI under the MIT License: https://github.com/openai/whisper/blob/main/LICENSE",
+        "Quran recognition model (downloaded at runtime, not bundled)",
+        "Apache-2.0 (fine-tune of MIT-licensed Whisper)",
+        "Sawt Sakinah downloads its Quran recognition model from the Hugging Face Hub the first\n"
+        "time it is needed: https://huggingface.co/hkhan0327/faster-whisper-base-ar-quran, an\n"
+        "int8 CTranslate2 conversion of tarteel-ai/whisper-base-ar-quran\n"
+        "(https://huggingface.co/tarteel-ai/whisper-base-ar-quran, Apache-2.0). That model is a\n"
+        "fine-tune of OpenAI's Whisper base, released under the MIT License:\n"
+        "https://github.com/openai/whisper/blob/main/LICENSE",
+    ),
+    (
+        "Tanzil Quran text and metadata (sawt_sakinah/detection/assets)",
+        "CC-BY-3.0, Tanzil terms of use",
+        'quran-simple-clean.txt is the Tanzil Quran text "Simple Clean" (Hafs), included\n'
+        "unmodified with its copyright block; quran-surahs.json is derived from Tanzil's\n"
+        "quran-data.xml metadata. Source: Tanzil Project, https://tanzil.net\n"
+        "Tanzil permits copying and distributing verbatim copies of the text, provided the\n"
+        "Tanzil Project is clearly indicated as its source and a link is made to tanzil.net;\n"
+        "changing the text is not allowed. The full notice is in\n"
+        "sawt_sakinah/detection/assets/TANZIL_LICENSE.",
     ),
     (
         "PyInstaller bootloader",
@@ -217,7 +231,9 @@ def build_bundle_notices(lock: Path, vendor: Path, spa: Path, frontend: Path | N
         f"  Python {'.'.join(map(str, sys.version_info[:3]))}  [PSF-2.0]\n"
         + "\n".join(py_summary)
         + "\n\n",
-        "Models and assets:\n  Silero VAD model  [MIT]\n  Whisper model (downloaded at runtime)  [MIT]\n"
+        "Models and assets:\n  Silero VAD model  [MIT]\n"
+        "  Quran recognition model (downloaded at runtime)  [Apache-2.0, fine-tune of MIT Whisper]\n"
+        "  Tanzil Quran text and surah metadata  [CC-BY-3.0, Tanzil terms]\n"
         + "\n".join(font_summary)
         + "\n\n",
     ]

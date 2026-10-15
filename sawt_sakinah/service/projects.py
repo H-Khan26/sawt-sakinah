@@ -4,9 +4,10 @@ Each project owns a directory::
 
     <root>/<project_id>/
       project.json            # {"schema_version": N, **Project.model_dump(mode="json")}
-      audio/                  # extracted mp3 + 16 kHz working-copy wav
+      audio/                  # extracted mp3, 16 kHz working-copy wav, speech map, transcript.json
       exports/<artifact_id>.<ext>
       waveform.json           # cached peaks (lazy)
+      playback.mp4            # the mp3's frames in MP4, for exact seeking (lazy)
 
 Writes go through a temp file and an atomic replace so a crash mid-write never leaves a
 truncated ``project.json``, and ``update`` holds a per-project lock around the whole
@@ -175,6 +176,9 @@ class ProjectStore:
     def waveform_path(self, project_id: str) -> Path:
         return self.project_dir(project_id) / "waveform.json"
 
+    def playback_path(self, project_id: str) -> Path:
+        return self.project_dir(project_id) / "playback.mp4"
+
     def _json_path(self, project_id: str) -> Path:
         return self.project_dir(project_id) / "project.json"
 
@@ -217,8 +221,9 @@ class ProjectStore:
         """Return the stored ``Project``, or ``None`` when it does not exist.
 
         References to files that no longer exist on disk are healed: a missing
-        ``working_copy`` or ``speech_map`` is nulled out and export artifacts whose
-        files are gone are dropped, so the wire never advertises dangling resources.
+        ``working_copy``, ``speech_map`` or ``transcript`` is nulled out and export
+        artifacts whose files are gone are dropped, so the wire never advertises dangling
+        resources.
         Exports saved to a user folder stay listed: the user may have moved them, and
         checking would touch folders (or drives) outside the app on every load.
 
@@ -244,6 +249,8 @@ class ProjectStore:
             src_updates["working_copy"] = None
         if src.speech_map is not None and not Path(src.speech_map).exists():
             src_updates["speech_map"] = None
+        if src.transcript is not None and not Path(src.transcript).exists():
+            src_updates["transcript"] = None
         if src_updates:
             updates["audio_source"] = src.model_copy(update=src_updates)
         live = [a for a in project.exports if a.external or Path(a.path).exists()]
@@ -267,7 +274,7 @@ class ProjectStore:
 
         ``mutator`` receives the freshly loaded project and returns the project to save.
         Because the read-modify-write is serialized per project, two callers updating
-        disjoint fields (e.g. silences vs markers) never lose each other's writes. A project
+        disjoint fields (e.g. silences vs surahs) never lose each other's writes. A project
         that can't be loaded (newer version, damaged) raises and is never written.
 
         Raises:
@@ -280,7 +287,7 @@ class ProjectStore:
                 raise KeyError(project_id)
             updated = mutator(project)
             # ``update`` is the single choke point for every post-creation write (EDL,
-            # markers, silences, exports), so stamping here keeps ``updated_at`` accurate
+            # surahs, silences, exports), so stamping here keeps ``updated_at`` accurate
             # for the library's "recently edited" ordering without touching any route.
             updated = updated.model_copy(update={"updated_at": _now()})
             self.save(updated)

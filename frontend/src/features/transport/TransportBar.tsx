@@ -155,7 +155,7 @@ export function TransportBar({ project }: { project: ProjectView }) {
         <RateSelect />
       </div>
       <div className="ml-auto flex items-center gap-1">
-        <UndoRedoControls projectId={project.id} ops={project.edl.operations} />
+        <UndoRedoControls projectId={project.id} />
         <CopyTimeButton />
         <ViewToggle />
       </div>

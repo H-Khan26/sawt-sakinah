@@ -3,24 +3,40 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from pathlib import Path
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...fileio import replace_file
 from ..deps import get_settings, get_store
+from ..playback import PLAYBACK_MEDIA_TYPE, ensure_playback_copy
 from ..ranges import media_type_for, ranged_file_response
-from ..waveform import compute_peaks
+from ..waveform import WAVEFORM_VERSION, compute_peaks
 from .common import validate_id
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["media"])
 
 
 @router.get("/{project_id}/audio")
-def get_audio(project_id: str, request: Request, store=Depends(get_store)):
+def get_audio(
+    project_id: str,
+    request: Request,
+    container: Optional[Literal["mp4"]] = None,
+    store=Depends(get_store),
+    settings=Depends(get_settings),
+):
     """Stream the user-facing artifact (the mp3), honoring Range requests for seeking.
+
+    ``container=mp4`` serves the same MP3 frames remuxed into MP4 (see ``playback``), which
+    the browser seeks exactly. If that copy can't be made it answers 503 rather than the
+    mp3, so one URL never serves byte ranges of two different files; the editor then
+    falls back to the plain URL.
 
     Resolves the path via ``store.audio_path`` -- a cheap single-field read -- rather than
     a full ``load`` + ``_heal``, since scrubbing issues many range requests per second.
@@ -31,10 +47,21 @@ def get_audio(project_id: str, request: Request, store=Depends(get_store)):
         raise HTTPException(status_code=404, detail="recording not found")
     if not local.exists():
         raise HTTPException(status_code=404, detail="audio not found")
+
+    path, media_type = local, media_type_for(local)
+    if container == "mp4" and local.suffix.lower() == ".mp3":
+        try:
+            path = ensure_playback_copy(
+                local, store.playback_path(project_id), ffmpeg_bin=settings.ffmpeg_bin
+            )
+            media_type = PLAYBACK_MEDIA_TYPE
+        except (OSError, RuntimeError) as exc:
+            _log.warning("no playback copy for %s: %s", project_id, exc)
+            raise HTTPException(status_code=503, detail="playback copy unavailable") from exc
     return ranged_file_response(
-        local,
+        path,
         request.headers.get("range"),
-        media_type_for(local),
+        media_type,
         streams=store.streams,
         key=project_id,
     )
@@ -45,10 +72,13 @@ def get_waveform(project_id: str, store=Depends(get_store), settings=Depends(get
     validate_id(project_id, "project_id")
 
     # Waveform is immutable per source: serve the cache before touching the project.
+    # A cache from an older format version is recomputed and replaced.
     cache = store.waveform_path(project_id)
     if cache.exists():
         try:
-            return json.loads(cache.read_text(encoding="utf-8"))
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+            if isinstance(cached, dict) and cached.get("version") == WAVEFORM_VERSION:
+                return cached
         except (ValueError, OSError):
             pass  # corrupt cache -> recompute
 

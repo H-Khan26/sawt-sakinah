@@ -52,8 +52,8 @@ extraction:
 
 # Speech segmentation: turning the per-frame Silero speech probabilities (computed once
 # per source, persisted as the speech-map sidecar) into fine speech spans. Every consumer
-# (silence detection, phrase clip scoping, onset snapping) thresholds the same map with
-# these knobs and then applies its own coarser rules on top.
+# (silence detection, transcription clip scoping, passage edge snapping) thresholds the
+# same map with these knobs and then applies its own coarser rules on top.
 segmentation:
   speech_threshold: 0.5        # speech-probability threshold (0..1); the leave threshold is 0.15 lower, floored at 0.01
   min_speech_duration: 0.25    # drop speech runs shorter than this (seconds)
@@ -72,55 +72,61 @@ silence:
   measure_loudness: true       # populate SilenceSegment.mean_db via a volumedetect pass
   detector: vad                # "vad" thresholds the persisted speech-probability map; "ffmpeg" is the dependency-free energy gate
 
-# Spoken-phrase (Whisper) detection.
-phrases:
-  detector: whisper            # "whisper" (implemented) or "embeddings" (planned)
-  model_size: large-v3-turbo   # default Whisper model; must be an id under whisper_models (users pick another in the app)
+# Transcription (Whisper, CTranslate2) of the recitation for surah recognition.
+transcription:
   device: cpu                  # inference device; the desktop bundle is CPU-only
   compute_type: int8           # CTranslate2 compute type ("int8" is the fast CPU choice)
   language: ar                 # transcription language code
-  min_confidence: 0.4          # drop markers below this confidence (0..1)
-  min_gap_between_markers: 1.0  # de-dup same-type hits closer than this (seconds)
-  max_word_gap: 1.0            # max seconds between consecutive words of one phrase
+  beam_size: 5                 # beam search width; 1 decodes greedily (faster, slightly less accurate)
   vad_filter: true             # apply Whisper's built-in VAD filter; only used when no speech map/spans are available
-  snap_window: 0.4             # snap marker onsets/ends to the nearest speech-span edge within this distance (seconds); 0 disables
   clip_merge_gap: 1.0          # speech spans closer than this are merged into one Whisper clip (seconds)
   clip_pad: 0.3                # seconds of context added around each clip
-  keyword_gate: 78.0           # each required keyword must partial-match >= this (0..100)
-  fuzzy_floor: 60.0            # whole-phrase token_sort_ratio floor before scoring (0..100)
-  fuzzy_weight: 0.6            # confidence = fuzzy_weight*fuzzy + (1-fuzzy_weight)*prob
+
+# Surah recognition: matching the transcript against the Quran text (detection/surahs.py).
+# A walk is a run of transcript words followed through the mushaf; it is labelled
+# "accept", "unsure" or left unlabelled by these thresholds.
+surahs:
+  model: quran-base            # id under whisper_models
+  word_match: 80               # per-word fuzzy ratio (0..100)
+  accept_min_words: 12         # matched words a walk needs to be accepted
+  accept_min_ratio: 0.70       # matched words / transcript words the walk spans
+  accept_min_margin: 0.25      # lead over the best placement in a different surah (0..1)
+  unsure_min_words: 8          # below the accept bar, still shown flagged as unsure
+  unsure_min_ratio: 0.55
+  promote_min_words: 4         # a walk continuing an accepted passage of its surah is promoted one level from this many matched words
+  max_skip: 3                  # transcript or Quran words a walk may step over at a mismatch
+  max_pause: 20.0              # a walk never spans a longer pause between words (seconds), e.g. ruku and sujud between rak'ahs
+  anchor_max_hits: 64          # three-word sequences found more often than this in the Quran don't seed walks
+  context_window: 15.0         # seconds before a walk checked for other speech ...
+  context_max_words: 10        # ... a walk with more other words there is Quran quoted in speech (a du'a) and is left unlabelled
+  basmala_max_gap: 6.0         # a basmala ending at most this long before a passage joins it (seconds)
+  edge_pad: 1.0                # seconds kept past each edge, inside the pause
 
 # Whisper models the app can download and run (CTranslate2 conversions, CPU). Only these
 # ids are accepted anywhere. Each is pinned to a Hugging Face commit so a re-upload can't
 # change it silently; size_mb is the download size of the files faster-whisper loads.
 whisper_models:
-  large-v3-turbo:
-    label: Large v3 Turbo
-    description: Fast and accurate. Recommended for most recordings.
-    repo: mobiuslabsgmbh/faster-whisper-large-v3-turbo
-    revision: 0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf
-    size_mb: 1622
-  large-v3:
-    label: Large v3
-    description: Higher accuracy, slower. Needs about twice the memory and disk space.
-    repo: Systran/faster-whisper-large-v3
-    revision: edaa852ec7e145841d8ffdb056a99866b5f0a478
-    size_mb: 3091
+  quran-base:
+    label: Quran recognition
+    description: Recognises Quran recitation (Hafs) to find which surahs a recording holds.
+    repo: hkhan0327/faster-whisper-base-ar-quran
+    revision: b704f0275faa945b52c01180a1f579d2cee119fd
+    size_mb: 81
 
 # EDL render / export.
 editing:
   out_format: mp3              # default output extension/codec
   boundary_fade: 0.005         # seconds of fade at each cut boundary to avoid clicks
   mp3_vbr_quality: "0"         # default VBR quality for mp3 when no bitrate is given
-  embed_markers: true          # embed marker ops as chapters on export
+  embed_chapters: true         # embed accepted surah passages as chapters on export
   embed_metadata: true         # refresh title/source-url metadata on export
 
 # FastAPI service operational defaults. These additionally accept SAWT_* env overrides.
 service:
   max_workers: 4               # general job pool threads (extraction/silence/export)
-  phrase_workers: 1            # dedicated Whisper pool threads (keep 1 unless device allows)
+  transcription_workers: 1     # dedicated Whisper pool threads (keep 1 unless device allows)
   max_pending_jobs: 32         # pending + running jobs accepted before new submissions get HTTP 429
-  waveform_buckets: 2000       # downsample resolution for the waveform peaks endpoint
+  waveform_rate: 100           # waveform levels per second of audio (10 ms buckets)
   stream_chunk_size: 65536     # byte chunk size for ranged media streaming responses
   shutdown_grace_sec: 3        # on close, time running jobs get to stop and clean up
 

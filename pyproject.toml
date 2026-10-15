@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sawt-sakinah"
 dynamic = ["version"]
-description = "Extract Quran recitation audio from YouTube, detect silence/takbirs, and edit non-destructively."
+description = "Extract Quran recitation audio from YouTube, detect silences, recognize the surahs recited, and edit non-destructively."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -41,17 +41,18 @@ service = [
     "pydantic-settings>=2",
     "numpy>=1.24",
 ]
-# Whisper phrase detector (detection/phrases.py, detector="whisper"). faster-whisper
-# runs Whisper through CTranslate2, so torch is not required for this backend; rapidfuzz
-# powers the diacritic-insensitive phrase matching. huggingface_hub downloads the model;
-# the app's model manager uses its 1.x API (httpx session). tokenizers caps it below 2.0.
-phrases = [
+# Whisper transcription for surah recognition (detection/transcribe.py and
+# detection/surahs.py). faster-whisper runs Whisper through CTranslate2, so torch is not
+# required; rapidfuzz powers the fuzzy word matching against the Quran text. huggingface_hub
+# downloads the model; the app's model manager uses its 1.x API (httpx session). tokenizers
+# caps it below 2.0.
+transcription = [
     "faster-whisper>=1.0",
     "rapidfuzz>=3.0",
     "huggingface_hub>=1.0",
 ]
 # Silero VAD speech segmentation (detection/segmentation.py; the "vad" silence detector
-# and speech-scoped phrase detection build on it). The network ships as a vendored ONNX
+# and speech-scoped transcription build on it). The network ships as a vendored ONNX
 # file under sawt_sakinah/detection/assets and runs on onnxruntime + numpy; no torch.
 vad = [
     "numpy>=1.24",
@@ -65,7 +66,7 @@ desktop = [
 ]
 # Everything (self-referencing extra; requires a recent pip).
 all = [
-    "sawt-sakinah[service,phrases,vad]",
+    "sawt-sakinah[service,transcription,vad]",
 ]
 # Development tools: the linter CI runs and the bundler `make bundle` uses. Release
 # builds install PyInstaller from the hash-pinned packaging/requirements-build.txt.
@@ -89,7 +90,7 @@ include = ["sawt_sakinah*"]
 "sawt_sakinah" = ["py.typed"]
 # Ship the single-source-of-truth config alongside the code.
 "sawt_sakinah.config" = ["*.yaml"]
-# Vendored Silero VAD network (ONNX) and its license.
+# Vendored Silero VAD network (ONNX), Tanzil Quran text and surah metadata, and their licenses.
 "sawt_sakinah.detection" = ["assets/*"]
 
 [tool.ruff]

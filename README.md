@@ -7,16 +7,16 @@
 
 <p align="center">
   A non-destructive editor for salah and Quran recitation recordings.<br>
-  Paste a YouTube link or drop in a file, find the silences and the takbirs, cut what you do not need, export.
+  Paste a YouTube link or drop in a file, find the silences and the surahs, cut what you do not need, export.
 </p>
 
 ## What it does
 
 - **Acquires** audio from a YouTube URL or an uploaded file and keeps a 16 kHz working copy per project.
 - **Detects silence** with Silero voice-activity detection, so quiet dhikr and room noise are treated as non-speech rather than as recitation. An ffmpeg energy gate remains available as a fallback.
-- **Detects prayer phrases** (takbir, tasmi', tahmid, tasleem) with Whisper and turns them into timeline markers, then derives the rak'ah and position outline from the marker stream.
-- **Edits non-destructively.** Cuts, keeps and markers live in an edit decision list. The waveform collapses cut audio out of view, and nothing is rendered until you export.
-- **Exports** the edited result, or a selected range, with chapter markers embedded. A range can also be split off into its own project.
+- **Recognises surahs.** A small Quran-tuned Whisper model transcribes the recitation and the words are matched against the Quran text (from [Tanzil](https://tanzil.net)) to find which surahs and ayat are recited and where. Each surah is marked on the waveform; keep only that surah, copy it into a new recording, or add the surahs as chapters on export.
+- **Edits non-destructively.** Cuts and keeps live in an edit decision list. The waveform collapses cut audio out of view, and nothing is rendered until you export.
+- **Exports** the edited result, or a selected range, with chapters embedded. A range can also be split off into its own project.
 
 Detection returns data; only export writes audio. That rule shapes every module in the repo.
 
@@ -59,20 +59,18 @@ Intel Macs are not supported by the download; they can [run from source](#run-fr
 
 ### Requirements
 
-The speech model for phrase detection is not in the zip. The app downloads it (about
-1.6 GB) the first time you run phrase detection, and keeps it for later. Phrase detection
-runs on the CPU and takes roughly a third of the recording's length with the default model
-(a 39-minute Taraweeh recording took 12 minutes on a 6-core desktop CPU from 2020, using up
-to 1.5 GB of memory). The optional `large-v3` model is about six times slower on the same
-recording (69 minutes) and used up to 5 GB. Silence detection and editing are quick: the
-same recording imported from YouTube in 42 seconds and exported in 22.
+The speech model for surah recognition is not in the zip. The app downloads it (about
+80 MB) the first time you find surahs, and keeps it for later. Recognising surahs
+transcribes the speech on the CPU and takes a few minutes per hour of audio. Silence
+detection and editing are quick: a 39-minute Taraweeh recording imported from YouTube in
+42 seconds and exported in 22.
 
 | | Minimum | Recommended |
 |---|---|---|
 | System | Windows 10 22H2 or Windows 11, 64-bit (x64); or macOS 14 on Apple Silicon | |
 | CPU | 4 cores, x86-64 with AVX2, or any Apple Silicon chip | 6 cores or more |
-| Memory | 8 GB | 16 GB (the optional `large-v3` model uses about 5 GB while it runs) |
-| Disk | 4 GB free: about 0.6 GB for the app, 1.5 GB for the speech model, 150 MB per hour of recording per project | Add 3 GB for the optional `large-v3` model |
+| Memory | 8 GB | 16 GB |
+| Disk | 2 GB free: about 0.6 GB for the app, under 100 MB for the speech model, 150 MB per hour of recording per project | |
 | GPU | Not used | |
 | Network | For YouTube imports and the one-time model download | |
 
@@ -138,10 +136,9 @@ made the recording.
                                                                     │
             ┌────────────── detection (read-only) ──────────────────┘
             │  silence:  speech map ──> spans ──> gaps >= 3 s
-            │  phrases:  speech clips ──> Whisper ──> fuzzy match ──> markers
-            │  prayer:   markers ──> positions / rak'ahs
+            │  surahs:   speech clips ──> Whisper (Quran) ──> match to Quran text ──> surah passages
             ▼
-      edit decision list  (cut / keep / marker, built in the UI)
+      edit decision list  (cut / keep, built in the UI)
             │
             ▼
         editing (ffmpeg render) ──> exported audio + chapters
@@ -149,13 +146,13 @@ made the recording.
 
 The speech map is a per-frame speech-probability track computed once when a source is
 acquired. Every later silence re-detect is a numpy threshold over that track, so the
-speech-threshold slider responds instantly, and phrase detection transcribes only the
+speech-threshold slider responds instantly, and surah recognition transcribes only the
 speech it describes.
 
 ## Configuration
 
 Every tuning knob lives in one strictly validated file, `sawt_sakinah/config/defaults.yaml`
-(silence thresholds, VAD sensitivity, Whisper model, export format). Point
+(silence thresholds, VAD sensitivity, transcription and surah matching, export format). Point
 `SAWT_CONFIG_FILE` at a copy to override the whole set. Operational settings such as
 storage directories, worker counts and the ffmpeg path accept `SAWT_*` environment
 variables or a `.env` file.
@@ -165,12 +162,12 @@ variables or a `.env` file.
 Prerequisites: Python 3.10+, [FFmpeg](https://ffmpeg.org/) (ffmpeg and ffprobe on `PATH`), [Deno](https://deno.com/) 2.3+ on `PATH` (yt-dlp uses it for YouTube), [Node.js](https://nodejs.org/), and GNU make (on Windows: `choco install make`, or use Git Bash or WSL).
 
 ```sh
-make requirements   # pip install -e ".[service,phrases,vad,desktop]"
+make requirements   # pip install -e ".[service,transcription,vad,desktop]"
 make dev            # backend http://127.0.0.1:38427 + frontend http://localhost:38428, hot reload
 make desktop        # build the frontend and open the app in a native window
 ```
 
-`make help` lists every target. The Whisper model downloads on first phrase detection (about 1.6 GB for the default `large-v3-turbo`).
+`make help` lists every target. The Quran recognition model (about 80 MB) downloads the first time you find surahs.
 
 One-shot extraction with silence removal, no server:
 
@@ -198,8 +195,7 @@ sawt_sakinah/
   config/       defaults.yaml + strict schema (the single source of tuning knobs)
   models/       pydantic contracts shared by every layer
   extraction/   YouTube download, file import, working copy, speech map, cache
-  detection/    silence (VAD / ffmpeg), phrases (Whisper), Silero ONNX asset
-  prayer/       prayer-position state machine over the marker stream
+  detection/    silence (VAD / ffmpeg), transcription + surah matching (Whisper, Quran text), Silero ONNX and Tanzil assets
   editing/      EDL render and export (the only layer that writes audio)
   service/      FastAPI app, job pools, project store, routes
 frontend/       React 18 + TypeScript + Vite + Tailwind + TanStack Query, wavesurfer.js
@@ -218,8 +214,9 @@ and frontend documents it links. Design records for larger changes are kept in
 ## License
 
 [MIT](LICENSE). Bundled third-party assets keep their own licenses: the Silero VAD model
-(MIT, `sawt_sakinah/detection/assets/SILERO_LICENSE`) and the webfonts (SIL OFL,
-`frontend/public/fonts/`). The releases also ship FFmpeg, Deno (MIT) and the Python
+(MIT, `sawt_sakinah/detection/assets/SILERO_LICENSE`), the Tanzil Quran text and surah
+metadata (CC BY 3.0, verbatim, `sawt_sakinah/detection/assets/TANZIL_LICENSE`) and the
+webfonts (SIL OFL, `frontend/public/fonts/`). The releases also ship FFmpeg, Deno (MIT) and the Python
 packages the app runs on. The Windows FFmpeg is an LGPL build; the macOS one is a GPL v3
 build, which the app runs as a separate program. `THIRD_PARTY_LICENSES.txt` (next to
 `SawtSakinah.exe` on Windows, in `SawtSakinah.app/Contents/Resources` on macOS) lists each

@@ -1,7 +1,7 @@
 """The ``Project`` container: an audio source plus all derived data and edit state.
 
 A ``Project`` is what the frontend loads and works against. It bundles the
-``AudioSource`` with detection output (silences, markers, prayer structure), the current
+``AudioSource`` with detection output (silences, the surah map), the current
 ``EditDecisionList``, per-stage status, and any rendered export artifacts. Persisted as
 ``project.json`` by the service layer. Because every field is itself a pydantic model,
 ``Project.model_validate(json)`` rebuilds the whole tree. The on-disk format version
@@ -20,10 +20,9 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from .edl import EditDecisionList
-from .markers import Marker
 from .segments import SilenceSegment
 from .sources import AudioSource
-from .structure import PrayerPosition
+from .surahs import SurahMap
 
 
 def _now() -> datetime:
@@ -79,8 +78,7 @@ class Project(BaseModel):
     audio_source: AudioSource
     name: str = ""  # user-facing library label; seeded from audio_source.title on create
     silences: list[SilenceSegment] = Field(default_factory=list)
-    markers: list[Marker] = Field(default_factory=list)
-    structure: list[PrayerPosition] = Field(default_factory=list)
+    surahs: Optional[SurahMap] = None  # None until surah matching has run
     edl: EditDecisionList
     status: ProjectStatus = Field(default_factory=ProjectStatus)
     exports: list[ExportArtifact] = Field(default_factory=list)

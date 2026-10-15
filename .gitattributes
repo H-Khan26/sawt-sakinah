@@ -31,3 +31,6 @@
 *.flac binary
 *.ogg binary
 *.opus binary
+
+# Vendored Tanzil Quran text: kept byte-for-byte as published.
+sawt_sakinah/detection/assets/quran-simple-clean.txt -text

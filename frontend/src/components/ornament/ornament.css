@@ -115,14 +115,6 @@
 .orn-star.filled .s-num {
   fill: var(--color-on-accent);
 }
-/* Marginal-note star (green) and a rak'ah not yet reached (tertiary ink outline). */
-.orn-star.note .s-body {
-  fill: var(--color-green);
-  stroke: var(--color-green);
-}
-.orn-star.ahead .s-body {
-  stroke: var(--color-text-tertiary);
-}
 [data-theme="night"] .orn-star.filled {
   filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-gold) 70%, transparent));
 }

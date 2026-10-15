@@ -5,7 +5,8 @@ Run with::
     uvicorn sawt_sakinah.service.app:app
 
 The store and job registry are created in the lifespan and attached to ``app.state``
-(read via ``deps.py``). Startup sweeps what an interrupted run left in the projects folder;
+(read via ``deps.py``). Startup sweeps what an interrupted run left in the projects folder
+and removes downloaded speech models that are no longer in the catalog;
 shutdown closes media streams and stops running jobs within ``service.shutdown_grace_sec``.
 The extraction error hierarchy is mapped to HTTP status codes for the rare synchronous
 failure; async failures surface in ``JobRecord.error``/``error_type``.
@@ -13,6 +14,7 @@ failure; async failures surface in ``JobRecord.error``/``error_type``.
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import Optional
@@ -23,7 +25,12 @@ from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
 from ..config import CONFIG
-from ..detection.whisper_models import ModelError, UnknownModelError, cancel_downloads
+from ..detection.whisper_models import (
+    ModelError,
+    UnknownModelError,
+    cancel_downloads,
+    sweep_retired,
+)
 from ..models import (
     AgeRestrictedError,
     ExtractionError,
@@ -45,6 +52,8 @@ from .projects import ProjectStore
 from .routes import detect, export, jobs, media, models, projects, system, ytdlp
 from .security import install_guards
 from .settings import ServiceSettings
+
+_log = logging.getLogger(__name__)
 
 # Most specific first; Starlette resolves by the closest match in the exception's MRO.
 _ERROR_STATUS: list[tuple[type[Exception], int]] = [
@@ -73,8 +82,10 @@ async def lifespan(app: FastAPI):
     settings: ServiceSettings = app.state.settings
     store = ProjectStore(settings.projects_dir)
     store.sweep()
+    for path in sweep_retired(settings.models_dir):
+        _log.info("removed the retired speech model %s", path)
     app.state.store = store
-    app.state.jobs = JobRegistry(settings.max_workers, settings.phrase_workers)
+    app.state.jobs = JobRegistry(settings.max_workers, settings.transcription_workers)
     try:
         yield
     finally:

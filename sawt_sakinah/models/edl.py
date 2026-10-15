@@ -11,9 +11,13 @@ Times are always in seconds (float).
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Literal, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+# Cut spans closer than this (seconds) count as touching and merge into one.
+_TOUCH = 1e-6
 
 
 def _now() -> datetime:
@@ -26,15 +30,14 @@ class EditOperation(BaseModel):
     Attributes:
         type: ``"cut"`` removes ``[start, end]``; ``"keep"`` retains only the listed
             keep spans (and drops the rest); ``"fade"`` applies a short fade at a
-            boundary; ``"marker"`` is a metadata point (not a mutation) that export may
-            embed as a chapter/cue.
-        start: Span/point start in seconds.
-        end: Span end in seconds. ``None`` for a point (``marker``) or a single-edge fade.
+            boundary.
+        start: Span start in seconds.
+        end: Span end in seconds. ``None`` for a single-edge fade or an open-ended cut.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    type: Literal["cut", "keep", "fade", "marker"]
+    type: Literal["cut", "keep", "fade"]
     start: float
     end: Optional[float] = None
 
@@ -53,3 +56,32 @@ class EditDecisionList(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
 
+
+def normalize_cuts(
+    operations: Sequence[EditOperation], duration: Optional[float] = None
+) -> list[EditOperation]:
+    """Return ``operations`` with the ``cut`` spans sorted, merged and clamped.
+
+    A cut given end-first is read as the same span. Overlapping or touching cuts merge,
+    so the removed audio is a set of disjoint spans; with a known ``duration`` each is
+    clamped to ``[0, duration]`` and empty ones drop. The other ops (and any open-ended
+    cut) follow the cuts in their original order.
+    """
+    hi = duration if duration and duration > 0 else float("inf")
+    ordered = (
+        sorted((op.start, op.end))
+        for op in operations
+        if op.type == "cut" and op.end is not None
+    )
+    spans = sorted((max(0.0, a), min(hi, b)) for a, b in ordered)
+    merged: list[tuple[float, float]] = []
+    for a, b in spans:
+        if b <= a:
+            continue
+        if merged and a <= merged[-1][1] + _TOUCH:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else:
+            merged.append((a, b))
+    cuts = [EditOperation(type="cut", start=a, end=b) for a, b in merged]
+    rest = [op for op in operations if not (op.type == "cut" and op.end is not None)]
+    return cuts + rest

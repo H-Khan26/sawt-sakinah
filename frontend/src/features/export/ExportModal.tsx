@@ -1,7 +1,8 @@
 /**
- * Export dialog: pick format / whether to embed markers, render the EDL, and deliver the
- * result. Export is the one destructive/rendered step — cuts are applied and (when embedding)
- * the project's markers are written as labeled chapters, all server-side.
+ * Export dialog: pick format / whether to add surahs as chapters, render the EDL, and deliver
+ * the result. Export is the one destructive/rendered step — cuts are applied and (when adding
+ * chapters) the project's accepted surah passages are written as named chapters, all
+ * server-side.
  *
  * Flow: `useExport` -> poll the job with `useJob` -> on success read the job result. In the
  * desktop app (`AppInfo.export_to_folder`) the backend has already saved the file to the export
@@ -59,7 +60,8 @@ export function ExportModal({
 }) {
   const rangeLabel = range ? `${formatClock(range.start)}–${formatClock(range.end)}` : null;
   const [format, setFormat] = useState<string>("mp3");
-  const [embedMarkers, setEmbedMarkers] = useState(false);
+  const hasSurahs = project.surahs?.passages.some((p) => p.level === "accept") ?? false;
+  const [embedChapters, setEmbedChapters] = useState(hasSurahs);
   const [name, setName] = useState(range ? `${project.name} (${rangeLabel})` : project.name);
   const [jobId, setJobId] = useState<string | undefined>(undefined);
   const [artifactId, setArtifactId] = useState<string | null>(null);
@@ -98,7 +100,7 @@ export function ExportModal({
       {
         format,
         bitrate: null,
-        embed_markers: embedMarkers,
+        embed_chapters: embedChapters,
         name: trimmedName || null,
         range_start: range?.start ?? null,
         range_end: range?.end ?? null,
@@ -119,7 +121,7 @@ export function ExportModal({
   // Fallback filename only; the backend's Content-Disposition wins on download.
   const downloadName = `${trimmedName || project.name}.${format}`;
   const saved = savedPath ? splitPath(savedPath) : null;
-  const noMarkers = embedMarkers && project.markers.length === 0;
+  const noSurahs = embedChapters && !hasSurahs;
   const priorExports = project.exports;
 
   return (
@@ -169,16 +171,16 @@ export function ExportModal({
           <input
             type="checkbox"
             className="accent-accent h-4 w-4 cursor-pointer"
-            checked={embedMarkers}
+            checked={embedChapters}
             disabled={running}
-            onChange={(e) => setEmbedMarkers(e.target.checked)}
+            onChange={(e) => setEmbedChapters(e.target.checked)}
           />
-          Embed prayer markers as chapters
+          Add surahs as chapters
         </label>
 
-        {noMarkers && (
+        {noSurahs && (
           <p className="text-xs text-text-tertiary">
-            No markers yet — run phrase detection first, or export without chapters.
+            No surahs found yet — run Find surahs first, or export without chapters.
           </p>
         )}
 
@@ -187,6 +189,11 @@ export function ExportModal({
         {state === "failed" && (
           <Alert variant="error" title="Export failed">
             {job.data?.error ?? "Something went wrong while rendering."}
+          </Alert>
+        )}
+        {exportAudio.isError && (
+          <Alert variant="error" title="Couldn't start the export">
+            {exportAudio.error.message}
           </Alert>
         )}
 

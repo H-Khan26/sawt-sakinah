@@ -2,40 +2,41 @@
  * The Silence tool: detection controls, a summary of what was found, the bulk actions, and the
  * detected-silence list.
  *
- * The live EDL is server state (the project cache, patched by `usePutEdl`); this component
- * reads `project.edl.operations` straight from props and never copies them into a store.
- * Edits route through `useEdlEditor`, so they share one undo history with the cut tool and
- * the undo/redo buttons in the transport row. "Remove all silence" applies at once (cuts are
+ * The live EDL lives in the project cache (edits land there at once, see `useSaveEdl`); this
+ * component reads `project.edl.operations` straight from props and never copies them into a
+ * store. Edits route through `useEdlEditor`, so they share one undo history with the cut tool
+ * and the undo/redo buttons in the transport row. "Remove all silence" applies at once (cuts are
  * hatched on the waveform and non-destructive) and offers Undo in a toast. Detected silences
- * stay in the list after removal, marked "removed", so a cut can be restored. Region drawing is
- * owned by `useEditRegions` (mounted once in the editor), not here.
+ * stay in the list after removal, marked "removed", so they can be restored, while the range
+ * covering them is pure silence removal; one that a content cut took is hidden (see
+ * `silenceView`). Region drawing is owned by `useEditRegions` (mounted once in the editor), not
+ * here.
  */
-import { Button, useToast } from "@/components/ui";
-import { cutSpanKeys } from "@/features/cuts/cutEdl";
+import { Button } from "@/components/ui";
+import { useCutModel } from "@/features/cuts/cutModel";
 import { useEdlEditor } from "@/features/cuts/useEdlEditor";
+import { useUndoToast } from "@/features/cuts/useUndoToast";
+import { plural } from "@/lib/format";
 import { formatClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
-import type { ProjectView } from "@/types/api";
+import type { ProjectView, SilenceSegment } from "@/types/api";
 import { AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { SilenceControls, useSilenceDetection } from "./SilenceControls";
 import { SilenceList } from "./SilenceList";
-import { activeSilences } from "./active";
-import { addCuts, removeCuts, silenceStats } from "./edl";
+import { removeSilences, restoreSilences, silenceStats } from "./edl";
 import { silenceKey } from "./regions";
 
-/** How long the Undo toast stays up after "Remove all silence". */
-const UNDO_TOAST_MS = 8000;
-
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+/** Whether two detected-silence lists hold the same spans. */
+const sameSpans = (a: SilenceSegment[], b: SilenceSegment[]) =>
+  a.length === b.length && a.every((s, i) => s.start === b[i].start && s.end === b[i].end);
 
 export function SilencePanel({ project }: { project: ProjectView }) {
   const projectId = project.id;
   const silences = project.silences;
-  const ops = project.edl.operations;
 
   const editor = useEdlEditor(projectId);
-  const { toast } = useToast();
+  const undoToast = useUndoToast(projectId);
   const detection = useSilenceDetection({
     projectId,
     hasDetected: silences.length > 0,
@@ -44,72 +45,63 @@ export function SilencePanel({ project }: { project: ProjectView }) {
 
   const selectedIds = useEditStore((s) => s.selectedIds);
   const clearSelection = useEditStore((s) => s.clearSelection);
-  const reset = useEditStore((s) => s.reset);
 
-  // Fresh detection replaces the silence set: drop stale selection + history. Keyed on the
-  // silences identity, which changes only on (re)detection — EDL edits preserve it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional silences-only key
+  // Fresh detection replaces the silence set, so selected silence keys go stale: clear the
+  // selection. A refetch hands over an equal list, which keeps it. The undo history stays — its
+  // snapshots are EDL ops, which don't reference silences.
+  const lastSilences = useRef(silences);
   useEffect(() => {
-    reset();
-  }, [silences]);
-  // Clear on unmount (leaving the editor).
-  useEffect(() => () => reset(), [reset]);
+    if (sameSpans(lastSilences.current, silences)) return;
+    lastSilences.current = silences;
+    clearSelection();
+  }, [silences, clearSelection]);
 
-  // The toast's Undo runs after later renders; it reads the live ops and editor from refs.
-  const opsRef = useRef(ops);
-  opsRef.current = ops;
-  const editorRef = useRef(editor);
-  editorRef.current = editor;
+  // Detected silences clipped to the audio content cuts left: silences (or parts of them)
+  // inside deleted recitation drop out of the list, stats, and actions — regardless of whether
+  // the cut was made before or after detection. Those silence removal took stay, as removed.
+  const { active, removed: removedIds, kept } = useCutModel(project);
 
-  // Detected silences clipped to the audio still active after manual cuts: silences (or parts of
-  // them) inside deleted regions drop out of the list, stats, and actions — regardless of whether
-  // the cut was made before or after detection.
-  const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
-
-  const selectedSegs = useMemo(
-    () => active.filter((s) => selectedIds.has(silenceKey(s))),
-    [active, selectedIds],
-  );
-  const removedIds = useMemo(() => cutSpanKeys(ops), [ops]);
+  const selected = useMemo(() => {
+    const segs = active.filter((s) => selectedIds.has(silenceKey(s)));
+    return {
+      count: segs.length,
+      removed: segs.filter((s) => removedIds.has(silenceKey(s))),
+      kept: segs.filter((s) => !removedIds.has(silenceKey(s))),
+    };
+  }, [active, removedIds, selectedIds]);
 
   const detected = silenceStats(active);
-  // "Already cut" counts detected silences marked for cut — manual cuts live in the Cut tool.
-  const removedCount = active.filter((s) => removedIds.has(silenceKey(s))).length;
-  const remaining = detected.count - removedCount;
+  // "Already cut" counts the removed silences — other cuts live in the Cut tool.
+  const removedCount = removedIds.size;
+  const remaining = kept.length;
 
+  // Each action edits only the selected silences it changes, and its label counts those.
   const removeSelected = () => {
-    editor.applyOps(ops, addCuts(ops, selectedSegs));
+    const segs = selected.kept;
+    editor.apply(
+      (o) => removeSilences(o, segs),
+      `Remove ${plural(segs.length, "silence", "silences")}`,
+    );
     clearSelection();
   };
   const restoreSelected = () => {
-    editor.applyOps(ops, removeCuts(ops, selectedSegs));
+    const segs = selected.removed;
+    editor.apply(
+      (o) => restoreSilences(o, segs),
+      `Restore ${plural(segs.length, "silence", "silences")}`,
+    );
     clearSelection();
   };
   const removeAll = () => {
-    const before = ops;
-    editor.applyOps(before, addCuts(before, active));
+    const removal = editor.apply(
+      (o) => removeSilences(o, kept),
+      `Remove ${plural(remaining, "silence", "silences")}`,
+    );
     clearSelection();
-    toast(`Removed ${plural(remaining, "silence", "silences")}.`, "info", UNDO_TOAST_MS, {
-      label: "Undo",
-      onClick: () => {
-        // The live ops only reflect the removal once its save lands; undoing before that would
-        // race the save and lose the redo step.
-        if (editorRef.current.isPending) {
-          toast("Still saving the removal. Use Undo in the transport row in a moment.", "warning");
-          return;
-        }
-        // Undo only while this removal is still the latest edit; a later edit owns the stack top.
-        if (useEditStore.getState().undoStack.at(-1) !== before) {
-          toast("Later edits came after this removal. Use Undo in the transport row.", "warning");
-          return;
-        }
-        editorRef.current.undo(opsRef.current);
-      },
-    });
+    if (removal) undoToast(`Removed ${plural(remaining, "silence", "silences")}.`, removal);
   };
 
-  const hasSelection = selectedSegs.length > 0;
-  const busy = editor.isPending;
+  const hasSelection = selected.count > 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -134,7 +126,7 @@ export function SilencePanel({ project }: { project: ProjectView }) {
           <Button variant="secondary" onClick={detection.detectNow} loading={detection.detecting}>
             {silences.length > 0 ? "Detect again" : "Detect silence"}
           </Button>
-          <Button onClick={removeAll} disabled={remaining === 0 || busy}>
+          <Button onClick={removeAll} disabled={remaining === 0}>
             Remove all silence
           </Button>
         </div>
@@ -165,12 +157,22 @@ export function SilencePanel({ project }: { project: ProjectView }) {
       {hasSelection && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="mr-1 text-sm text-text-secondary">
-            {plural(selectedSegs.length, "silence", "silences")} selected
+            {plural(selected.count, "silence", "silences")} selected
           </span>
-          <Button size="sm" variant="secondary" onClick={removeSelected} disabled={busy}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={removeSelected}
+            disabled={selected.kept.length === 0}
+          >
             Remove selected
           </Button>
-          <Button size="sm" variant="secondary" onClick={restoreSelected} disabled={busy}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={restoreSelected}
+            disabled={selected.removed.length === 0}
+          >
             Restore selected
           </Button>
         </div>

@@ -6,8 +6,8 @@
 ## Goal
 
 Render the extracted audio as an interactive waveform with transport controls
-(play / pause / seek / zoom), and provide the substrate that silence regions and
-markers are drawn onto. Press-and-play must feel immediate.
+(play / pause / seek / zoom), and provide the substrate that silence regions and the
+surah view are drawn onto. Press-and-play must feel immediate.
 
 ## Requirements
 
@@ -20,8 +20,8 @@ markers are drawn onto. Press-and-play must feel immediate.
   optional zoom and playback-rate.
 - **Region overlays** for silent segments (highlight, hover, select) — see
   [03-silence-editing-ui.md](03-silence-editing-ui.md).
-- **Marker overlays** for takbirs / prayer positions — see
-  [04-markers-and-prayer-structure.md](04-markers-and-prayer-structure.md).
+- **Surah overlays**: a band of named tabs in the margin above the bars and tints behind
+  them and on the overview strip — see [04-surah-view.md](04-surah-view.md).
 - Performance on long recordings (a full prayer can be many minutes): prefer
   precomputed peak data over decoding the entire file in the browser.
 
@@ -32,13 +32,13 @@ markers are drawn onto. Press-and-play must feel immediate.
      (`useWaveformEngine.ts`: init in a `useEffect`, destroy in its cleanup; the instance
      lives in a `useRef`, never in state).
    - First-class **Regions** plugin (silence highlights, selectable) and
-     **Timeline/Hover** plugins — these map directly onto the silence regions and the
-     takbir marker overlay. Exposes play/pause/seek/zoom and time events.
+     **Timeline/Hover** plugins — these map directly onto the silence and cut regions.
+     Exposes play/pause/seek/zoom and time events.
    - Accepts **precomputed peaks**, so the track renders instantly from backend peak data.
 
 2. **Peaks.js (BBC)** *(considered, not adopted)*
    - Built for long-form audio with a zoomable overview + detail view and points/
-     segments (markers/regions). Heavier and more opinionated than needed here.
+     segments. Heavier and more opinionated than needed here.
 
 3. **Custom canvas** *(considered, not adopted)*
    - A hand-rolled `<canvas>` renderer over backend peaks was the fallback if no library
@@ -55,21 +55,32 @@ markers are drawn onto. Press-and-play must feel immediate.
   React state. **Isolate the high-frequency current-time/playhead value** in its own
   state or store slice so per-frame updates don't re-render the whole editor tree —
   subscribe only the transport readout and the active-position indicator to it.
-- Reconcile regions/markers in a `useEffect` keyed on the silence/marker lists: when a
-  list changes, diff against the library's current regions/markers and add/remove/update.
-  Treat app state as the source of truth, the waveform as a projection of it.
+- Reconcile regions in a `useEffect` keyed on the silence and cut lists: when a list
+  changes, diff against the library's current regions and add/remove/update. Treat app
+  state as the source of truth, the waveform as a projection of it.
+- Overlays that are not regions (the surah band and tints, the seams, the playhead diamond)
+  are DOM layers in `WaveformView`'s `overlay` slot (over the margin and the bars) or its
+  `underlay` slot (behind the bars), and `WaveformOverview`'s `overlay` prop. They place
+  themselves with `useOverlayLayout`, which reads the rendered pixels per second and the
+  scroll offset and maps an edited time to x.
 
 ## Audio source & peaks
 
-- Stream audio from `GET /projects/{id}/audio` (HTTP range requests for seek).
+- Stream audio from `GET /projects/{id}/audio` (HTTP range requests for seek). Where the
+  webview plays MP3 in MP4 (Chromium), request `?container=mp4`: the same MP3 frames in an
+  MP4 container, which seeks exactly. A bare VBR MP3 seeks by estimate, so after a seek
+  the audio heard can drift seconds from `currentTime` and cuts land in the wrong place.
 - Prefer `GET /projects/{id}/waveform` returning **precomputed peak data** so the
   component renders without downloading/decoding the whole file. If peaks aren't
   available yet, fall back to client-side decoding for short files.
+- The peaks are RMS levels per 10 ms bucket, scaled once per recording so its loudest
+  passages reach full height. The edited view resamples them without changing that scale,
+  and a small dB scale at the right edge labels full height, half and quarter height.
 
 ## Transport details
 
 - Spacebar = play/pause; ArrowLeft / ArrowRight = skip 5 s; click/drag on waveform =
   seek; zoom with the overview's buttons or Ctrl/⌘ + wheel; playback-rate selector
   (useful for scrutinizing fast recitation).
-- Show current position relative to markers (e.g. "Rak'ah 2 · sujood") by reading the
-  active prayer position from state.
+- `[` / `]` step to the previous / next surah passage start and select its surah; Escape
+  clears the selection (see [04-surah-view.md](04-surah-view.md)).

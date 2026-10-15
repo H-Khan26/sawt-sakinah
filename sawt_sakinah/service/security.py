@@ -48,8 +48,8 @@ _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _DIGITS = re.compile(r"[0-9]+")
 # Headroom over the file cap for the multipart envelope (boundaries, part headers).
 _MULTIPART_OVERHEAD = 1024 * 1024
-# Cap for every body except the upload. Marker and EDL saves grow with the recording; this
-# leaves a wide margin for long recordings with thousands of markers.
+# Cap for every body except the upload. EDL saves grow with the recording; this leaves a
+# wide margin for long recordings with thousands of edits.
 MAX_BODY_BYTES = 8 * 1024 * 1024
 
 CONTENT_SECURITY_POLICY = "; ".join(

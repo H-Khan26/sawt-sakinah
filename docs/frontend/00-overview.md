@@ -11,8 +11,9 @@ A single-purpose audio editor for Quran recitation:
 2. The audio renders as an interactive **waveform** with play / pause / seek.
 3. **Silent regions** are highlighted on the waveform for easy identification; the user
    selects them and can **cut / remove / save**.
-4. **Takbir markers** ("Allahu Akbar") and other detected phrases appear on the
-   timeline, labeling **rak'ah and prayer positions** (qiyam, ruku', sujood, ...).
+4. **Surahs** are recognised on request: each recited passage is tinted and named on the
+   waveform and listed with its ayat, and a surah can be kept on its own or copied into a
+   new recording.
 
 The frontend is a **view + control surface** over the audio engine. All heavy lifting
 (extraction, detection, rendering edits) happens in the Python backend; the UI consumes
@@ -39,9 +40,9 @@ these choices:
   in-progress edit list; server data stays in the React Query cache.
 - **Waveform:** wavesurfer.js v7, wrapped in `src/features/waveform/`.
 - **Components:** a **custom UI library** in `src/components/ui/` (no shadcn/Radix/MUI).
-  The primitives — `Button`, `SegmentedControl`, `Tabs`, `Badge`, `Modal`/`SimpleModal`,
-  `Alert`, `Toast`, `Tooltip`, `Slider`, `Input`, `Progress`, `EmptyState` and
-  `WaveformLoader` — are React components styled to the design tokens.
+  The primitives — `Button`, `SegmentedControl`, `Switch`, `Tabs`, `Badge`,
+  `Modal`/`SimpleModal`, `Alert`, `Toast`, `Tooltip`, `Slider`, `Input`, `Progress`,
+  `EmptyState` and `WaveformLoader` — are React components styled to the design tokens.
   Ornament (arch, dome, lattice, Rub el Hizb star, cartouche, ribbon tab) is pure geometry
   in `src/ornament/`, drawn by components in `src/components/ornament/`.
 - **Lint/format:** Biome.
@@ -68,7 +69,7 @@ Accent         --color-accent                #6A1E28    #C9AA66   primary action
   soft         --color-accent-soft           accent at 7%  /  16%
   on accent    --color-on-accent             #FBF8F1    #2A1E20
 Gold           --color-gold                  #B8954F    #C9AA66   rules, ornament
-Green          --color-green                 #2E4A3D    #6E9A86   markers, done states
+Green          --color-green                 #2E4A3D    #6E9A86   switches, done states
 Border         --color-border                #E0D5C1    #3A2C2C   focus = accent
 Semantic       error #B5432F / #D9734F   success = green   warning #9A6B1E / #D9B26A
 ```
@@ -95,20 +96,23 @@ Cursor                     --waveform-cursor     accent / vellum with a soft gol
 Silence region fill        --silence-fill        ink at 8%; selected 18%
 Cut region                 --cut-stripe          vermilion 45° hatch, error-colour edge lines
 Range selection            --selection-fill      gold at 24% / 20%
-Marker line                --marker-line         green
+Surah tones                --surah-wash-{a,b,f,sel} / --surah-ink-{a,b,f,sel}
+                                                 gold, green, quiet, selected (accent / vellum)
 ```
 
 [themeColors.ts](../../frontend/src/lib/themeColors.ts) resolves the canvas colours from
-the tokens, and the engine re-applies them when the theme changes. Markers show as
-marginal notes in Ibarra italic; prayer positions show in the prayer outline.
+the tokens, and the engine re-applies them when the theme changes. The surah tints and the
+band's tabs are DOM overlays that use the tokens directly; see
+[04-surah-view.md](04-surah-view.md).
 
 ## UX flow
 
 ```
 [ Library ] -> [ New recording ] -> [ Extracting... progress ] -> [ Editor ]
                                                                     |- overview + waveform + transport
-                                                                    |- Silence / Cut / Markers tabs
-                                                                    |- prayer outline
+                                                                    |- surah band + tints
+                                                                    |- Silence / Cut tabs
+                                                                    |- Surahs column
                                                                     |- export
 ```
 
@@ -117,5 +121,5 @@ marginal notes in Ibarra italic; prayer positions show in the prayer outline.
 - [01-layout-and-pages.md](01-layout-and-pages.md) — app shell, routes, editor layout.
 - [02-waveform-and-playback.md](02-waveform-and-playback.md) — waveform render + transport.
 - [03-silence-editing-ui.md](03-silence-editing-ui.md) — highlight, select, cut, save.
-- [04-markers-and-prayer-structure.md](04-markers-and-prayer-structure.md) — takbirs & positions.
+- [04-surah-view.md](04-surah-view.md) — surah band, Surahs column, keep / split a surah.
 - [05-state-and-api-integration.md](05-state-and-api-integration.md) — query, stores, jobs.

@@ -319,7 +319,7 @@ jobs:
 
           The app talks to the network only for:
           - **YouTube**, when you import a video by URL.
-          - **Hugging Face**, to download the speech model once, the first time phrase detection runs.
+          - **Hugging Face**, to download the speech model once, the first time you find surahs.
           - **GitHub API**, to check for a newer release (can be turned off in the app).
 
           There is no telemetry.

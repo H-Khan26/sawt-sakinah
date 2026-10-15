@@ -3,14 +3,16 @@ import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { SaveStatus } from "@/components/SaveStatus";
 import { Alert, EmptyState, WaveformLoader } from "@/components/ui";
+import { SeamLayer } from "@/features/cuts/SeamLayer";
 import { useEditHotkeys } from "@/features/cuts/useEditHotkeys";
 import { useEditRegions } from "@/features/cuts/useEditRegions";
 import { LowerBand } from "@/features/editor/LowerBand";
 import { RuledPage } from "@/features/editor/RuledPage";
 import { ExportButton } from "@/features/export/ExportButton";
-import { MarkerLayer } from "@/features/markers/MarkerLayer";
 import { ProjectSwitcher } from "@/features/projects/ProjectSwitcher";
 import { OpenSettingsButton } from "@/features/settings/OpenSettingsButton";
+import { SurahBand, SurahOverviewTints, SurahTints } from "@/features/surahs/SurahBand";
+import { useSurahHotkeys } from "@/features/surahs/useSurahView";
 import { TransportBar } from "@/features/transport/TransportBar";
 import { useTransportHotkeys } from "@/features/transport/useTransportHotkeys";
 import { CheckForUpdatesLink, mentionsUpdate } from "@/features/updates/UpdateBanner";
@@ -18,7 +20,10 @@ import { PlayheadDiamond } from "@/features/waveform/PlayheadDiamond";
 import { WaveformProvider } from "@/features/waveform/WaveformContext";
 import { WaveformOverview } from "@/features/waveform/WaveformOverview";
 import { WaveformView } from "@/features/waveform/WaveformView";
+import { useEditStore } from "@/stores/editStore";
+import { useSurahStore } from "@/stores/surahStore";
 import type { JobRecord, ProjectView } from "@/types/api";
+import { useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 /** Router state carried from the landing page (and across retries). */
@@ -167,8 +172,8 @@ export function EditorPage() {
 /**
  * The editor proper, mounted once the project is loaded. `WaveformProvider` owns the
  * wavesurfer instance and exposes it (via context) to the overview, the transport, the region
- * layer (silence + manual cuts + pending selection), and the marker layer, which slot in around
- * `WaveformView`.
+ * layer (silence + cut ranges + pending selection), the surah band and tints and the seam layer,
+ * which slot in around `WaveformView`.
  */
 function EditorWorkspace({ project }: { project: ProjectView }) {
   return (
@@ -180,16 +185,26 @@ function EditorWorkspace({ project }: { project: ProjectView }) {
 
 /**
  * The ruled page, top to bottom: the title cartouche with the save state and Export, the
- * overview, the waveform with its marginal notes, the transport, then the tools and the outline.
+ * overview, the waveform with the surah band in its margin, the transport, then the tools and the
+ * Surahs column.
  * When the page is fixed to the window the last row takes the remaining height.
  */
 function EditorBody({ project }: { project: ProjectView }) {
-  const ops = project.edl.operations;
+  const resetEdits = useEditStore((s) => s.reset);
+  const resetSurahs = useSurahStore((s) => s.reset);
+  // The selections and undo history belong to one project: reset them when it changes or the
+  // editor closes. Refetches of the same project keep them.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: project.id is the reset trigger
+  useEffect(() => resetEdits, [project.id, resetEdits]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: project.id is the reset trigger
+  useEffect(() => resetSurahs, [project.id, resetSurahs]);
+
   useTransportHotkeys();
+  useSurahHotkeys(project);
   // Single owner of the Regions plugin; cut hotkeys. Live playback-skip over cut spans lives in
   // the waveform engine (it owns the playback element), so no hook is mounted here for it.
-  useEditRegions(project.silences, ops);
-  useEditHotkeys(project.id, ops);
+  useEditRegions(project);
+  useEditHotkeys(project.id);
   return (
     <RuledPage className="grid grid-cols-[minmax(0,1fr)] content-start gap-y-4 px-8 pb-5 pt-6 group-[.is-fit]/page:grid-rows-[auto_auto_auto_auto_minmax(0,1fr)]">
       <div className="flex min-w-0 items-center justify-center gap-6">
@@ -197,11 +212,13 @@ function EditorBody({ project }: { project: ProjectView }) {
         <SaveStatus projectId={project.id} />
         <ExportButton project={project} />
       </div>
-      <WaveformOverview />
+      <WaveformOverview overlay={<SurahOverviewTints project={project} />} />
       <WaveformView
+        underlay={<SurahTints project={project} />}
         overlay={
           <>
-            <MarkerLayer markers={project.markers} structure={project.structure} />
+            <SurahBand project={project} />
+            <SeamLayer projectId={project.id} />
             <PlayheadDiamond />
           </>
         }

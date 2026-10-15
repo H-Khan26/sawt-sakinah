@@ -1,9 +1,10 @@
 """Per-user app preferences, stored as JSON in the user config directory.
 
 The desktop window's origin changes with its port, so preferences the UI used to keep in
-``localStorage`` live here instead, next to the app-level choices (update check, Whisper
-model, YouTube cookies). Reads tolerate a missing or corrupt file, and fall back to the
-default for any single value that is no longer valid; writes are atomic.
+``localStorage`` live here instead, next to the app-level choices (update check, YouTube
+cookies). Reads tolerate a missing or corrupt file, and fall back to the
+default for any single value that is no longer valid, and ignore keys they don't know;
+writes are atomic.
 
 YouTube cookies are either a browser to read them from (``cookies_browser``, one of
 ``schemas.COOKIE_BROWSERS``) or a cookies.txt file (``cookies_file``, an absolute path that
@@ -29,7 +30,6 @@ from ..config import CONFIG
 from ..fileio import replace_file
 from .schemas import (
     SILENCE_DETECTORS,
-    WHISPER_MODELS,
     check_cookie_browser,
     check_cookies_file,
     check_export_dir,
@@ -40,12 +40,6 @@ _NULLABLE = frozenset({"dismissed_update", "cookies_browser", "cookies_file", "e
 _MAX_VERSION_LEN = 64
 THEMES = frozenset({"system", "day", "night"})
 LIBRARY_VIEWS = frozenset({"icons", "list"})
-
-
-def _check_whisper_model(value: str) -> str:
-    if value not in WHISPER_MODELS:
-        raise ValueError(f"whisper_model must be one of: {', '.join(sorted(WHISPER_MODELS))}")
-    return value
 
 
 def _check_silence_detector(value: str) -> str:
@@ -78,7 +72,6 @@ class Preferences(BaseModel):
 
     update_check: bool = True
     dismissed_update: Optional[str] = None
-    whisper_model: str = CONFIG.phrases.model_size
     show_deleted: bool = False
     silence_detector: str = CONFIG.silence.detector
     cookies_browser: Optional[str] = None
@@ -88,11 +81,8 @@ class Preferences(BaseModel):
     landing: bool = True  # open on the dome landing at launch
     library_view: str = "icons"
     export_dir: Optional[str] = None  # None saves exports to Downloads
-
-    @field_validator("whisper_model")
-    @classmethod
-    def _check_model(cls, v: str) -> str:
-        return _check_whisper_model(v)
+    surah_view: bool = True  # tint the recognised surahs on the waveform
+    show_fatihah: bool = True  # include Al-Fatihah in the surah band and list
 
     @field_validator("cookies_browser")
     @classmethod
@@ -147,7 +137,6 @@ class PreferencesPatch(BaseModel):
 
     update_check: Optional[bool] = None
     dismissed_update: Optional[str] = None
-    whisper_model: Optional[str] = None
     show_deleted: Optional[bool] = None
     silence_detector: Optional[str] = None
     cookies_browser: Optional[str] = None
@@ -157,11 +146,8 @@ class PreferencesPatch(BaseModel):
     landing: Optional[bool] = None
     library_view: Optional[str] = None
     export_dir: Optional[str] = None
-
-    @field_validator("whisper_model")
-    @classmethod
-    def _check_model(cls, v: Optional[str]) -> Optional[str]:
-        return v if v is None else _check_whisper_model(v)
+    surah_view: Optional[bool] = None
+    show_fatihah: Optional[bool] = None
 
     @field_validator("cookies_browser")
     @classmethod

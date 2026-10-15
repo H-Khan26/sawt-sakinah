@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import threading
 import time
@@ -96,7 +97,9 @@ _STATE_LOCK = threading.Lock()
 _DOWNLOADING: dict[Path, threading.Event] = {}
 _IN_USE: dict[Path, int] = {}
 _DELETING: set[Path] = set()
-_IN_USE_TEXT = "is in use by a running or queued phrase detection."
+_IN_USE_TEXT = "is in use by a running or queued surah detection."
+# Shape of a catalog id (as ``config._MODEL_ID``): what a model directory may be named.
+_MODEL_DIR = re.compile(r"[a-z0-9][a-z0-9.-]{0,63}")
 
 
 # -- catalog ----------------------------------------------------------------------------
@@ -240,6 +243,38 @@ def delete(
         with _STATE_LOCK:
             _DELETING.discard(key)
     return path
+
+
+def sweep_retired(root: str | os.PathLike | None = None) -> list[Path]:
+    """Remove model directories under ``root`` whose name is no longer a catalog id.
+
+    Only directories shaped like a model id are considered (the app creates nothing else
+    there), and one that is downloading, in use or being deleted is left alone. A
+    directory that can't be removed (a file held open) stays for the next start. Returns
+    the removed paths.
+    """
+    base = Path(root) if root is not None else runtime.models_dir()
+    if not base.is_dir():
+        return []
+    known = set(CONFIG.whisper_models)
+    removed: list[Path] = []
+    for path in sorted(base.iterdir()):
+        if path.name in known or not path.is_dir() or not _MODEL_DIR.fullmatch(path.name):
+            continue
+        key = _key(path)
+        with _STATE_LOCK:
+            if key in _DOWNLOADING or _IN_USE.get(key) or key in _DELETING:
+                continue
+            _DELETING.add(key)
+        try:
+            shutil.rmtree(path)
+            removed.append(path)
+        except OSError:
+            pass
+        finally:
+            with _STATE_LOCK:
+                _DELETING.discard(key)
+    return removed
 
 
 def cancel_downloads() -> None:
@@ -486,6 +521,7 @@ __all__ = [
     "acquire",
     "in_use",
     "delete",
+    "sweep_retired",
     "cancel_downloads",
     "configure_hf_env",
     "download",
