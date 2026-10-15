@@ -5,17 +5,17 @@
  * (`SeamPopover`) to audition, restore or inspect the removed audio. Nothing is drawn in the full
  * view, where the removed ranges themselves are.
  *
- * Positioned like the marker layer: each seam's edited time projected to x under the live zoom
- * and scroll (`useMarkerLayout`), in `WaveformView`'s overlay slot. Where seams crowd, a chip
+ * Positioned like every waveform overlay: each seam's edited time projected to x under the live zoom
+ * and scroll (`useOverlayLayout`), in `WaveformView`'s overlay slot. Where seams crowd, a chip
  * whose label would run into the one before moves up a row, then shrinks to a small diamond, and
  * one too close even for that keeps only its line, so a dense, zoomed-out view stays legible.
  * The seam the paused playhead is parked at (after `,` / `.`, or an audition) and the open one
  * are drawn stronger.
  */
 import { Tooltip, type TooltipAlign } from "@/components/ui";
-import { useMarkerLayout } from "@/features/markers/useMarkerLayout";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { NOTES_HEIGHT } from "@/features/waveform/layout";
+import { useOverlayLayout } from "@/features/waveform/useOverlayLayout";
 import { cn } from "@/lib/cn";
 import { formatClockPrecise } from "@/lib/time";
 import { usePlaybackStore } from "@/stores/playbackStore";
@@ -99,7 +99,7 @@ function placeSeams(
 
 export function SeamLayer({ projectId }: { projectId: string }) {
   const { timeMap, cutSpans } = useWaveformContext();
-  const layout = useMarkerLayout();
+  const layout = useOverlayLayout();
   // Only while paused, so playback doesn't re-render the layer every frame.
   const parkedAt = usePlaybackStore((s) => (s.isPlaying ? null : s.sourceTime));
   const [openKey, setOpenKey] = useState<string | null>(null);

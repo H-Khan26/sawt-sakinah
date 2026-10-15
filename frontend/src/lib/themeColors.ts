@@ -4,7 +4,7 @@
  * wavesurfer draws to a `<canvas>`, which cannot resolve CSS custom properties, so the values are
  * read from the computed style of `<html>` for the theme in effect. {@link useThemeColors}
  * re-reads them when the resolved theme changes; consumers re-apply them to the renderer.
- * Overlays drawn as DOM styles (the cut hatch, marker lines, the overview box) use the tokens
+ * Overlays drawn as DOM styles (the cut hatch, the surah tints, the overview box) use the tokens
  * directly instead.
  */
 import { type ResolvedTheme, useResolvedTheme } from "@/theme/theme";

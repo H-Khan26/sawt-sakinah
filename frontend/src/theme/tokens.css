@@ -48,7 +48,17 @@
   --cut-stripe-selected: rgba(181, 67, 47, 0.62);
   --cut-dim: rgba(250, 246, 236, 0.6);
   --selection-fill: rgba(184, 149, 79, 0.24);
-  --marker-line: #2e4a3d;
+
+  /* Surah tones: a wash over the bars and an ink for the band's tab. Neighbouring surahs
+     alternate a and b, Al-Fatihah takes the quiet f, the selected surah the accent. */
+  --surah-wash-a: rgba(184, 149, 79, 0.17);
+  --surah-ink-a: #8a6a2c;
+  --surah-wash-b: rgba(46, 74, 61, 0.11);
+  --surah-ink-b: #2e4a3d;
+  --surah-wash-f: rgba(111, 97, 87, 0.08);
+  --surah-ink-f: #8a7b6e;
+  --surah-wash-sel: rgba(106, 30, 40, 0.11);
+  --surah-ink-sel: #6a1e28;
 
   /* Dome, lamps and wall */
   --dome-ground: #6a1e28;
@@ -150,7 +160,16 @@
   --cut-stripe-selected: rgba(217, 115, 79, 0.6);
   --cut-dim: rgba(42, 30, 32, 0.62);
   --selection-fill: rgba(201, 170, 102, 0.2);
-  --marker-line: #6e9a86;
+
+  /* Surah tones */
+  --surah-wash-a: rgba(201, 170, 102, 0.13);
+  --surah-ink-a: #d9b26a;
+  --surah-wash-b: rgba(110, 154, 134, 0.15);
+  --surah-ink-b: #8fb8a4;
+  --surah-wash-f: rgba(237, 227, 204, 0.06);
+  --surah-ink-f: #8a7b69;
+  --surah-wash-sel: rgba(237, 227, 204, 0.15);
+  --surah-ink-sel: #ede3cc;
 
   /* Dome, lamps and wall */
   --dome-ground: #1b1416;

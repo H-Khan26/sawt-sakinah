@@ -1,0 +1,49 @@
+/* Surah tones (tokens in theme/tokens.css): each tone class sets the wash and ink that the
+   band's tabs and the tints draw with. */
+.surah-tone-a {
+  --surah-wash: var(--surah-wash-a);
+  --surah-ink: var(--surah-ink-a);
+}
+.surah-tone-b {
+  --surah-wash: var(--surah-wash-b);
+  --surah-ink: var(--surah-ink-b);
+}
+.surah-tone-f {
+  --surah-wash: var(--surah-wash-f);
+  --surah-ink: var(--surah-ink-f);
+}
+.surah-tone-sel {
+  --surah-wash: var(--surah-wash-sel);
+  --surah-ink: var(--surah-ink-sel);
+}
+
+/* A passage tab in the notes margin: the wash with an ink rule along its top edge, heavier for
+   the selected surah and dashed for an unsure passage. */
+.surah-tab {
+  background: var(--surah-wash);
+  color: var(--surah-ink);
+  box-shadow: inset 0 2px 0 var(--surah-ink);
+}
+.surah-tab.surah-tone-sel {
+  box-shadow: inset 0 3px 0 var(--surah-ink);
+}
+.surah-tab.is-unsure {
+  box-shadow: none;
+  background-image: linear-gradient(to right, var(--surah-ink) 60%, transparent 60%);
+  background-size: 6px 2px;
+  background-repeat: repeat-x;
+}
+
+/* A passage's tint behind the bars, edged with faint ink. */
+.surah-tint {
+  background: var(--surah-wash);
+  border-inline: 1px solid color-mix(in srgb, var(--surah-ink) 45%, transparent);
+}
+.surah-tint.surah-tone-sel {
+  border-color: color-mix(in srgb, var(--surah-ink) 85%, transparent);
+}
+
+/* A tint on the overview strip: the wash alone. */
+.surah-wash {
+  background: var(--surah-wash);
+}

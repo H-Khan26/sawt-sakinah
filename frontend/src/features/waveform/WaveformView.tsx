@@ -1,9 +1,11 @@
 /**
- * The waveform surface on the ruled page: a margin for the markers' notes, then the bars between
- * a gold rule above and below with faint ruled lines behind them, and the time ruler beneath.
- * The optional `overlay` (the marker layer) spans the margin and the bars, anchored to the same
- * box the waveform draws into so time-positioned children line up with the audio; it is
- * click-through by default (children opt back in with `pointer-events`). The level scale sits at
+ * The waveform surface on the ruled page: a margin for the surah band, then the bars between a
+ * gold rule above and below with faint ruled lines behind them, and the time ruler beneath.
+ * The optional `overlay` (the surah band, seams, playhead diamond) spans the margin and the bars,
+ * anchored to the same box the waveform draws into so time-positioned children line up with the
+ * audio; it is click-through by default (children opt back in with `pointer-events`). The
+ * optional `underlay` (the surah tints) spans the bars beneath the waveform, so the bars draw
+ * over it. The level scale sits at
  * the bars' right edge. All state comes from `WaveformContext`.
  *
  * The wheel navigates it: Ctrl/⌘ + wheel (and a trackpad pinch, which arrives as one) zooms a step
@@ -103,7 +105,13 @@ function useWheelNavigation(ref: RefObject<HTMLElement>, wavesurfer: WaveSurfer 
   }, [ref, wavesurfer]);
 }
 
-export function WaveformView({ overlay }: { overlay?: ReactNode }) {
+export function WaveformView({
+  overlay,
+  underlay,
+}: {
+  overlay?: ReactNode;
+  underlay?: ReactNode;
+}) {
   const { containerRef, wavesurfer, isReady, isLoadingPeaks, error, scaleDb } =
     useWaveformContext();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -124,6 +132,15 @@ export function WaveformView({ overlay }: { overlay?: ReactNode }) {
           className="wf-ruled pointer-events-none absolute inset-x-0 opacity-60"
           style={bars}
         />
+        {isReady && underlay ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 overflow-hidden"
+            style={bars}
+          >
+            {underlay}
+          </div>
+        ) : null}
         {/* wavesurfer renders its canvases + timeline into this element. */}
         <div
           ref={containerRef}

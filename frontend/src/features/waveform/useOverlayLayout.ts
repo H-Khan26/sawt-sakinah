@@ -1,8 +1,8 @@
 /**
- * Tracks the waveform's current time-to-pixel mapping so the marker overlay can place each
- * marker at the right x. The frontend never remaps time (markers live on the original source
- * timeline); this only projects a source time onto a screen position under the live zoom and
- * horizontal scroll.
+ * Tracks the waveform's current time-to-pixel mapping so the overlays (the playhead diamond,
+ * the seams, the surah band and tints) can place things at the right x. It maps an edited time
+ * (project source times through the `TimeMap` first) onto a screen position under the live zoom
+ * and horizontal scroll.
  *
  * The rendered pixels-per-second is the *ground truth* read from the DOM (the wavesurfer
  * wrapper's `scrollWidth / duration`), not the store's `minPxPerSec` — when the waveform is
@@ -12,7 +12,7 @@
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { useEffect, useState } from "react";
 
-export interface MarkerLayout {
+export interface OverlayLayout {
   /** Rendered pixels per second of the waveform. */
   pxPerSec: number;
   /** Current horizontal scroll offset, in pixels. */
@@ -21,9 +21,9 @@ export interface MarkerLayout {
   width: number;
 }
 
-export function useMarkerLayout(): MarkerLayout | null {
+export function useOverlayLayout(): OverlayLayout | null {
   const { wavesurfer, isReady } = useWaveformContext();
-  const [layout, setLayout] = useState<MarkerLayout | null>(null);
+  const [layout, setLayout] = useState<OverlayLayout | null>(null);
 
   useEffect(() => {
     if (!wavesurfer || !isReady) return;

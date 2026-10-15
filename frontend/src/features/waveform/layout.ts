@@ -6,5 +6,5 @@ export const WAVE_HEIGHT = 310;
 export const TIMELINE_HEIGHT = 24;
 /** The whole-recording overview above the waveform. */
 export const OVERVIEW_HEIGHT = 44;
-/** The margin above the top rule that holds the markers' notes. */
+/** The margin above the top rule that holds the surah band. */
 export const NOTES_HEIGHT = 30;

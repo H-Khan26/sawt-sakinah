@@ -1,7 +1,7 @@
 /**
  * Source <-> edited time mapping for the collapsed ("deleted portions hidden") waveform view.
  *
- * The whole editor works in *source* time — the EDL, markers, silences, and cut authoring are
+ * The whole editor works in *source* time — the EDL, surah passages, silences, and cut authoring are
  * all source seconds. Only the waveform *presentation* collapses cut spans out of the timeline.
  * A `TimeMap` is the bridge: it projects a source time onto the contiguous edited timeline that
  * the collapsed waveform draws, and inverts an edited time back to source for seeking.

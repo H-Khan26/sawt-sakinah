@@ -4,7 +4,7 @@ import { useWaveformContext } from "@/features/waveform/WaveformContext";
  * Global transport shortcuts: Space = play/pause, ArrowLeft / ArrowRight = skip back / forward
  * 5s. Ignored while the user is typing in a form field or contenteditable so the keys keep their
  * normal meaning there. Reads the live instance from the waveform context. Zoom is Ctrl/⌘ +
- * wheel on the waveform; `[` / `]` step rak'ahs (see `useRakahHotkeys`).
+ * wheel on the waveform; `[` / `]` step through surah passages (see `useSurahHotkeys`).
  */
 import { useEffect } from "react";
 import { SEEK_STEP_SEC, seekBy, togglePlay } from "./transportControls";

@@ -2,8 +2,8 @@
  * The level scale at the waveform's right edge: the level of full height in dBFS, with ticks at
  * half and quarter height. The bars are linear in amplitude, so those sit 6 and 12 dB below full
  * height. The scale is fixed per recording (see `service/waveform.py`), which the tooltip on the
- * top label says, so editors don't read it as a universal level. It renders beneath the marker
- * layer, so marker handles stay on top.
+ * top label says, so editors don't read it as a universal level. It renders beneath the overlay
+ * layer, so the surah band and seam chips stay on top.
  */
 import { Tooltip } from "@/components/ui";
 import { WAVE_HEIGHT } from "./layout";

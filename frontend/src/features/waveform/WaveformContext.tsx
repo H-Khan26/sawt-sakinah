@@ -1,6 +1,6 @@
 /**
  * Owns the waveform engine (renderer + playback) and shares it with the transport, the region
- * layer (silence + cuts + selection), and the marker layer, so features reach it without
+ * layer (silence + cuts + selection), and the surah band and tints, so features reach it without
  * prop-drilling. Only low-frequency facts live here (the instance, ready/error state, the
  * playback `controller`, the current source<->edited `TimeMap`, the merged cut ranges and the
  * decoded source levels); the per-frame playhead
