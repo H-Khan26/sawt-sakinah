@@ -63,16 +63,18 @@ def normalize_cuts(
 ) -> list[EditOperation]:
     """Return ``operations`` with the ``cut`` spans sorted, merged and clamped.
 
-    Overlapping or touching cuts merge, so the removed audio is a set of disjoint spans;
-    with a known ``duration`` each is clamped to ``[0, duration]`` and empty ones drop.
-    The other ops (and any open-ended cut) follow the cuts in their original order.
+    A cut given end-first is read as the same span. Overlapping or touching cuts merge,
+    so the removed audio is a set of disjoint spans; with a known ``duration`` each is
+    clamped to ``[0, duration]`` and empty ones drop. The other ops (and any open-ended
+    cut) follow the cuts in their original order.
     """
     hi = duration if duration and duration > 0 else float("inf")
-    spans = sorted(
-        (max(0.0, op.start), min(hi, op.end))
+    ordered = (
+        sorted((op.start, op.end))
         for op in operations
         if op.type == "cut" and op.end is not None
     )
+    spans = sorted((max(0.0, a), min(hi, b)) for a, b in ordered)
     merged: list[tuple[float, float]] = []
     for a, b in spans:
         if b <= a:
