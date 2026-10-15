@@ -5,12 +5,19 @@
 > (code in `frontend/`), plus a small backend **marker layer** (Phase B) that Phases 6-7
 > depend on. Where the planning docs (00-05) and the live backend disagree, **the backend
 > wins** — deltas are tabulated.
+>
+> **Later change:** the takbir markers, phrase detection and prayer outline built in
+> Phases B and 6 were replaced by the **Surah view** (surah recognition, the surah band and
+> the Surahs column; see [04-surah-view.md](04-surah-view.md)). Those phase sections are kept
+> as the build record; the orientation, contract and file map below describe the code as it
+> is now.
 
 ## Orientation
 
 Sawt Sakinah is a single-purpose audio editor for Quran recitation: paste a YouTube link,
 the backend extracts the audio, the UI renders an interactive waveform, the user removes
-silent gaps and reviews detected takbir/prayer-position markers, then exports. The
+silent gaps and finds which surahs are recited (keeping or splitting off a surah), then
+exports. The
 frontend is a **view + control surface**; all heavy work (extraction, detection, render)
 lives in the Python engine. See [00-overview.md](00-overview.md) for the vision.
 
@@ -46,7 +53,7 @@ Override the API target with `SAWT_API_URL`. Quality gates before any commit:
 - **Theme:** "Mushaf × Mihrab", one layout by day and by night. Accent oxblood `#6A1E28`
   by day, gold `#C9AA66` at night. See [Theme tokens](#theme-tokens).
 - **Arabic type:** Amiri (logo + headings, echoes Ibarra Real Nova) + IBM Plex Sans
-  Arabic (UI labels + marker chips, echoes Jost).
+  Arabic (UI labels, echoes Jost).
 - **Shell:** the library under the Sanctuary dome (`LibraryShell`); the editor beside an
   88 px binding rail (`EditorShell`).
 - **Scope (v1):** a single in-flight recording (link input -> `/p/:projectId` editor ->
@@ -66,8 +73,9 @@ properties, Biome. Hard conventions, enforced by tooling — follow them in ever
   [endpoints.ts](../../frontend/src/api/endpoints.ts) `queryKeys`); local editor state
   (selection, playhead, zoom, in-progress EDL, undo/redo) lives in Zustand stores under
   `src/stores/`. Never duplicate server state into a store.
-- **Waveform regions/markers are a projection of app state**, reconciled in effects keyed
-  on the silence/marker lists — not their own source of truth.
+- **Waveform regions and overlays are a projection of app state**, reconciled in effects
+  keyed on the silence and cut lists (regions) or rendered from the project (the surah
+  band and tints) — not their own source of truth.
 - **Styling:** only the tokens below; no hex in components. Selected = accent;
   destructive = `danger` (the error token).
 - **Errors:** the client throws a typed [`ApiError`](../../frontend/src/api/client.ts)
@@ -83,11 +91,11 @@ properties, Biome. Hard conventions, enforced by tooling — follow them in ever
 | generic routes | mounted at **root** (`/projects`, `/jobs`), no `/api`; writes return `202` | [app.py](../../sawt_sakinah/service/app.py) |
 | FastAPI serves the SPA | **wired** (Phase 7): SPA served at `/` with a deep-link catch-all when `frontend/dist` exists; API routes take precedence; still no CORS | [app.py](../../sawt_sakinah/service/app.py) |
 | `SilenceSegment.mean_db` | optional; `duration` is a computed field (present in JSON) | [segments.py](../../sawt_sakinah/models/segments.py) |
-| reference clips drive detection | `references` is **ignored by the Whisper backend** (reserved for a planned embeddings detector); the reference-clip UI is **dropped from v1** | [phrases.py](../../sawt_sakinah/detection/phrases.py) |
-| marker / structure editing API | **`PUT /projects/{id}/markers`** (Phase B) replaces the marker list and re-derives structure server-side | [routes/projects.py](../../sawt_sakinah/service/routes/projects.py) |
+| reference clips drive detection | *retired:* phrase detection and its `references` payload were removed with the Surah view | — |
+| marker / structure editing API | *retired:* `PUT /projects/{id}/markers` (Phase B) was removed with the Surah view; surahs are recognised by `POST /projects/{id}/detect/surahs` and not edited | [routes/projects.py](../../sawt_sakinah/service/routes/projects.py) |
 
-The reference-clip row remains inert (dropped from v1); the SPA-serving and marker-API rows
-are now resolved by Phases 7 and B.
+The SPA-serving row is resolved by Phase 7; the reference-clip and marker-API rows are
+retired.
 
 ## API contract
 
@@ -101,10 +109,11 @@ POST /projects                          { url, audio_format?, audio_quality? }
 GET  /jobs/{job_id}                      -> JobRecord
 GET  /projects/{id}                      -> ProjectView    (404 until extraction succeeds)
 POST /projects/{id}/detect/silence       SilenceParams        -> 202 { job_id }
-POST /projects/{id}/detect/phrases       PhraseRequest        -> 202 { job_id }
+POST /projects/{id}/detect/surahs        SurahRequest         -> 202 { job_id }   # 409 without the model
+GET  /quran/surahs                       -> SurahInfo[]
 PUT  /projects/{id}/edl                  { operations[] }     -> EditDecisionList
-PUT  /projects/{id}/markers              { markers[] }        -> ProjectView   # re-derives structure
-POST /projects/{id}/export               ExportRequest        -> 202 { job_id }
+POST /projects/{id}/export               ExportRequest        -> 202 { job_id }   # embed_chapters
+POST /projects/{id}/split                { ranges, name? }    -> 202 { project_id, job_id }
 GET  /projects/{id}/audio                -> audio stream (HTTP range)
 GET  /projects/{id}/waveform             -> WaveformPeaks
 GET  /projects/{id}/exports/{artifactId} -> file download
@@ -113,9 +122,9 @@ GET  /projects/{id}/exports/{artifactId} -> file download
 Wire shapes mirror the pydantic models exactly
 ([schemas.py](../../sawt_sakinah/service/schemas.py),
 [models/](../../sawt_sakinah/models/)): `ProjectView`, `AudioSourceView`,
-`SilenceSegment`, `Marker`, `PrayerPosition`, `EditOperation` (`cut|keep|fade|marker`),
+`SilenceSegment`, `SurahMap`/`SurahPassage`, `EditOperation` (`cut|keep|fade|marker`),
 `EditDecisionList`, `ExportArtifactView`, `JobRecord`
-(`kind: extract|detect_silence|detect_phrases|export`). Sync failures return
+(`kind: extract|detect_silence|detect_surahs|export|split|download_model|...`). Sync failures return
 `{ error, detail }` with a typed status (400/403/404/422/451/502, table in
 [app.py](../../sawt_sakinah/service/app.py)); async failures surface in
 `JobRecord.error` / `error_type`.
@@ -131,8 +140,9 @@ success) and the [`jobToViewState`](../../frontend/src/api/viewState.ts) mapper
 
 - **extraction** — the yt-dlp hook dict (`status`, `downloaded_bytes`, `total_bytes`,
   `eta`, ...).
-- **silence / phrases / export** — `{ stage, status }` (see the `*_worker` functions in
-  [workers.py](../../sawt_sakinah/service/workers.py)).
+- **silence / surahs / export** — `{ stage, status }` (see the `*_worker` functions in
+  [workers.py](../../sawt_sakinah/service/workers.py)); surah matching also reports
+  `{ stage: "transcribing", done_sec, total_sec }` and then `{ stage: "matching" }`.
 
 ## Current frontend file map (the core from Phases 0-4)
 
@@ -194,7 +204,8 @@ frontend/
       landing/              Sanctuary: dome landing and the library header
       projects/             NicheCard, FihristList, ProjectMenu, NewRecordingSheet,
                             ImportAnywhere, RenameDialog, DeleteDialog, ProjectSwitcher
-      editor/               RuledPage, LowerBand (Silence/Cut/Markers tabs + outline)
+      editor/               RuledPage, LowerBand (Silence/Cut tabs + the Surahs column)
+      surahs/               surah band and tints, Surahs column, matching (see 04-surah-view.md)
     stores/
       playbackStore.ts      currentTime/duration/isPlaying/rate/zoom; fed from wavesurfer events;
                             selector-subscribe to avoid full-tree re-renders per frame
@@ -221,7 +232,8 @@ text. Backgrounds, text, and semantic colours (error/success/warning) are listed
 --color-accent-hover  #4F161D / #DCC791   button hover / active
 --color-accent-soft   accent at 7% / 16%  subtle backgrounds; info alerts
 --color-on-accent     #FBF8F1 / #2A1E20   text on accent fills
---waveform-* / --silence-fill* / --cut-stripe* / --selection-fill / --marker-line   waveform and region tokens
+--waveform-* / --silence-fill* / --cut-stripe* / --selection-fill   waveform and region tokens
+--surah-wash-{a,b,f,sel} / --surah-ink-{a,b,f,sel}                surah tones (band, tints)
 ```
 
 ## Fonts
@@ -407,7 +419,10 @@ the computed peaks are always returned.
 **References:** [02-waveform-and-playback.md](02-waveform-and-playback.md);
 [waveform.py](../../sawt_sakinah/service/waveform.py).
 
-## Phase B — Backend marker layer  *(done)*
+## Phase B — Backend marker layer  *(done; superseded)*
+
+> Superseded by surah recognition: the markers API and marker chapters were removed, and
+> export writes the accepted surah passages as chapters (`embed_chapters`).
 
 **Goal:** the two backend changes Phases 6-7 depend on — persist/edit markers and embed
 them on export. Small additions following the `put_edl` / `render` patterns.
@@ -468,7 +483,13 @@ non-destructive EDL, then export.
 [edl.py](../../sawt_sakinah/models/edl.py) (`EditOperation` is `cut|keep|fade|marker`,
 `end` optional); `SilenceParams` in [schemas.py](../../sawt_sakinah/service/schemas.py).
 
-## Phase 6 — Markers & prayer structure  *(done)*
+## Phase 6 — Markers & prayer structure  *(done; superseded)*
+
+> Superseded by the **Surah view** ([04-surah-view.md](04-surah-view.md)): `features/markers/`
+> and `markerStore` were removed, `useMarkerLayout` became
+> `features/waveform/useOverlayLayout.ts`, the Markers tab and the prayer outline gave way to
+> the Surahs column, and `[` / `]` now step through surah passages. The section below records
+> what was built at the time.
 
 **Goal:** surface detected takbirs/phrases as timeline markers, render the rak'ah/position
 outline, and let the user navigate **and correct** it with persisted edits.
@@ -509,7 +530,7 @@ markers + structure). `WaveformView` gained an `overlay` slot anchored to the wa
 - **Dropped from v1:** the reference-clip "Use as reference" affordance (the `references`
   payload is inert on the Whisper backend).
 
-**References:** [04-markers-and-prayer-structure.md](04-markers-and-prayer-structure.md);
+**References:** [04-surah-view.md](04-surah-view.md) (its successor);
 [audio/03-surah-recognition.md](../audio/03-surah-recognition.md);
 [markers.py](../../sawt_sakinah/models/markers.py) (`Marker.id` is derived from
 `type`+`time`; `duration` is computed; `source` is `auto|user`),
@@ -527,7 +548,8 @@ it only while open so no job polls after close) and `ExportModal.tsx` (`format` 
 artifact id from the job result and offer `exportDownloadUrl` as a native download link).
 Wired into the editor's title row beside the cartouche. Because Phase B sources export chapters from
 `project.markers`, whatever the user has after Phase 6 edits is exactly what `embed_markers`
-embeds — no extra bridging.
+embeds — no extra bridging. *(Since the Surah view, the option is "Add surahs as chapters",
+`embed_chapters`, which writes the accepted surah passages.)*
 
 **Built (backend static mount):** `_mount_spa` in
 [app.py](../../sawt_sakinah/service/app.py) runs after `include_router`, so API routes win.
@@ -552,5 +574,6 @@ Reachable as `python -m sawt_sakinah desktop`, `python -m sawt_sakinah.desktop`,
 [export.py](../../sawt_sakinah/service/routes/export.py) and `export_worker` in
 [workers.py](../../sawt_sakinah/service/workers.py) (returns `{ artifact_id }`);
 `ExportRequest`/`ExportArtifactView` in
-[schemas.py](../../sawt_sakinah/service/schemas.py). `embed_markers` default is `true`
-(`CONFIG.editing` in [defaults.yaml](../../sawt_sakinah/config/defaults.yaml)).
+[schemas.py](../../sawt_sakinah/service/schemas.py). `embed_markers` default was `true`
+(`CONFIG.editing` in [defaults.yaml](../../sawt_sakinah/config/defaults.yaml)); it is now
+`embed_chapters`.

@@ -50,7 +50,7 @@ detection output. Every tuning knob lives in one strict config file,
 - [01-layout-and-pages.md](frontend/01-layout-and-pages.md): shell, routes, editor layout.
 - [02-waveform-and-playback.md](frontend/02-waveform-and-playback.md): waveform rendering and transport.
 - [03-silence-editing-ui.md](frontend/03-silence-editing-ui.md): highlight, select, cut, save.
-- [04-markers-and-prayer-structure.md](frontend/04-markers-and-prayer-structure.md): markers and positions.
+- [04-surah-view.md](frontend/04-surah-view.md): surah band and tints, the Surahs column, keep / split a surah.
 - [05-state-and-api-integration.md](frontend/05-state-and-api-integration.md): queries, jobs, stores.
 - [06-implementation-plan.md](frontend/06-implementation-plan.md): the build record and current file map.
 

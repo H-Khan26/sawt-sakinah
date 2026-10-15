@@ -12,14 +12,15 @@ against the engine's contracts.
 ## Data sources, split cleanly
 
 - **Server state** (owned by backend, fetched): `Project`, `AudioSource`,
-  `SilenceSegment[]`, `Marker[]`, `PrayerPosition[]`, job status. Use
+  `SilenceSegment[]`, the `SurahMap` (`project.surahs`), the surah table, the model
+  catalog, preferences, job status. Use
   `@tanstack/react-query` for fetching, caching, and refetch.
 - **Local editor state** (owned by UI, ephemeral until saved): current selection,
   playhead, zoom, in-progress EDL, panel/tab state. Use React state, or a small store
   (Context + reducer, or Zustand) for state shared across panels. Keep the
   high-frequency playhead/current-time value in its own slice so it doesn't re-render
   unrelated UI (see [02-waveform-and-playback.md](02-waveform-and-playback.md)).
-- **Source of truth rule:** the waveform's regions/markers are a **projection of app
+- **Source of truth rule:** the waveform's regions and overlays are a **projection of app
   state**, not their own state. Edits update state → state reconciles the waveform.
 
 ## API client
@@ -31,9 +32,11 @@ createProject(url)                  POST /projects               -> { project_id
 getJob(jobId)                       GET  /jobs/{id}              -> { state, progress, error? }
 getProject(id)                      GET  /projects/{id}          -> Project
 detectSilence(id, params)           POST /projects/{id}/detect/silence  -> { job_id }
-detectPhrases(id, params, refs)     POST /projects/{id}/detect/phrases  -> { job_id }
+detectSurahs(id, body)              POST /projects/{id}/detect/surahs   -> { job_id }  (409 without the model)
+listSurahs()                        GET  /quran/surahs           -> SurahInfo[]
 putEdl(id, operations)              PUT  /projects/{id}/edl
 exportAudio(id, params)             POST /projects/{id}/export   -> { job_id } -> artifact
+splitProject(id, { ranges, name })  POST /projects/{id}/split    -> { project_id, job_id }
 audioUrl(id) / waveformUrl(id)      GET  streaming + peaks
 ```
 
@@ -46,9 +49,13 @@ Extraction, detection, and export are jobs, not instant responses:
 
 - Kick off → receive `job_id` → **poll `GET /jobs/{id}`** with React Query
   `refetchInterval` until `state` is done/failed (or use WebSocket/SSE if the backend
-  offers it). Drive `Progress` UI from the job's `progress` field.
+  offers it). Drive `Progress` UI from the job's `progress` field: a byte ratio for
+  downloads, a seconds ratio (`done_sec / total_sec`) while surah matching transcribes
+  (`JobProgress` reads both).
 - On completion, invalidate/refetch the affected project query so the waveform, silence
-  list, and markers update.
+  list, and surahs update.
+- A job a panel must find again after the user leaves the recording keeps its id in a
+  store: the surah-matching job id is kept per project in `surahStore`.
 - Map job states to the editor's view states (extracting / analyzing / ready /
   exporting) from [01-layout-and-pages.md](01-layout-and-pages.md).
 
@@ -61,13 +68,14 @@ Extraction, detection, and export are jobs, not instant responses:
 
 ```
 playback:   { isPlaying, currentTime, duration, rate, zoom }
-selection:  { selectedSilenceIds, activeMarkerId }
+selection:  { selectedSilenceIds, selectedSurah }
 edl:        { operations[], undoStack, redoStack }
-detection:  { silenceParams, phraseParams }
+detection:  { silenceParams, surahJobs }
+prefs:      { showDeleted, silenceDetector, surahView, showFatihah, theme, ... }
 ui:         { activePanel, modals }
 ```
 
-Server data (project, silences, markers, jobs) stays in React Query caches, not these
+Server data (project, silences, surahs, jobs) stays in React Query caches, not these
 stores — avoid duplicating server state into local stores (a common source of drift).
 
 ## Error handling

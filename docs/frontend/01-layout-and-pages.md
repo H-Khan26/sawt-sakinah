@@ -62,31 +62,32 @@ without scrolling and the lower band scrolls internally; below that the page scr
 +------+------------------------------------------------------------+
 | rail | [ title cartouche / switcher ]   save state   Export        |
 |      | overview strip (whole recording, visible range, zoom)      |
-|      | marginal notes (markers)                                   |
+|      | surah band (a named tab per passage)                       |
 |      |                 WAVEFORM (full width)                      |
-|      |     silences, cuts and markers drawn on it                 |
+|      |     silences, cuts and surah tints drawn on it             |
 |      | transport: back 5 s, play, forward 5 s, clock, speed, ...  |
 |      | ------------------------ gold rule ----------------------- |
-|      | Silence | Cut | Markers (ribbon tabs)  |  prayer outline   |
+|      | Silence | Cut (ribbon tabs)          |  Surahs column    |
 |      |               tools, 60%               |       40%         |
 +------+------------------------------------------------------------+
 ```
 
 - The **waveform spans full width** and is the focal point.
 - The lower band ([LowerBand.tsx](../../frontend/src/features/editor/LowerBand.tsx))
-  keeps the tool panels mounted across tab switches; the prayer outline sits beside them.
+  keeps the tool panels mounted across tab switches; the Surahs column
+  ([04-surah-view.md](04-surah-view.md)) sits beside them.
 - States to handle explicitly: **extracting** (progress, no waveform yet),
   **analyzing** (waveform shown, detection running with a subtle loading state),
   **ready** (interactive), **exporting** (progress + result).
 
 ## Components (styled to the design tokens)
 
-`Button`, `SegmentedControl`, `Tabs`, `Badge`, `Modal`/`SimpleModal`, `Alert`, `Toast`,
+`Button`, `SegmentedControl`, `Switch`, `Tabs`, `Badge`, `Modal`/`SimpleModal`, `Alert`, `Toast`,
 `Tooltip`, `Slider`, `Input`, `Progress`, `EmptyState`, `WaveformLoader` — built in React
 against the design tokens. Ornament components (niche,
 cartouche, ribbon tab, Rub el Hizb star, cetvel frame, dome, lattice) live in
-`src/components/ornament/`. The waveform, transport, silence, cut and markers panels, and
-the prayer outline are feature components (see the other docs).
+`src/components/ornament/`. The waveform, transport, silence and cut panels, the surah band
+and the Surahs column are feature components (see the other docs).
 
 ## Empty / error states
 
@@ -95,4 +96,4 @@ the prayer outline are feature components (see the other docs).
   error from the backend and a retry.
 - Unknown or still-extracting recording on a deep link → `EmptyState` with "Back to
   library".
-- No silences / no markers detected → inline empty messaging in each panel.
+- No silences detected / no surahs recognised → inline empty messaging in each panel.
