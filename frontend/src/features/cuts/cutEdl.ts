@@ -87,17 +87,27 @@ export function restoreRange(ops: EditOperation[], start: number, end: number): 
 }
 
 /**
- * Trim everything outside `[start, end]` — "keep only this range". Expressed as cuts of the head
- * `[0, start]` and the tail `[end, duration]` rather than a `keep` op, so the whole live pipeline
- * (collapse map, playback skip, silence clipping) — which reasons over cut ranges — reflects it
- * without change. The render engine treats these cuts identically to a keep span.
+ * Cut everything outside `ranges` — "keep only these ranges", e.g. a surah's passages, which then
+ * play back to back. Expressed as cuts of the complement of the merged ranges within
+ * `[0, duration]` rather than `keep` ops, so the whole live pipeline (collapse map, playback skip,
+ * silence clipping) — which reasons over cut ranges — reflects it without change. The render
+ * engine treats these cuts identically to keep spans. Audio already cut inside the ranges stays cut.
  */
+export function keepOnlyRanges(
+  ops: EditOperation[],
+  ranges: Span[],
+  duration: number,
+): EditOperation[] {
+  const kept = mergeSpans(ranges.map(([a, b]) => ordered(a, b)));
+  return cutRanges(ops, subtractSpans([[0, duration]], kept, MIN_CUT_DURATION));
+}
+
+/** Trim everything outside `[start, end]` (either order) — "keep only this range". */
 export function keepOnly(
   ops: EditOperation[],
   start: number,
   end: number,
   duration: number,
 ): EditOperation[] {
-  const [a, b] = ordered(start, end);
-  return cutRange(cutRange(ops, 0, Math.max(0, a)), Math.min(duration, b), duration);
+  return keepOnlyRanges(ops, [[start, end]], duration);
 }

@@ -12,7 +12,7 @@ import { FieldLabel } from "@/features/editor/FieldLabel";
 import { ExportModal } from "@/features/export/ExportModal";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import type { TimeMap } from "@/features/waveform/timeMap";
-import { formatClockPrecise, parseClock } from "@/lib/time";
+import { formatClock, formatClockPrecise, parseClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
 import type { ProjectView } from "@/types/api";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -370,7 +370,12 @@ export function CutPanel({ project }: { project: ProjectView }) {
         <ExportModal project={project} range={range} onClose={() => setExportOpen(false)} />
       )}
       {splitOpen && range && (
-        <SplitModal project={project} range={range} onClose={() => setSplitOpen(false)} />
+        <SplitModal
+          project={project}
+          ranges={[[range.start, range.end]]}
+          defaultName={`${project.name} (${formatClock(range.start)}–${formatClock(range.end)})`}
+          onClose={() => setSplitOpen(false)}
+        />
       )}
     </div>
   );

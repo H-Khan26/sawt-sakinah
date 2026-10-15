@@ -12,9 +12,10 @@
  * `silenceView`). Region drawing is owned by `useEditRegions` (mounted once in the editor), not
  * here.
  */
-import { Button, useToast } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { useCutModel } from "@/features/cuts/cutModel";
 import { useEdlEditor } from "@/features/cuts/useEdlEditor";
+import { useUndoToast } from "@/features/cuts/useUndoToast";
 import { formatClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
 import type { ProjectView, SilenceSegment } from "@/types/api";
@@ -24,9 +25,6 @@ import { SilenceControls, useSilenceDetection } from "./SilenceControls";
 import { SilenceList } from "./SilenceList";
 import { removeSilences, restoreSilences, silenceStats } from "./edl";
 import { silenceKey } from "./regions";
-
-/** How long the Undo toast stays up after "Remove all silence". */
-const UNDO_TOAST_MS = 8000;
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -39,7 +37,7 @@ export function SilencePanel({ project }: { project: ProjectView }) {
   const silences = project.silences;
 
   const editor = useEdlEditor(projectId);
-  const { toast } = useToast();
+  const undoToast = useUndoToast(projectId);
   const detection = useSilenceDetection({
     projectId,
     hasDetected: silences.length > 0,
@@ -58,10 +56,6 @@ export function SilencePanel({ project }: { project: ProjectView }) {
     lastSilences.current = silences;
     clearSelection();
   }, [silences, clearSelection]);
-
-  // The toast's Undo runs after later renders; it reads the editor from a ref.
-  const editorRef = useRef(editor);
-  editorRef.current = editor;
 
   // Detected silences clipped to the audio content cuts left: silences (or parts of them)
   // inside deleted recitation drop out of the list, stats, and actions — regardless of whether
@@ -105,21 +99,7 @@ export function SilencePanel({ project }: { project: ProjectView }) {
       `Remove ${plural(remaining, "silence", "silences")}`,
     );
     clearSelection();
-    if (!removal) return;
-    toast(`Removed ${plural(remaining, "silence", "silences")}.`, "info", UNDO_TOAST_MS, {
-      label: "Undo",
-      onClick: () => {
-        // Undo only while this removal is still the latest edit; a later edit owns the stack top.
-        // Undo and redo keep the removal's id, so it is found again after either.
-        const { undoStack, redoStack } = useEditStore.getState();
-        if (redoStack.at(-1)?.id === removal.id) return; // already undone
-        if (undoStack.at(-1)?.id !== removal.id) {
-          toast("Later edits came after this removal. Use Undo in the transport row.", "warning");
-          return;
-        }
-        editorRef.current.undo();
-      },
-    });
+    if (removal) undoToast(`Removed ${plural(remaining, "silence", "silences")}.`, removal);
   };
 
   const hasSelection = selected.count > 0;
