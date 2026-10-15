@@ -61,7 +61,10 @@ markers are drawn onto. Press-and-play must feel immediate.
 
 ## Audio source & peaks
 
-- Stream audio from `GET /projects/{id}/audio` (HTTP range requests for seek).
+- Stream audio from `GET /projects/{id}/audio` (HTTP range requests for seek). Where the
+  webview plays MP3 in MP4 (Chromium), request `?container=mp4`: the same MP3 frames in an
+  MP4 container, which seeks exactly. A bare VBR MP3 seeks by estimate, so after a seek
+  the audio heard can drift seconds from `currentTime` and cuts land in the wrong place.
 - Prefer `GET /projects/{id}/waveform` returning **precomputed peak data** so the
   component renders without downloading/decoding the whole file. If peaks aren't
   available yet, fall back to client-side decoding for short files.

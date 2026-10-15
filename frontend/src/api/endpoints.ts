@@ -125,8 +125,21 @@ export const downloadModel = (modelId: string) =>
 export const deleteModel = (modelId: string) =>
   request<void>(`/models/${encodeURIComponent(modelId)}`, { method: "DELETE" });
 
+let mp3InMp4: boolean | undefined;
+
+/**
+ * Whether the webview plays MP3 frames in an MP4 container (Chromium/WebView2 does). There
+ * the editor streams the server's MP4 copy, which seeks exactly; a bare VBR MP3 seeks by
+ * estimate and can play audio seconds away from `currentTime`.
+ */
+export function canPlayMp3InMp4(): boolean {
+  mp3InMp4 ??= document.createElement("audio").canPlayType('audio/mp4; codecs="mp4a.6B"') !== "";
+  return mp3InMp4;
+}
+
 /** Relative URLs for media the browser loads directly (not via `request`). */
-export const audioUrl = (projectId: string) => `/projects/${projectId}/audio`;
+export const audioUrl = (projectId: string, mp4: boolean) =>
+  `/projects/${projectId}/audio${mp4 ? "?container=mp4" : ""}`;
 export const exportDownloadUrl = (projectId: string, artifactId: string) =>
   `/projects/${projectId}/exports/${artifactId}`;
 

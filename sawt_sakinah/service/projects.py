@@ -7,6 +7,7 @@ Each project owns a directory::
       audio/                  # extracted mp3 + 16 kHz working-copy wav
       exports/<artifact_id>.<ext>
       waveform.json           # cached peaks (lazy)
+      playback.mp4            # the mp3's frames in MP4, for exact seeking (lazy)
 
 Writes go through a temp file and an atomic replace so a crash mid-write never leaves a
 truncated ``project.json``, and ``update`` holds a per-project lock around the whole
@@ -174,6 +175,9 @@ class ProjectStore:
 
     def waveform_path(self, project_id: str) -> Path:
         return self.project_dir(project_id) / "waveform.json"
+
+    def playback_path(self, project_id: str) -> Path:
+        return self.project_dir(project_id) / "playback.mp4"
 
     def _json_path(self, project_id: str) -> Path:
         return self.project_dir(project_id) / "project.json"

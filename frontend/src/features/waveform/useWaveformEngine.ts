@@ -14,7 +14,7 @@
  * Everything outside this module addresses playback in *source* time via the returned
  * `controller`; the source<->edited mapping lives here and in `timeMap.ts` alone.
  */
-import { audioUrl } from "@/api/endpoints";
+import { audioUrl, canPlayMp3InMp4 } from "@/api/endpoints";
 import { useThemeColors } from "@/lib/themeColors";
 import { formatClock, formatTimelineTime } from "@/lib/time";
 import { ZOOM_MAX, clampZoom, usePlaybackStore } from "@/stores/playbackStore";
@@ -219,7 +219,8 @@ export function useWaveformEngine({
   useEffect(() => {
     const audio = new Audio();
     audio.preload = "auto";
-    audio.src = audioUrl(projectId);
+    let mp4 = canPlayMp3InMp4();
+    audio.src = audioUrl(projectId, mp4);
     audio.playbackRate = usePlaybackStore.getState().rate;
     audioRef.current = audio;
 
@@ -242,7 +243,22 @@ export function useWaveformEngine({
     const onSeeked = () => {
       if (audio.paused) syncCursor.current();
     };
-    const onError = () => setError(new Error("Audio playback failed to load."));
+    // Without the MP4 copy (it failed to build or decode), stream the mp3 itself, keeping the
+    // position and whether it was playing.
+    const onError = () => {
+      if (!mp4) {
+        setError(new Error("Audio playback failed to load."));
+        return;
+      }
+      mp4 = false;
+      const resumeAt = audio.currentTime;
+      const wasPlaying = !audio.paused;
+      audio.src = audioUrl(projectId, false);
+      audio.currentTime = resumeAt;
+      if (wasPlaying) {
+        audio.play().catch(() => usePlaybackStore.getState().setIsPlaying(false));
+      }
+    };
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
     audio.addEventListener("ended", onPause);
