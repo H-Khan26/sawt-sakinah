@@ -43,8 +43,7 @@ export function useEdlEditor(projectId: string): EdlEditor {
       const duration = project.audio_source.duration_sec;
       const next = normalizeCuts(edit(current), duration);
       if (sameOps(normalizeCuts(current, duration), next)) return null;
-      const snapshot = { ops: current, label };
-      useEditStore.getState().beginEdit(snapshot);
+      const snapshot = useEditStore.getState().beginEdit(current, label);
       save(next);
       return snapshot;
     },

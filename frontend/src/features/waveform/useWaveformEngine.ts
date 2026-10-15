@@ -136,7 +136,10 @@ function mountOverview(
 export interface AuditionOptions {
   /** A cut range to hear instead of skipping; other cuts are skipped as usual. */
   playCut?: Span;
-  /** Source time the playhead returns to when the audition ends; defaults to where it was. */
+  /**
+   * Source time the playhead returns to when the audition ends; defaults to where it was, or,
+   * when this audition replaces a running one, to where that one returns.
+   */
   returnTo?: number;
 }
 
@@ -666,7 +669,7 @@ export function useWaveformEngine({
         const audio = audioRef.current;
         if (!audio || !(end > start)) return;
         const playCut = options.playCut ?? null;
-        const returnTo = options.returnTo ?? audio.currentTime;
+        const returnTo = options.returnTo ?? auditionRef.current?.returnTo ?? audio.currentTime;
         auditionRef.current = { end, playCut, returnTo };
         usePlaybackStore.getState().setAudition({ start, end, playCut });
         audio.currentTime = Math.max(0, start);

@@ -6,8 +6,9 @@
  * edits land at once and are saved in the background — never duplicated here. This store holds
  * only what the server doesn't: the transient selection and past/future snapshots for undo/redo.
  * A snapshot is the whole `operations[]` array captured just before an edit, with a short label
- * naming the edit ("Cut 4.2 s"); `beginEdit`/`undo`/`redo` push and pop those, and the caller
- * applies the returned array through `useEdlEditor`.
+ * naming the edit ("Cut 4.2 s") and an id that names the edit across undo and redo;
+ * `beginEdit`/`undo`/`redo` push and pop those, and the caller applies the returned array
+ * through `useEdlEditor`.
  *
  * The state belongs to one editor session: the editor resets it when the project changes or the
  * editor closes (see `EditorPage`).
@@ -21,11 +22,18 @@ import { CUT_KEY_PREFIX } from "@/features/cuts/cutEdl";
 import type { EditOperation } from "@/types/api";
 import { create } from "zustand";
 
-/** An undo/redo point: the ops to return to, and the label of the edit it reverts or replays. */
+/**
+ * An undo/redo point: the ops to return to, and the label of the edit it reverts or replays. Its
+ * `id` names that edit: undoing and redoing it keeps the id, so a caller can tell whether its
+ * edit is still the latest one.
+ */
 export interface EditSnapshot {
+  id: number;
   ops: EditOperation[];
   label: string;
 }
+
+let nextSnapshotId = 1;
 
 interface EditState {
   /** Selected silence keys and cut-range keys (see `silenceKey` / `cutKey`). */
@@ -50,8 +58,11 @@ interface EditState {
   setSelectionRange: (start: number | null, end: number | null) => void;
   clearSelectionRange: () => void;
 
-  /** Record `snapshot` (the pre-edit ops) as an undo point before applying an edit; clears redo. */
-  beginEdit: (snapshot: EditSnapshot) => void;
+  /**
+   * Record the pre-edit `ops` as an undo point named `label` before applying an edit; clears
+   * redo. Returns the undo point.
+   */
+  beginEdit: (ops: EditOperation[], label: string) => EditSnapshot;
   /** Pop an undo snapshot; pushes `current` onto redo. Returns ops to apply, or null. */
   undo: (current: EditOperation[]) => EditOperation[] | null;
   /** Pop a redo snapshot; pushes `current` onto undo. Returns ops to apply, or null. */
@@ -92,7 +103,11 @@ export const useEditStore = create<EditState>((set, get) => ({
   setSelectionRange: (start, end) => set({ selectionStart: start, selectionEnd: end }),
   clearSelectionRange: () => set({ selectionStart: null, selectionEnd: null }),
 
-  beginEdit: (snapshot) => set((s) => ({ undoStack: [...s.undoStack, snapshot], redoStack: [] })),
+  beginEdit: (ops, label) => {
+    const snapshot = { id: nextSnapshotId++, ops, label };
+    set((s) => ({ undoStack: [...s.undoStack, snapshot], redoStack: [] }));
+    return snapshot;
+  },
 
   undo: (current) => {
     const { undoStack, redoStack } = get();
@@ -100,7 +115,7 @@ export const useEditStore = create<EditState>((set, get) => ({
     if (!prev) return null;
     set({
       undoStack: undoStack.slice(0, -1),
-      redoStack: [...redoStack, { ops: current, label: prev.label }],
+      redoStack: [...redoStack, { ...prev, ops: current }],
     });
     return prev.ops;
   },
@@ -111,7 +126,7 @@ export const useEditStore = create<EditState>((set, get) => ({
     if (!next) return null;
     set({
       redoStack: redoStack.slice(0, -1),
-      undoStack: [...undoStack, { ops: current, label: next.label }],
+      undoStack: [...undoStack, { ...next, ops: current }],
     });
     return next.ops;
   },

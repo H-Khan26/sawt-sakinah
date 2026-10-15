@@ -110,7 +110,10 @@ export function SilencePanel({ project }: { project: ProjectView }) {
       label: "Undo",
       onClick: () => {
         // Undo only while this removal is still the latest edit; a later edit owns the stack top.
-        if (useEditStore.getState().undoStack.at(-1) !== removal) {
+        // Undo and redo keep the removal's id, so it is found again after either.
+        const { undoStack, redoStack } = useEditStore.getState();
+        if (redoStack.at(-1)?.id === removal.id) return; // already undone
+        if (undoStack.at(-1)?.id !== removal.id) {
           toast("Later edits came after this removal. Use Undo in the transport row.", "warning");
           return;
         }
