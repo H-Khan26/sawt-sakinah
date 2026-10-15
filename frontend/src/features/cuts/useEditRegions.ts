@@ -15,39 +15,29 @@
  * on release (`useCutCommands().resizeCut`). Region coordinates are edited-time, so they invert
  * through the `TimeMap` back to the source time the store and the EDL hold.
  */
-import { activeSilences } from "@/features/silence/active";
-import { removedSilenceKeys } from "@/features/silence/edl";
 import { silenceKey } from "@/features/silence/regions";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { WAVE_HEIGHT } from "@/features/waveform/layout";
 import { useThemeColors } from "@/lib/themeColors";
 import { useEditStore } from "@/stores/editStore";
-import type { EditOperation, SilenceSegment } from "@/types/api";
-import { useEffect, useMemo, useRef } from "react";
-import { CUT_KEY_PREFIX, cutKey, mergeCutSpans } from "./cutEdl";
+import type { ProjectView } from "@/types/api";
+import { useEffect, useRef } from "react";
+import { CUT_KEY_PREFIX, cutKey } from "./cutEdl";
+import { useCutModel } from "./cutModel";
 import { SELECTION_REGION_ID, reconcileEditRegions } from "./regions";
 import { useCutCommands } from "./useCutCommands";
 
-export function useEditRegions(
-  projectId: string,
-  silences: SilenceSegment[],
-  ops: EditOperation[],
-): void {
+export function useEditRegions(project: ProjectView): void {
   const { wavesurfer, regions, controller, timeMap, isReady } = useWaveformContext();
   const selectedIds = useEditStore((s) => s.selectedIds);
   const selectionStart = useEditStore((s) => s.selectionStart);
   const selectionEnd = useEditStore((s) => s.selectionEnd);
   const colors = useThemeColors();
-  const commands = useCutCommands(projectId);
+  const commands = useCutCommands(project.id);
 
   // Draw only the silence that survives content cuts and isn't removed; removed audio is drawn
   // from the merged cut ranges alone, so no range is drawn twice.
-  const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
-  const cutSpans = useMemo(() => mergeCutSpans(ops), [ops]);
-  const kept = useMemo(() => {
-    const removed = removedSilenceKeys(active, cutSpans);
-    return active.filter((seg) => !removed.has(silenceKey(seg)));
-  }, [active, cutSpans]);
+  const { cutSpans, kept } = useCutModel(project);
 
   // Reconcile overlays whenever the inputs, the selection, the mapping or the theme's colours
   // change (once laid out).

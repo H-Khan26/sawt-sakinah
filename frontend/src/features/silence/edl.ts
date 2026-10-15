@@ -3,12 +3,11 @@
  * Removing a silence cuts its span `[s, e]` (a union with the removed audio); restoring it
  * subtracts that span again. Both are non-destructive edits against the original timeline;
  * the backend applies cuts (with boundary fades) only at export. The UI never mutates loaded
- * audio. A silence counts as removed when one merged cut range fully covers it.
+ * audio. Which silences count as removed is decided by `silenceView` (see `active.ts`).
  */
 import { cutRanges, restoreRanges } from "@/features/cuts/cutEdl";
-import { type Span, isCovered } from "@/lib/edl";
+import type { Span } from "@/lib/edl";
 import type { EditOperation, SilenceSegment } from "@/types/api";
-import { silenceKey } from "./regions";
 
 const spanOf = (seg: SilenceSegment): Span => [seg.start, seg.end];
 
@@ -16,16 +15,13 @@ const spanOf = (seg: SilenceSegment): Span => [seg.start, seg.end];
 export const removeSilences = (ops: EditOperation[], segs: SilenceSegment[]): EditOperation[] =>
   cutRanges(ops, segs.map(spanOf));
 
-/** Restore the spans of `segs`, trimming or splitting any cut range they overlap. */
+/**
+ * Restore the spans of `segs`, trimming or splitting the cut ranges they overlap. Given silences
+ * `silenceView` lists as removed, each lies inside a range of pure silence, so only silence
+ * comes back.
+ */
 export const restoreSilences = (ops: EditOperation[], segs: SilenceSegment[]): EditOperation[] =>
   restoreRanges(ops, segs.map(spanOf));
-
-/** Keys of the `silences` fully covered by one of the merged `cutSpans`. */
-export function removedSilenceKeys(silences: SilenceSegment[], cutSpans: Span[]): Set<string> {
-  return new Set(
-    silences.filter((s) => isCovered(cutSpans, s.start, s.end)).map((s) => silenceKey(s)),
-  );
-}
 
 export interface EditTally {
   count: number;

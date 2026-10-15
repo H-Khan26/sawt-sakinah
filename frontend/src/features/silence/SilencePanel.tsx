@@ -7,11 +7,13 @@
  * store. Edits route through `useEdlEditor`, so they share one undo history with the cut tool
  * and the undo/redo buttons in the transport row. "Remove all silence" applies at once (cuts are
  * hatched on the waveform and non-destructive) and offers Undo in a toast. Detected silences
- * stay in the list after removal, marked "removed" while a cut range covers them, so they can be
- * restored. Region drawing is owned by `useEditRegions` (mounted once in the editor), not here.
+ * stay in the list after removal, marked "removed", so they can be restored, while the range
+ * covering them is pure silence removal; one that a content cut took is hidden (see
+ * `silenceView`). Region drawing is owned by `useEditRegions` (mounted once in the editor), not
+ * here.
  */
 import { Button, useToast } from "@/components/ui";
-import { mergeCutSpans } from "@/features/cuts/cutEdl";
+import { useCutModel } from "@/features/cuts/cutModel";
 import { useEdlEditor } from "@/features/cuts/useEdlEditor";
 import { formatClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
@@ -20,8 +22,7 @@ import { AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { SilenceControls, useSilenceDetection } from "./SilenceControls";
 import { SilenceList } from "./SilenceList";
-import { activeSilences } from "./active";
-import { removeSilences, removedSilenceKeys, restoreSilences, silenceStats } from "./edl";
+import { removeSilences, restoreSilences, silenceStats } from "./edl";
 import { silenceKey } from "./regions";
 
 /** How long the Undo toast stays up after "Remove all silence". */
@@ -36,7 +37,6 @@ const sameSpans = (a: SilenceSegment[], b: SilenceSegment[]) =>
 export function SilencePanel({ project }: { project: ProjectView }) {
   const projectId = project.id;
   const silences = project.silences;
-  const ops = project.edl.operations;
 
   const editor = useEdlEditor(projectId);
   const { toast } = useToast();
@@ -63,25 +63,28 @@ export function SilencePanel({ project }: { project: ProjectView }) {
   const editorRef = useRef(editor);
   editorRef.current = editor;
 
-  // Detected silences clipped to the audio still active after content cuts: silences (or parts
-  // of them) inside deleted recitation drop out of the list, stats, and actions — regardless of
-  // whether the cut was made before or after detection.
-  const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
+  // Detected silences clipped to the audio content cuts left: silences (or parts of them)
+  // inside deleted recitation drop out of the list, stats, and actions — regardless of whether
+  // the cut was made before or after detection. Those silence removal took stay, as removed.
+  const { active, removed: removedIds, kept } = useCutModel(project);
 
-  const selectedSegs = useMemo(
-    () => active.filter((s) => selectedIds.has(silenceKey(s))),
-    [active, selectedIds],
-  );
-  // A silence is removed while one merged cut range covers it.
-  const removedIds = useMemo(() => removedSilenceKeys(active, mergeCutSpans(ops)), [active, ops]);
+  const selected = useMemo(() => {
+    const segs = active.filter((s) => selectedIds.has(silenceKey(s)));
+    return {
+      count: segs.length,
+      removed: segs.filter((s) => removedIds.has(silenceKey(s))),
+      kept: segs.filter((s) => !removedIds.has(silenceKey(s))),
+    };
+  }, [active, removedIds, selectedIds]);
 
   const detected = silenceStats(active);
-  // "Already cut" counts detected silences covered by a cut — other cuts live in the Cut tool.
+  // "Already cut" counts the removed silences — other cuts live in the Cut tool.
   const removedCount = removedIds.size;
-  const remaining = detected.count - removedCount;
+  const remaining = kept.length;
 
+  // Each action edits only the selected silences it changes, and its label counts those.
   const removeSelected = () => {
-    const segs = selectedSegs;
+    const segs = selected.kept;
     editor.apply(
       (o) => removeSilences(o, segs),
       `Remove ${plural(segs.length, "silence", "silences")}`,
@@ -89,7 +92,7 @@ export function SilencePanel({ project }: { project: ProjectView }) {
     clearSelection();
   };
   const restoreSelected = () => {
-    const segs = selectedSegs;
+    const segs = selected.removed;
     editor.apply(
       (o) => restoreSilences(o, segs),
       `Restore ${plural(segs.length, "silence", "silences")}`,
@@ -98,7 +101,7 @@ export function SilencePanel({ project }: { project: ProjectView }) {
   };
   const removeAll = () => {
     const removal = editor.apply(
-      (o) => removeSilences(o, active),
+      (o) => removeSilences(o, kept),
       `Remove ${plural(remaining, "silence", "silences")}`,
     );
     clearSelection();
@@ -116,7 +119,7 @@ export function SilencePanel({ project }: { project: ProjectView }) {
     });
   };
 
-  const hasSelection = selectedSegs.length > 0;
+  const hasSelection = selected.count > 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -172,12 +175,22 @@ export function SilencePanel({ project }: { project: ProjectView }) {
       {hasSelection && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="mr-1 text-sm text-text-secondary">
-            {plural(selectedSegs.length, "silence", "silences")} selected
+            {plural(selected.count, "silence", "silences")} selected
           </span>
-          <Button size="sm" variant="secondary" onClick={removeSelected}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={removeSelected}
+            disabled={selected.kept.length === 0}
+          >
             Remove selected
           </Button>
-          <Button size="sm" variant="secondary" onClick={restoreSelected}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={restoreSelected}
+            disabled={selected.removed.length === 0}
+          >
             Restore selected
           </Button>
         </div>

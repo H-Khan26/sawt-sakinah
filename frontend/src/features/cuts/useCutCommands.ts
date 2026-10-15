@@ -19,10 +19,10 @@ import {
   cutRange,
   cutRanges,
   durationLabel,
-  mergeCutSpans,
   restoreRange,
   restoreRanges,
 } from "./cutEdl";
+import { cutSpansOf } from "./cutModel";
 import { adjacentSeam, cutSeams } from "./seams";
 import { cutGain, pendingSpan, restoreTarget, selectedCutSpan } from "./selection";
 import { useEdlEditor } from "./useEdlEditor";
@@ -47,7 +47,7 @@ export interface CutCommands {
 export function useCutCommands(projectId: string): CutCommands {
   const { controller, timeMap } = useWaveformContext();
   const editor = useEdlEditor(projectId);
-  const cutSpans = () => mergeCutSpans(editor.liveOps());
+  const cutSpans = () => cutSpansOf(editor.liveOps());
 
   return {
     cut: () => {
@@ -105,7 +105,7 @@ export function useCutCommands(projectId: string): CutCommands {
       const done = editor.apply((ops) => cutRanges(restoreRanges(ops, restored), added), label);
       if (!done) return false;
       // The range's key names its bounds, so select whatever range now covers the dragged span.
-      const next = mergeCutSpans(editor.liveOps()).find(([a, b]) => a < to[1] && to[0] < b);
+      const next = cutSpans().find(([a, b]) => a < to[1] && to[0] < b);
       useEditStore.getState().selectCut(next ? cutKey(next) : null);
       return true;
     },

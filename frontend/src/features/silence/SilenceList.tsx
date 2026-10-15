@@ -16,7 +16,7 @@ export function SilenceList({
   removedIds,
 }: {
   silences: SilenceSegment[];
-  /** Keys of silences currently marked for removal (fully covered by a cut range). */
+  /** Keys of the silences silence removal took out (see `silenceView`). */
   removedIds: Set<string>;
 }) {
   const { controller, timeMap } = useWaveformContext();

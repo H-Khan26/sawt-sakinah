@@ -3,74 +3,106 @@
  *
  * Detection is pure analysis of the source — `project.silences` never changes on an edit — but
  * a detected silence that falls inside audio the user has deleted is no longer part of the
- * recitation and must not display or be actionable. Because `activeSilences` is a pure
- * projection of (silences, ops), it updates live whether the cut was made before or after
+ * recitation and must not display or be actionable. Because the projection is a pure function
+ * of (silences, merged cut ranges), it updates live whether the cut was made before or after
  * detection, and independently of whether deleted regions are shown on the waveform.
  *
- * A silence's *own* removal must NOT hide it — removed silences stay listed, struck through, so
- * they can be restored. Removed audio is a set of merged ranges, so a removed silence may have
- * merged with a neighbouring content cut; the two are told apart by geometry. A range's ends
- * that fall inside detected silence are silence removal; the rest, its *core*, is a content
- * deletion. A silence inside a core is gone along with the recitation around it and is hidden.
- * A silence covered at a range's edge borders kept audio, so it stays listed (as removed). A
- * silence only partly covered is clipped to its uncovered part.
+ * Removed audio is a set of merged ranges and its provenance is not stored, so the ranges are
+ * told apart by geometry alone. A range that lies entirely within detected silence (the union
+ * of the silences) is *silence removal*: a silence it covers whole stays listed, as removed, so
+ * it can be restored from the list. Any other range is a *content cut*, even where it took
+ * silence along with the recitation (say a silence removal that later merged with a marked
+ * cut): a silence it covers whole is hidden, like any silence inside deleted recitation, and
+ * its audio comes back only through the waveform's restore tools. A silence that no single
+ * range covers whole is clipped to its uncovered part, and only that part is listed.
+ *
+ * So restoring a listed silence never brings back audio outside it: a removed one lies inside a
+ * range of pure silence, and a clipped one covers no removed audio at all.
  */
-import { mergeCutSpans } from "@/features/cuts/cutEdl";
-import { type Span, TOUCH_EPSILON, isCovered, mergeSpans, subtractSpans } from "@/lib/edl";
-import type { EditOperation, SilenceSegment } from "@/types/api";
+import { type Span, TOUCH_EPSILON, firstEndingAfter, mergeSpans } from "@/lib/edl";
+import type { SilenceSegment } from "@/types/api";
+import { silenceKey } from "./regions";
 
 /** Surviving silence at or below this length (seconds) after clipping is a sliver — dropped. */
 const MIN_ACTIVE_SILENCE = 0.01;
 
-/**
- * The content-deletion core of cut range `[a, b]`: the range with any end that lies inside the
- * silence `union` pulled back to that silence's edge. Null when the range is all silence.
- */
-function contentCore([a, b]: Span, union: Span[]): Span | null {
-  let start = a;
-  let end = b;
-  for (const [c, d] of union) {
-    if (c <= start + TOUCH_EPSILON && start < d) start = d;
-    if (c < end && end <= d + TOUCH_EPSILON) end = c;
-  }
-  return end - start > TOUCH_EPSILON ? [start, end] : null;
+/** The detected silences as the silence tool shows them against the current cuts. */
+export interface SilenceView {
+  /**
+   * The silences still in the recitation, in detection order: each one untouched, removed
+   * whole by silence removal, or clipped to its uncovered part. A clipped piece is a fresh
+   * `SilenceSegment` keyed by its own `start:end`, so selection, removal and restore address
+   * the clipped span.
+   */
+  active: SilenceSegment[];
+  /** Keys of the `active` silences that silence removal took out (listed as removed). */
+  removed: Set<string>;
+  /** The `active` silences not removed: still heard. */
+  kept: SilenceSegment[];
 }
 
 /**
- * The detected silences that are still part of the recitation. A silence inside a deleted core
- * disappears; one covered at a cut range's edge stays as is (removed); one straddling a cut
- * edge is trimmed to its surviving part. Each trimmed piece is a fresh `SilenceSegment` keyed
- * by its own `start:end`, so selection, removal, and restore all address the trimmed span.
- * Returns the input array unchanged when nothing is hidden or trimmed, so identity is preserved
- * for memoization.
+ * Whether each merged cut range lies within the silence `union` — silence removal, not a content
+ * cut. Both lists are sorted and disjoint, so one walk decides every range.
  */
-export function activeSilences(silences: SilenceSegment[], ops: EditOperation[]): SilenceSegment[] {
-  if (silences.length === 0) return silences;
-  const cuts = mergeCutSpans(ops);
-  if (cuts.length === 0) return silences;
+function silenceOnly(cutSpans: Span[], union: Span[]): boolean[] {
+  let u = 0;
+  return cutSpans.map(([a, b]) => {
+    while (u < union.length && union[u][1] < a) u++;
+    const span = union[u];
+    return !!span && span[0] <= a + TOUCH_EPSILON && b <= span[1] + TOUCH_EPSILON;
+  });
+}
 
-  const union = mergeSpans(silences.map((s): Span => [s.start, s.end]));
-  const cores = cuts.map((range) => contentCore(range, union));
+/**
+ * Project `silences` onto the merged cut ranges `cutSpans` (sorted, disjoint); see the module
+ * note for the rule. Each silence binary-searches the ranges it meets, so a pass stays cheap
+ * with thousands of each. `active` and `kept` are the input array itself when no cut touches a
+ * silence, so identity is preserved for memoization.
+ */
+export function silenceView(silences: SilenceSegment[], cutSpans: Span[]): SilenceView {
+  if (silences.length === 0 || cutSpans.length === 0) {
+    return { active: silences, removed: new Set(), kept: silences };
+  }
+  const pure = silenceOnly(cutSpans, mergeSpans(silences.map((s): Span => [s.start, s.end])));
 
   const active: SilenceSegment[] = [];
+  const kept: SilenceSegment[] = [];
+  const removed = new Set<string>();
   let changed = false;
   for (const seg of silences) {
-    const i = cuts.findIndex((range) => isCovered([range], seg.start, seg.end));
-    if (i >= 0) {
-      const core = cores[i];
-      if (core && seg.start < core[1] && core[0] < seg.end) changed = true;
-      else active.push(seg);
-      continue;
-    }
-    const pieces = subtractSpans([[seg.start, seg.end]], cuts);
-    if (pieces.length === 1 && pieces[0][0] === seg.start && pieces[0][1] === seg.end) {
+    // The first range ending after the silence starts; only it can cover the whole silence.
+    const first = firstEndingAfter(cutSpans, seg.start);
+    const range = cutSpans[first];
+    if (!range || range[0] >= seg.end) {
       active.push(seg);
+      kept.push(seg);
       continue;
     }
     changed = true;
-    for (const [a, b] of pieces) {
-      if (b - a > MIN_ACTIVE_SILENCE) active.push({ ...seg, start: a, end: b, duration: b - a });
+    if (range[0] <= seg.start + TOUCH_EPSILON && seg.end <= range[1] + TOUCH_EPSILON) {
+      if (pure[first]) {
+        active.push(seg);
+        removed.add(silenceKey(seg));
+      }
+      continue;
+    }
+    // Clip to what no range covers.
+    let cursor = seg.start;
+    for (let i = first; i < cutSpans.length && cutSpans[i][0] < seg.end; i++) {
+      const [c, d] = cutSpans[i];
+      if (c - cursor > MIN_ACTIVE_SILENCE) {
+        const piece = { ...seg, start: cursor, end: c, duration: c - cursor };
+        active.push(piece);
+        kept.push(piece);
+      }
+      cursor = Math.max(cursor, d);
+    }
+    if (seg.end - cursor > MIN_ACTIVE_SILENCE) {
+      const piece = { ...seg, start: cursor, end: seg.end, duration: seg.end - cursor };
+      active.push(piece);
+      kept.push(piece);
     }
   }
-  return changed ? active : silences;
+  return changed ? { active, removed, kept } : { active: silences, removed, kept: silences };
 }

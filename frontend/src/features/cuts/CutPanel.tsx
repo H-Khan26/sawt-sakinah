@@ -12,14 +12,14 @@ import { FieldLabel } from "@/features/editor/FieldLabel";
 import { ExportModal } from "@/features/export/ExportModal";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import type { TimeMap } from "@/features/waveform/timeMap";
-import { type Span, spanTotal } from "@/lib/edl";
 import { formatClockPrecise, parseClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
 import type { ProjectView } from "@/types/api";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SplitModal } from "./SplitModal";
-import { MIN_CUT_DURATION, keepOnly, mergeCutSpans } from "./cutEdl";
+import { MIN_CUT_DURATION, keepOnly } from "./cutEdl";
+import { useCutModel } from "./cutModel";
 import { cutGain, pendingSpan, restoreTarget, selectedCutSpan } from "./selection";
 import { useCutCommands } from "./useCutCommands";
 import { isTypingTarget } from "./useEditHotkeys";
@@ -128,16 +128,19 @@ function KeyHints() {
  * included — with buttons that step the playhead to the previous / next cut.
  */
 function CutSummary({
-  cutSpans,
+  cuts,
+  removed,
   disabled,
   onStep,
 }: {
-  cutSpans: Span[];
+  /** Number of merged cut ranges. */
+  cuts: number;
+  /** Seconds they remove. */
+  removed: number;
   disabled: boolean;
   onStep: (direction: -1 | 1) => void;
 }) {
-  const removed = spanTotal(cutSpans);
-  const none = cutSpans.length === 0;
+  const none = cuts === 0;
   return (
     <div className="flex items-center justify-between gap-3 border-t border-dotted border-border pt-4 text-sm text-text-secondary">
       <p className="tabular-nums">
@@ -145,7 +148,7 @@ function CutSummary({
           "Nothing cut yet."
         ) : (
           <>
-            <span className="text-text">{plural(cutSpans.length, "cut", "cuts")}</span> ·{" "}
+            <span className="text-text">{plural(cuts, "cut", "cuts")}</span> ·{" "}
             {formatClockPrecise(removed)} removed
           </>
         )}
@@ -180,7 +183,6 @@ function CutSummary({
 
 export function CutPanel({ project }: { project: ProjectView }) {
   const projectId = project.id;
-  const ops = project.edl.operations;
 
   const { controller, timeMap, isReady } = useWaveformContext();
   const editor = useEdlEditor(projectId);
@@ -197,7 +199,7 @@ export function CutPanel({ project }: { project: ProjectView }) {
   const [splitOpen, setSplitOpen] = useState(false);
 
   const duration = project.audio_source.duration_sec;
-  const cutSpans = useMemo(() => mergeCutSpans(ops), [ops]);
+  const { cutSpans, removedSeconds } = useCutModel(project);
 
   // Normalized source-time selection, or null when no valid range is marked.
   const pending = pendingSpan(selectionStart, selectionEnd);
@@ -357,7 +359,12 @@ export function CutPanel({ project }: { project: ProjectView }) {
 
       <KeyHints />
 
-      <CutSummary cutSpans={cutSpans} disabled={!isReady} onStep={commands.stepCut} />
+      <CutSummary
+        cuts={cutSpans.length}
+        removed={removedSeconds}
+        disabled={!isReady}
+        onStep={commands.stepCut}
+      />
 
       {exportOpen && range && (
         <ExportModal project={project} range={range} onClose={() => setExportOpen(false)} />
