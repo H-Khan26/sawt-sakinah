@@ -79,7 +79,7 @@ properties, Biome. Hard conventions, enforced by tooling — follow them in ever
 |---|---|---|
 | Job state `done`/`failed` | `pending \| running \| succeeded \| failed` | [jobs.py](../../sawt_sakinah/service/jobs.py) |
 | `progress` is a number | arbitrary **dict** per job kind | [jobs.py](../../sawt_sakinah/service/jobs.py) / [workers.py](../../sawt_sakinah/service/workers.py) |
-| waveform returns "peaks" | `{version, sample_rate, buckets, duration_sec, min[], max[]}` | [waveform.py](../../sawt_sakinah/service/waveform.py) |
+| waveform returns "peaks" | `{version, sample_rate, rate, buckets, duration_sec, scale_db, levels}` | [waveform.py](../../sawt_sakinah/service/waveform.py) |
 | generic routes | mounted at **root** (`/projects`, `/jobs`), no `/api`; writes return `202` | [app.py](../../sawt_sakinah/service/app.py) |
 | FastAPI serves the SPA | **wired** (Phase 7): SPA served at `/` with a deep-link catch-all when `frontend/dist` exists; API routes take precedence; still no CORS | [app.py](../../sawt_sakinah/service/app.py) |
 | `SilenceSegment.mean_db` | optional; `duration` is a computed field (present in JSON) | [segments.py](../../sawt_sakinah/models/segments.py) |
@@ -178,7 +178,7 @@ frontend/
     ornament/               pure geometry builders (no React, no colours)
     features/
       waveform/
-        peaks.ts            toWavesurferPeaks: WaveformPeaks -> [max[], min[]] for wavesurfer
+        editedPeaks.ts      decodeWaveform + sliceEditedPeaks: source levels -> rendered levels
         useWaveformEngine.ts  wavesurfer as renderer + an owned <audio> for playback;
                             Minimap overview, Timeline + Hover plugins; events -> playbackStore
         WaveformContext.tsx WaveformProvider + useWaveformContext (React context, not store ref)
@@ -381,7 +381,7 @@ substrate Phases 5-6 draw onto.
 |---|---|
 | `src/lib/themeColors.ts` | Resolves the `--waveform-*`/`--silence-*`/`--selection-fill` tokens with `getComputedStyle` for the canvas; re-read when the resolved theme changes |
 | `src/lib/time.ts` | `formatClock(seconds)` -> `"m:ss"` shared by transport readout and wavesurfer plugin labels |
-| `src/features/waveform/peaks.ts` | `toWavesurferPeaks(WaveformPeaks)` -> `[max[], min[]]`; wavesurfer v7's bar renderer reads `channelData[0]` as top envelope and `channelData[1]` (via `Math.abs`) as bottom, so this gives the true min/max shape with no normalization (PCM is already `[-1,1]`); falls back to `[max[]]` on length mismatch |
+| `src/features/waveform/editedPeaks.ts` | `decodeWaveform(WaveformPeaks)` -> `0..1` RMS levels already scaled to the recording; `sliceEditedPeaks` resamples them onto the edited timeline from exact span boundaries; wavesurfer draws one channel mirrored, with `normalize: false` |
 | `src/features/waveform/useWaveformEngine.ts` | Lifecycle hook: instance in `useRef` (never state), create/destroy in one effect (StrictMode-safe); wavesurfer renders from peaks while an owned `<audio>` plays the source; Minimap overview, Timeline + Hover plugins; events → `playbackStore`; rate and zoom applied via separate effects so they don't re-trigger init |
 | `src/features/waveform/WaveformContext.tsx` | `WaveformProvider` + `useWaveformContext`: React context exposing the instance, container ref, and load state to transport and future phases — chosen over a store ref (more idiomatic) and prop-drilling (would get noisy) |
 | `src/features/waveform/WaveformView.tsx` | Container `<div>` with load/error overlays; `relative` so Phase 5/6 overlays can anchor absolutely |

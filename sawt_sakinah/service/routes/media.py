@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ...fileio import replace_file
 from ..deps import get_settings, get_store
 from ..ranges import media_type_for, ranged_file_response
-from ..waveform import compute_peaks
+from ..waveform import WAVEFORM_VERSION, compute_peaks
 from .common import validate_id
 
 router = APIRouter(prefix="/projects", tags=["media"])
@@ -45,10 +45,13 @@ def get_waveform(project_id: str, store=Depends(get_store), settings=Depends(get
     validate_id(project_id, "project_id")
 
     # Waveform is immutable per source: serve the cache before touching the project.
+    # A cache from an older format version is recomputed and replaced.
     cache = store.waveform_path(project_id)
     if cache.exists():
         try:
-            return json.loads(cache.read_text(encoding="utf-8"))
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+            if isinstance(cached, dict) and cached.get("version") == WAVEFORM_VERSION:
+                return cached
         except (ValueError, OSError):
             pass  # corrupt cache -> recompute
 

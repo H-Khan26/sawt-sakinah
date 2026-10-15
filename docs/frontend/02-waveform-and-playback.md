@@ -65,6 +65,9 @@ markers are drawn onto. Press-and-play must feel immediate.
 - Prefer `GET /projects/{id}/waveform` returning **precomputed peak data** so the
   component renders without downloading/decoding the whole file. If peaks aren't
   available yet, fall back to client-side decoding for short files.
+- The peaks are RMS levels per 10 ms bucket, scaled once per recording so its loudest
+  passages reach full height. The edited view resamples them without changing that scale,
+  and a small dB scale at the right edge labels full height, half and quarter height.
 
 ## Transport details
 

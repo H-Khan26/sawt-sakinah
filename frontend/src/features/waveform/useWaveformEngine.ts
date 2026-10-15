@@ -26,7 +26,6 @@ import RegionsPlugin from "wavesurfer.js/plugins/regions";
 import TimelinePlugin from "wavesurfer.js/plugins/timeline";
 import type { RenderPeaks } from "./editedPeaks";
 import { OVERVIEW_HEIGHT, TIMELINE_HEIGHT, WAVE_HEIGHT } from "./layout";
-import { toWavesurferPeaks } from "./peaks";
 import type { Span, TimeMap } from "./timeMap";
 
 /** Don't retrigger a skip right at a cut's tail edge, so seeking to the end doesn't re-fire. */
@@ -58,8 +57,8 @@ function mountOverview(
     barWidth: 1,
     barGap: 1,
     barRadius: 0,
-    // Scaled to the loudest peak, so the faint strip still shows the recording's shape.
-    normalize: true,
+    // The levels arrive scaled to the recording, so both views share one fixed scale.
+    normalize: false,
     dragToSeek: true,
     // The box is a DOM element, so it takes the token directly and follows a theme change.
     overlayColor: "var(--selection-fill)",
@@ -285,7 +284,8 @@ export function useWaveformEngine({
 
     const ws = WaveSurfer.create({
       container: el,
-      peaks: toWavesurferPeaks(first),
+      // One channel of levels; wavesurfer mirrors it about the centre line.
+      peaks: [first.levels],
       duration: first.duration,
       waveColor: colors.unplayed,
       progressColor: colors.played,
@@ -371,7 +371,7 @@ export function useWaveformEngine({
     const ws = wsRef.current;
     if (!ws || !isReady || !render || render === lastLoadedRef.current) return;
     lastLoadedRef.current = render;
-    ws.load("", toWavesurferPeaks(render), render.duration).catch(() => {
+    ws.load("", [render.levels], render.duration).catch(() => {
       // A newer load / destroy superseded this one; ignore.
     });
   }, [render, isReady]);

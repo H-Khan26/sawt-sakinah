@@ -137,7 +137,9 @@ class ServiceConfig(_Section):
     max_workers: int
     phrase_workers: int
     max_pending_jobs: int
-    waveform_buckets: int
+    waveform_rate: int = Field(gt=0)
+    # Retired (replaced by waveform_rate); accepted and ignored so older config files still load.
+    waveform_buckets: Optional[int] = None
     stream_chunk_size: int
     shutdown_grace_sec: float
 

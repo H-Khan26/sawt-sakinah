@@ -290,14 +290,20 @@ export interface PatchProjectRequest {
 
 // --- waveform peaks (service/waveform.py) -----------------------------------
 
-/** `GET /projects/{id}/waveform` — per-bucket min/max pairs of the mono signal. */
+/**
+ * `GET /projects/{id}/waveform` — per-bucket RMS levels of the mono signal, scaled so the
+ * recording's loudest passages reach full height. `levels` is base64 bytes (`0..255`).
+ */
 export interface WaveformPeaks {
   version: number;
   sample_rate: number;
+  /** Buckets per second. */
+  rate: number;
   buckets: number;
   duration_sec: number;
-  min: number[];
-  max: number[];
+  /** Level of full height in dBFS RMS. */
+  scale_db: number;
+  levels: string;
 }
 
 // --- app preferences, info and updates (/app) -------------------------------

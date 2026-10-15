@@ -2,7 +2,7 @@ import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
 
-export type TooltipSide = "top" | "bottom" | "right";
+export type TooltipSide = "top" | "bottom" | "right" | "left";
 
 export interface TooltipProps {
   content: ReactNode;
@@ -15,6 +15,7 @@ const SIDES: Record<TooltipSide, string> = {
   top: "bottom-full left-1/2 mb-1.5 -translate-x-1/2",
   bottom: "top-full left-1/2 mt-1.5 -translate-x-1/2",
   right: "left-full top-1/2 ml-2 -translate-y-1/2",
+  left: "right-full top-1/2 mr-2 -translate-y-1/2",
 };
 
 /**

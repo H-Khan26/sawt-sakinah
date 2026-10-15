@@ -3,14 +3,15 @@
  * a gold rule above and below with faint ruled lines behind them, and the time ruler beneath.
  * The optional `overlay` (the marker layer) spans the margin and the bars, anchored to the same
  * box the waveform draws into so time-positioned children line up with the audio; it is
- * click-through by default (children opt back in with `pointer-events`). Ctrl/⌘ + wheel zooms
- * one step at a time. All state comes from `WaveformContext`.
+ * click-through by default (children opt back in with `pointer-events`). The level scale sits at
+ * the bars' right edge. Ctrl/⌘ + wheel zooms one step at a time. All state comes from `WaveformContext`.
  */
 import { Alert, WaveformLoader } from "@/components/ui";
 import { zoomIn, zoomOut } from "@/features/transport/transportControls";
 import type { ReactNode, RefObject } from "react";
 import { useEffect, useRef } from "react";
 import { useWaveformContext } from "./WaveformContext";
+import { WaveformScale } from "./WaveformScale";
 import { NOTES_HEIGHT, WAVE_HEIGHT } from "./layout";
 import "./waveform.css";
 
@@ -38,7 +39,7 @@ function useWheelZoom(ref: RefObject<HTMLElement>) {
 }
 
 export function WaveformView({ overlay }: { overlay?: ReactNode }) {
-  const { containerRef, isReady, isLoadingPeaks, error } = useWaveformContext();
+  const { containerRef, isReady, isLoadingPeaks, error, scaleDb } = useWaveformContext();
   const rootRef = useRef<HTMLDivElement>(null);
   useWheelZoom(rootRef);
   const bars = { top: NOTES_HEIGHT, height: WAVE_HEIGHT };
@@ -68,6 +69,7 @@ export function WaveformView({ overlay }: { overlay?: ReactNode }) {
           className="pointer-events-none absolute inset-x-0 z-10 border-y border-gold"
           style={bars}
         />
+        {isReady && scaleDb != null ? <WaveformScale scaleDb={scaleDb} top={NOTES_HEIGHT} /> : null}
         {isReady && overlay ? (
           <div
             className="pointer-events-none absolute inset-x-0 top-0 z-20 overflow-hidden"
