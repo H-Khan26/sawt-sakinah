@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sawt-sakinah"
 dynamic = ["version"]
-description = "Extract Quran recitation audio from YouTube, detect silence/takbirs, and edit non-destructively."
+description = "Extract Quran recitation audio from YouTube, detect silences, recognize the surahs recited, and edit non-destructively."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

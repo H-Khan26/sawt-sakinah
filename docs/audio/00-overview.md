@@ -24,34 +24,33 @@ performs **transformations** only when explicitly asked.
 
 ## Domain context (why this exists)
 
-The target use case is Quran recitation captured during prayer (salah). A prayer is
-made of **rak'ah** (units). Within each rak'ah the reciter moves through positions,
-and each transition is announced by a **takbir** ("Allahu Akbar"):
+The target use case is Quran recitation captured during prayer (salah). A recording of a
+prayer holds, in order, for each **rak'ah** (unit):
 
-```
-qiyam (standing): Al-Fatihah + a surah  --takbir-->
-ruku' (bowing): quiet tasbih            --tasmi' / takbir-->
-i'tidal (standing up)                   --takbir-->
-sujood (prostration): quiet tasbih      --takbir-->
-julus (sitting)                         --takbir-->
-sujood (second prostration)             --takbir-->
-[stand for next rak'ah]                 ... tasleem at the end
-```
+- a **takbir** ("Allahu Akbar") as the imam moves into standing;
+- **Al-Fatihah**, then a **surah** or a stretch of one (later rak'ahs often hold
+  Al-Fatihah alone);
+- quiet or near-silent **ruku'** (bowing) and **sujood** (prostration), each entered and
+  left with a takbir;
+
+and the prayer closes with the tasleem and often **adhkar** or a du'a after it. Al-Fatihah
+is recited in every rak'ah, so a four-rak'ah prayer holds it four times; the surah after
+it may change each rak'ah or run on across them.
 
 Consequences for the engine:
 
-- **"Silence" is domain-specific.** The loud, recited portions are qiyam (Fatihah +
-  surah). The quiet portions (ruku', sujood, pauses between ayat) are what the user
-  wants to find and often trim. These quiet portions are frequently **not true
-  silence** — there is quiet dhikr and room noise. Detection must distinguish
-  *recitation* from *non-recitation*, not just *sound* from *no-sound*. A simple dB
-  gate is the baseline; voice-activity detection is the likely upgrade.
-- **The surahs are what the user navigates by.** The recited parts are Al-Fatihah and
-  a surah (or a stretch of one) in each rak'ah. Knowing which surah sits where lets the
+- **"Silence" is domain-specific.** The loud, recited portions are the standing
+  recitation (Al-Fatihah + surah). The quiet portions (ruku', sujood, pauses between
+  ayat) are what the user wants to find and often trim. These quiet portions are
+  frequently **not true silence** — there is quiet dhikr and room noise. Detection must
+  distinguish *recitation* from *non-recitation*, not just *sound* from *no-sound*;
+  voice-activity detection does this, with a dB gate as the fallback.
+- **The surahs are what the user navigates by.** Knowing which surah sits where lets the
   user keep one surah, split it into its own recording, or label the export by surah.
-  The takbirs, ruku' and sujood between them are what the matcher steps over: speech
-  that doesn't match the Quran text ends a passage, and a long pause separates the
-  rak'ahs of a surah read across a prayer.
+  Everything else in the recording is what the matcher steps over: takbirs, Amin after
+  Al-Fatihah, adhkar and du'a are speech that doesn't match the Quran text, so a passage
+  ends there; and a long pause (ruku', sujood) separates the rak'ahs of a surah read
+  across a prayer into separate passages.
 
 ## Module boundaries (the key separation)
 

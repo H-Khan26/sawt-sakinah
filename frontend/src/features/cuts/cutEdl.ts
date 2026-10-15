@@ -7,7 +7,7 @@
  * removal, a marked range, keep-only). Cutting is a union with that set; restoring subtracts
  * from it, which may trim a range or split it in two. Every edit returns normalized ops, so a
  * legacy EDL with overlapping cuts is normalized by its first edit. The other ops
- * (keep/fade/marker, and any open-ended cut) pass through untouched after the cuts. The server
+ * (keep/fade, and any open-ended cut) pass through untouched after the cuts. The server
  * stores the same normal form (`normalize_cuts` in `models/edl.py`). The span algebra underneath
  * is generic and lives in `lib/edl.ts`.
  */

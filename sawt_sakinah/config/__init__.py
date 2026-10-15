@@ -141,16 +141,14 @@ class EditingConfig(_Section):
     mp3_vbr_quality: str
     embed_chapters: bool
     embed_metadata: bool
-    # Retired (phrase markers became surah chapters); accepted and ignored so older config
-    # files still load.
+    # Retired key, accepted and ignored.
     embed_markers: Optional[bool] = None
 
 
 class ServiceConfig(_Section):
     max_workers: int
     transcription_workers: int
-    # Retired (renamed transcription_workers); accepted and ignored so older config files
-    # still load.
+    # Retired key, accepted and ignored.
     phrase_workers: Optional[int] = None
     max_pending_jobs: int
     waveform_rate: int = Field(gt=0)
@@ -181,8 +179,7 @@ class Config(_Section):
     editing: EditingConfig
     service: ServiceConfig
     app: AppConfig
-    # Retired (phrase detection became surah recognition: see ``transcription`` and
-    # ``surahs``); accepted and ignored so older config files still load.
+    # Retired key, accepted and ignored.
     phrases: Optional[dict[str, Any]] = None
 
     @model_validator(mode="after")

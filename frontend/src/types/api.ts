@@ -58,7 +58,7 @@ export interface SurahInfo {
 
 // --- edit decision list (models/edl.py) -------------------------------------
 
-export type EditOperationType = "cut" | "keep" | "fade" | "marker";
+export type EditOperationType = "cut" | "keep" | "fade";
 
 export interface EditOperation {
   type: EditOperationType;

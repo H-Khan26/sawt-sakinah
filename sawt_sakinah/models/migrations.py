@@ -18,7 +18,7 @@ from typing import Callable
 from .errors import ProjectTooNewError, ProjectUnreadableError
 
 #: The ``project.json`` format this app reads and writes.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 TOO_NEW_MESSAGE = (
     "This recording was saved by a newer version of Sawt Sakinah. Update the app to open it."
@@ -62,8 +62,24 @@ def _v1_to_v2(raw: dict) -> dict:
     return raw
 
 
+def _v2_to_v3(raw: dict) -> dict:
+    """Drop ``marker`` operations from the EDL; that operation type no longer exists.
+
+    Version 1 files reach here through :func:`_v1_to_v2`, so every older file loses them.
+    """
+    edl = raw.get("edl")
+    if isinstance(edl, dict) and isinstance(edl.get("operations"), list):
+        ops = [
+            op
+            for op in edl["operations"]
+            if not (isinstance(op, dict) and op.get("type") == "marker")
+        ]
+        raw["edl"] = {**edl, "operations": ops}
+    return raw
+
+
 #: ``version -> step`` upgrading a version-``n`` dict to ``n + 1``.
-_STEPS: dict[int, Callable[[dict], dict]] = {0: _v0_to_v1, 1: _v1_to_v2}
+_STEPS: dict[int, Callable[[dict], dict]] = {0: _v0_to_v1, 1: _v1_to_v2, 2: _v2_to_v3}
 
 
 def migrate(raw: object) -> dict:

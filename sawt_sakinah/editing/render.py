@@ -13,7 +13,6 @@ Operation semantics (see docs/audio/04-editing-and-export.md):
 * ``fade``   -- apply a short fade over ``[start, end]`` (fade-in if it sits at the very
                 start of the output, otherwise fade-out), on top of the automatic
                 click-avoidance fades at every cut boundary.
-* ``marker`` -- not a mutation; kept so older EDLs still load, and ignored by the render.
 
 The actual work lives in :func:`_render`, which operates on a plain file path so the
 legacy :func:`remove_silence` path can share the exact same engine.

@@ -18,11 +18,10 @@ keeps the original intact.
 
 ```
 EditOperation:
-  type      "cut" | "keep" | "fade" | "marker"
+  type      "cut" | "keep" | "fade"
   start     float
-  end       float
-  # cut: remove [start,end]; keep: retain only listed keeps; fade: at a boundary;
-  # marker: accepted so older EDLs still load, ignored by the render
+  end       float?
+  # cut: remove [start,end]; keep: retain only listed keeps; fade: at a boundary
 
 EditDecisionList:
   source_id   str
@@ -74,8 +73,9 @@ segments, which it turns into `cut` operations and hands to the same render path
   timeline; a passage cut entirely (or outside an exported range) gets no chapter, and
   when two land on the same time the later one is kept. Each chapter runs until the next
   (the last until the end of the file).
-  They are written through an ffmetadata file (`editing/render.py`). EDL `marker` ops
-  are ignored.
+  The service builds the `(start, end, label)` spans from the surah map
+  (`service/workers.py`) and `editing/render.py` writes them through an ffmetadata file.
+  The EDL holds no chapter data.
 - **Range export and split**: an export may carry `range_start`/`range_end` to render
   only that source range (edits inside it still applied, the saved EDL untouched). Split
   (`POST /projects/{id}/split`) takes one or more `ranges`, joins them back to back with
@@ -101,5 +101,5 @@ segments, which it turns into `cut` operations and hands to the same render path
 ## Boundary
 
 This layer consumes contracts (`AudioSource`, `SilenceSegment`, `EDL`, and chapter
-`(time, label)` pairs the service builds from the `SurahMap`) and produces audio files. It performs **no detection** — if it needs segments, it calls the
+`(start, end, label)` spans the service builds from the `SurahMap`) and produces audio files. It performs **no detection** — if it needs segments, it calls the
 detection layer. Keeping render logic free of analysis keeps both testable in isolation.
