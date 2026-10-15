@@ -85,7 +85,8 @@ none and count as 0).
   functions applied in order on every load. v0 -> v1 fills the library name, timestamps
   and `source_kind` that early files lack; v1 -> v2 drops the `markers` and `structure`
   fields of the retired phrase detection, which the surah map replaced (a v2 file has
-  `surahs` instead, `null` until recognition runs). The upgraded form is written on the
+  `surahs` instead, `null` until recognition runs) and keeps `status.analyzed` only when
+  silences remain. The upgraded form is written on the
   next save; the store always writes the current version, never an older one.
 - **Missing files are healed on load**: a `working_copy`, `speech_map` or `transcript`
   whose file is gone is set to `null`, and exports kept in the project whose files are
@@ -172,7 +173,8 @@ POST /app/export-folder/pick            -> preferences (native folder dialog)
   [03-surah-recognition.md](03-surah-recognition.md).
 - **Split** (`SplitRequest`): `ranges` is a list of `[start, end]` source-time pairs
   (1 to 500, each `0 <= start < end`), stored sorted with overlapping or touching ranges
-  merged. They are rendered back to back, with the source project's edits inside them
+  merged; a range starting at or past the recording's end is refused with 422, and an
+  end past it is clamped. They are rendered back to back, with the source project's edits inside them
   applied, and imported as a new project; `name` defaults to the source name plus the
   ranges' extent (`1:05-9:40, 3 parts`).
 - **Export** (`ExportRequest`): `embed_chapters` (default `editing.embed_chapters`,
