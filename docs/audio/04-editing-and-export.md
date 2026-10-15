@@ -21,7 +21,8 @@ EditOperation:
   type      "cut" | "keep" | "fade" | "marker"
   start     float
   end       float
-  # cut: remove [start,end]; keep: retain only listed keeps; fade: at a boundary
+  # cut: remove [start,end]; keep: retain only listed keeps; fade: at a boundary;
+  # marker: accepted so older EDLs still load, ignored by the render
 
 EditDecisionList:
   source_id   str
@@ -44,8 +45,8 @@ asks for: detection produces data, the user/edit layer decides, rendering execut
 - **Boundary fades / crossfades** — apply short fades at every cut to avoid clicks/pops
   (concatenating non-zero-crossing samples produces audible artifacts). This is a
   quality must-have, not optional.
-- **Marker export** — markers are metadata, not edits, but export may embed them
-  (chapters/cue points) or emit a sidecar file.
+- **Surah chapters** — the recognised surahs are analysis data, not edits; export can
+  write the accepted passages as chapters (below).
 
 ## Rendering approach
 
@@ -64,7 +65,22 @@ segments, which it turns into `cut` operations and hands to the same render path
 ## Export
 
 - Formats: MP3 (user artifact) and optionally WAV (lossless working/export).
-- Preserve/refresh metadata (title, source URL). Optionally embed markers as chapters.
+- Preserve/refresh metadata (title, source URL).
+- **Chapters** (`ExportRequest.embed_chapters`, default `editing.embed_chapters`): each
+  accepted surah passage (`Project.surahs`, level `accept`; unsure ones are skipped)
+  becomes a chapter, labelled `<transliteration> · <from>–<to>` from the Tanzil
+  metadata, e.g. `Al-Hajj · 1–24` (`Al-Hajj · 5` for a single ayah). A chapter starts at
+  the first moment of its passage that survives the edits, remapped to the output
+  timeline; a passage cut entirely (or outside an exported range) gets no chapter, and
+  when two land on the same time the later one is kept. Each chapter runs until the next
+  (the last until the end of the file).
+  They are written through an ffmetadata file (`editing/render.py`). EDL `marker` ops
+  are ignored.
+- **Range export and split**: an export may carry `range_start`/`range_end` to render
+  only that source range (edits inside it still applied, the saved EDL untouched). Split
+  (`POST /projects/{id}/split`) takes one or more `ranges`, joins them back to back with
+  the edits inside them applied, and imports the result as a new project with its own
+  audio and an empty EDL. Both work by adding `keep` ops to a copy of the EDL.
 - Quality knobs: bitrate / VBR quality, sample rate (carried from data model).
 - Return an export artifact record (path, format, duration, applied EDL reference).
 - The service renders to `exports/<id>.part.<ext>` and renames it to `<id>.<ext>` only
@@ -84,6 +100,6 @@ segments, which it turns into `cut` operations and hands to the same render path
 
 ## Boundary
 
-This layer consumes contracts (`AudioSource`, `SilenceSegment`, `Marker`, `EDL`) and
-produces audio files. It performs **no detection** — if it needs segments, it calls the
+This layer consumes contracts (`AudioSource`, `SilenceSegment`, `EDL`, and chapter
+`(time, label)` pairs the service builds from the `SurahMap`) and produces audio files. It performs **no detection** — if it needs segments, it calls the
 detection layer. Keeping render logic free of analysis keeps both testable in isolation.

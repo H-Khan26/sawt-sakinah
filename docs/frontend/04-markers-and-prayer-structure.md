@@ -21,7 +21,7 @@ sujood --takbir--> julus --takbir--> sujood --takbir--> [next rak'ah]
 
 So the ordered stream of takbirs ≈ the sequence of position boundaries. The backend's
 `prayer/` model converts markers → `PrayerPosition[]`; the UI renders and lets the user
-edit that interpretation. See [../audio/03-phrase-detection.md](../audio/03-phrase-detection.md).
+edit that interpretation. See [../audio/03-surah-recognition.md](../audio/03-surah-recognition.md).
 
 ## Data in / out
 

@@ -510,7 +510,7 @@ markers + structure). `WaveformView` gained an `overlay` slot anchored to the wa
   payload is inert on the Whisper backend).
 
 **References:** [04-markers-and-prayer-structure.md](04-markers-and-prayer-structure.md);
-[audio/03-phrase-detection.md](../audio/03-phrase-detection.md);
+[audio/03-surah-recognition.md](../audio/03-surah-recognition.md);
 [markers.py](../../sawt_sakinah/models/markers.py) (`Marker.id` is derived from
 `type`+`time`; `duration` is computed; `source` is `auto|user`),
 [structure.py](../../sawt_sakinah/models/structure.py); `PhraseParams`/`PhraseRequest` in

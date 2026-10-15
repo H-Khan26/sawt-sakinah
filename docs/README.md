@@ -2,9 +2,9 @@
 
 sawt-sakinah turns a recording of salah or Quran recitation into an annotated, editable
 timeline. The Python engine acquires the audio, analyses it into structured data
-(silences, prayer-phrase markers, prayer positions), and renders the user's edits. The
-React frontend is a control surface over that engine: it shows the data, the user decides,
-and rendering happens last.
+(silences and the recited surahs), and renders the user's edits. The React frontend is a
+control surface over that engine: it shows the data, the user decides, and rendering
+happens last.
 
 ## System shape
 
@@ -14,8 +14,7 @@ and rendering happens last.
    +----------v-----------+   Python (FastAPI, thread-pool jobs)      docs/audio/
    |  extraction          |   download or import -> mp3, 16 kHz working copy,
    |                      |   Silero speech-probability sidecar (once per source)
-   |  detection           |   silence spans, phrase markers        (data only)
-   |  prayer              |   markers -> rak'ah / position outline
+   |  detection           |   silence spans, surah map             (data only)
    |  editing             |   EDL -> rendered audio                (the only writer)
    |  service             |   projects, jobs, media, export routes
    +----------+-----------+
@@ -23,16 +22,16 @@ and rendering happens last.
    +----------v-----------+   React 18 + Vite + Tailwind + TanStack Query      docs/frontend/
    |  waveform + transport|   wavesurfer.js, playback, zoom
    |  silence editing     |   detect, select, cut, ripple view
-   |  markers + structure |   takbir markers, prayer-position panel
+   |  surahs              |   surah band, list, keep / split a surah
    |  projects + export   |   library, split, export modal
    +----------------------+   served by the API, or wrapped in a pywebview window
 ```
 
 ## The principle every module follows
 
-**Detection returns data; editing produces files.** `detection/` and `prayer/` never
-write audio. `extraction/` writes the working copy and its sidecars once. `editing/` is
-the only layer that renders new audio, driven by an edit decision list the user built from
+**Detection returns data; editing produces files.** `detection/` never writes audio.
+`extraction/` writes the working copy and its sidecars once. `editing/` is the only
+layer that renders new audio, driven by an edit decision list the user built from
 detection output. Every tuning knob lives in one strict config file,
 `sawt_sakinah/config/defaults.yaml`, and code binds its defaults from it.
 
@@ -42,7 +41,7 @@ detection output. Every tuning knob lives in one strict config file,
 - [00-overview.md](audio/00-overview.md): vision, prayer-domain context, module boundaries.
 - [01-extraction.md](audio/01-extraction.md): YouTube download and file import, working copy, caching.
 - [02-silence-detection.md](audio/02-silence-detection.md): speech-probability (Silero VAD) default and the ffmpeg energy gate.
-- [03-phrase-detection.md](audio/03-phrase-detection.md): takbir and phrase markers with Whisper, speech-scoped and snapped.
+- [03-surah-recognition.md](audio/03-surah-recognition.md): surahs and ayat from a Quran Whisper transcript matched against the Tanzil text.
 - [04-editing-and-export.md](audio/04-editing-and-export.md): non-destructive EDL, render, export.
 - [05-data-model-and-api.md](audio/05-data-model-and-api.md): shared contracts and the service API.
 
@@ -56,7 +55,7 @@ detection output. Every tuning knob lives in one strict config file,
 - [06-implementation-plan.md](frontend/06-implementation-plan.md): the build record and current file map.
 
 **Design records: [plans/](plans/)**
-- [vad-integration-plan.md](plans/vad-integration-plan.md): one Silero pass per source shared by silence and phrase detection.
+- [vad-integration-plan.md](plans/vad-integration-plan.md): one Silero pass per source shared by silence detection and transcription.
 - [backend-project-crud-plan.md](plans/backend-project-crud-plan.md): recording list, rename, delete.
 - [frontend-project-library-plan.md](plans/frontend-project-library-plan.md): library page and in-editor switcher.
 - [resilient-processing.md](plans/resilient-processing.md): checkpoint and resume for long jobs (proposed).

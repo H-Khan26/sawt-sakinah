@@ -14,16 +14,21 @@ thing to change later.
 
 ```
 AudioSource
-  id            str
-  source_url    str
-  local_path    str
-  title         str
-  duration_sec  float
-  sample_rate   int
-  channels      int
-  codec         str
-  content_hash  str
-  created_at    datetime
+  id                 str
+  source_kind        str        # "youtube" | "upload"
+  source_url         str?       # None for uploads
+  original_filename  str?       # set for uploads
+  local_path         path       # the mp3
+  title              str
+  duration_sec       float
+  sample_rate        int
+  channels           int
+  codec              str
+  content_hash       str
+  created_at         datetime
+  working_copy       path?      # 16 kHz mono WAV for detection
+  speech_map         path?      # Silero speech-probability sidecar (.npz)
+  transcript         path?      # Whisper word transcript sidecar (audio/transcript.json)
 
 SilenceSegment
   start         float      # seconds
@@ -31,49 +36,60 @@ SilenceSegment
   duration      float
   mean_db       float
 
-Marker
-  id            str
-  time          float      # seconds (phrase onset)
-  end           float?     # optional
-  label         str        # "Allahu Akbar"
-  type          str        # takbir | tasmi | tahmid | tasleem | custom
-  confidence    float      # 0..1
-  source        str        # "auto" | "user"
+SurahPassage                       # see 03-surah-recognition.md
+  surah         int        # 1..114
+  ayah_from     int        # first ayah heard (inclusive)
+  ayah_to       int        # last ayah heard (inclusive)
+  start         float      # seconds, padded into the pause before
+  end           float      # seconds, padded into the pause after
+  confidence    float      # matched words / words spanned (0..1)
+  level         str        # "accept" | "unsure"
 
-PrayerPosition
-  index         int
-  name          str        # qiyam | ruku | itidal | sujood | julus | tasleem
-  rakah         int
-  start         float
-  end           float?
-  derived_from  list[str]  # marker ids that produced this position
+SurahMap
+  model         str        # catalog id of the Whisper model the transcript came from
+  matched_at    datetime   # UTC
+  passages      list[SurahPassage]   # ordered by start
 
 EditOperation / EditDecisionList   # see 04-editing-and-export.md
 
 Project                            # the top-level container
   id            str
   audio_source  AudioSource
+  name          str        # library label
   silences      list[SilenceSegment]
-  markers       list[Marker]
-  structure     list[PrayerPosition]
+  surahs        SurahMap?  # None until surah recognition has run
   edl           EditDecisionList
   status        per-stage status (extracted / analyzed / edited)
+  exports       list[ExportArtifact]
+  created_at / updated_at  datetime
 ```
 
 A **Project** is what the frontend loads and works against. It bundles the audio plus
 all derived data and the current edit state.
 
+The wire form (`service/schemas.py::ProjectView`) is the same tree with server paths
+stripped: `AudioSourceView` drops `local_path`, `working_copy`, `speech_map` and
+`transcript` and adds `audio_url`, `has_speech_map` (speech-aware controls are available)
+and `has_transcript` (surahs can be matched again without transcribing); exports carry a
+`download_url` or, once saved to a user folder, `saved_path`.
+
 ## On-disk format and versioning
 
 Each project is a folder under the projects directory holding `project.json`,
-`audio/`, `exports/` and a cached `waveform.json`. `project.json` is the `Project` model
-dumped as JSON plus a top-level `schema_version` integer (currently **1**; files from
-before versioning have none and count as 0).
+`audio/` (the mp3, the working copy, the speech map and `transcript.json`), `exports/`
+and a cached `waveform.json`. `project.json` is the `Project` model dumped as JSON plus
+a top-level `schema_version` integer (currently **2**; files from before versioning have
+none and count as 0).
 
 - **Migrations** live in `models/migrations.py`: a registry of `version -> step`
-  functions applied in order on every load (v0 -> v1 fills the library name, timestamps
-  and `source_kind` that early files lack). The upgraded form is written on the next
-  save; the store always writes the current version, never an older one.
+  functions applied in order on every load. v0 -> v1 fills the library name, timestamps
+  and `source_kind` that early files lack; v1 -> v2 drops the `markers` and `structure`
+  fields of the retired phrase detection, which the surah map replaced (a v2 file has
+  `surahs` instead, `null` until recognition runs). The upgraded form is written on the
+  next save; the store always writes the current version, never an older one.
+- **Missing files are healed on load**: a `working_copy`, `speech_map` or `transcript`
+  whose file is gone is set to `null`, and exports kept in the project whose files are
+  gone are dropped (exports saved to a user folder stay listed).
 - **Newer files are refused.** A `schema_version` above the app's is never loaded or
   rewritten: `GET /projects/{id}` answers 409 `ProjectTooNewError` ("This recording was
   saved by a newer version of Sawt Sakinah. Update the app to open it."), and a damaged
@@ -112,23 +128,64 @@ Extraction and ML detection are slow (seconds–minutes). The API must not block
 
 ```
 POST /projects                 { url }                 -> { project_id, job_id }   # starts extraction
-GET  /jobs/{job_id}            -> { state, progress, error? }
+GET  /jobs/{job_id}            -> { kind, state, progress, result?, error? }
 GET  /projects/{id}            -> Project
 POST /projects/{id}/detect/silence   { params }        -> { job_id }
-POST /projects/{id}/detect/phrases   { params, refs }  -> { job_id }
+POST /projects/{id}/detect/surahs    { reuse_transcript }  -> 202 { job_id }, or 409 when the model is missing
+GET  /quran/surahs             -> [{ number, name, tname, ename, ayas, type }]   # the 114 surahs
 GET  /projects                 -> { projects: [ProjectSummary] }   # unreadable ones flagged
 DELETE /projects/{id}          -> 204, or 409 ProjectInUseError while files are locked
+POST /projects/{id}/split      { ranges, name? }       -> { project_id, job_id }   # ranges into a new project
 GET  /projects/{id}/audio      -> audio stream (range requests for waveform/seek)
 GET  /projects/{id}/waveform   -> precomputed peaks (optional, for fast rendering)
 PUT  /projects/{id}/edl        { operations }          -> updated EDL
-POST /projects/{id}/export     { format, params }      -> { job_id } -> artifact
+POST /projects/{id}/export     { format, bitrate?, embed_chapters, name?, range_start?, range_end? }
+                               -> { job_id } -> artifact
 POST /projects/{id}/exports/{a}/save    -> { saved_path } (desktop: move into the folder)
 POST /projects/{id}/exports/{a}/reveal  -> 204, or 404 once the file was moved
+GET  /models                   -> [{ id, label, description, size_mb, installed, download_job_id? }]
+POST /models/{id}/download     -> 202 download_model job
+DELETE /models/{id}            -> 204, or 409 ModelBusyError while downloading or in use
+GET  /app/info                 -> version, cookie_browsers, export folder info, quran_text_credit
+GET|PATCH /app/preferences     -> preferences
 POST /app/export-folder/pick            -> preferences (native folder dialog)
 ```
 
-- **Progress**: poll `GET /jobs/{id}` or push via WebSocket/SSE. Wire yt-dlp and
-  detection progress hooks into this.
+- **Progress**: poll `GET /jobs/{id}`. Each job's `progress` is the last payload its
+  worker reported and `result` its summary once it succeeds.
+- **Job kinds** (`service/jobs.py::JobKind`): `extract`, `detect_silence`,
+  `detect_surahs`, `export`, `split`, `download_model`, `update_ytdlp`. Most run on the
+  general pool (`service.max_workers`); `detect_surahs` runs on the dedicated
+  `transcription` pool (`service.transcription_workers`, 1 by default, since concurrent
+  Whisper on one device runs out of memory), and app housekeeping on a one-thread
+  background pool.
+- **Surah recognition** (`POST /projects/{id}/detect/surahs`, body `SurahRequest`):
+  `reuse_transcript` (default `true`) matches the saved transcript again when it came
+  from the current model instead of transcribing. The model (`surahs.model`) and the
+  thresholds come from the config. The request answers 409 `ModelNotInstalledError` when
+  the model isn't downloaded. Progress payloads, in order:
+  `{"stage": "detect", "status": "start"}`, then
+  `{"stage": "transcribing", "done_sec", "total_sec"}` while Whisper runs (seconds of the
+  audio handed to it; absent when the transcript is reused), `{"stage": "matching"}`, and
+  `{"stage": "detect", "status": "done"}`. The job stores `Project.surahs`, sets
+  `status.analyzed`, and its result is `{"passages", "accept", "unsure"}` (counts). See
+  [03-surah-recognition.md](03-surah-recognition.md).
+- **Split** (`SplitRequest`): `ranges` is a list of `[start, end]` source-time pairs
+  (1 to 500, each `0 <= start < end`), stored sorted with overlapping or touching ranges
+  merged. They are rendered back to back, with the source project's edits inside them
+  applied, and imported as a new project; `name` defaults to the source name plus the
+  ranges' extent (`1:05-9:40, 3 parts`).
+- **Export** (`ExportRequest`): `embed_chapters` (default `editing.embed_chapters`,
+  `true`) writes the accepted surah passages as chapters; see
+  [04-editing-and-export.md](04-editing-and-export.md).
+- **Models**: one catalog model, `quran-base`, used by surah recognition; there is no
+  per-user model choice. A download job reports
+  `{"stage": "downloading", "bytes_done", "bytes_total"}`.
+- **App info and preferences**: `GET /app/info` includes `quran_text_credit`, the
+  Tanzil attribution line the app shows wherever the Quran text is used. Preferences
+  include `surah_view` (tint the recognised surahs on the waveform, default `true`) and
+  `show_fatihah` (include Al-Fatihah in the surah band and list, default `true`); a
+  stored key the app no longer uses (such as the retired `whisper_model`) is ignored.
 - **Range requests** on the audio endpoint let the waveform component stream/seek.
 - **Waveform peaks**: consider precomputing min/max peak data server-side so the
   frontend renders instantly instead of decoding the whole file in the browser.
@@ -171,8 +228,9 @@ The service listens on localhost, so any web page the user opens can try to reac
   `Referrer-Policy: no-referrer`. The dev Vite server serves the SPA without them.
 
 Request fields that reach file names, ffmpeg or model loading (`format`, `bitrate`,
-`audio_format`, `audio_quality`, `model_size`, `device`, `compute_type`, `detector`) are
-checked against allow-lists in `service/schemas.py`, and export paths must stay inside
+`audio_format`, `audio_quality`, `detector`) are checked against allow-lists in
+`service/schemas.py`; the Whisper model, device and compute type are not request fields
+at all (they come from the config), and export paths must stay inside
 the project's exports folder. The YouTube cookies preferences are checked the same way:
 `cookies_browser` against a fixed browser allow-list (`GET /app/info` lists the ones
 offered on this OS), `cookies_file` as an absolute path to an existing local file (no
