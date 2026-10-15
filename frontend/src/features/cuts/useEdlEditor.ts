@@ -1,57 +1,59 @@
 /**
- * The single choke point through which every EDL edit (silence removal/restore, manual cuts,
+ * The single choke point through which every EDL edit (silence removal/restore, cuts, keep-only,
  * undo, redo) flows, so all surfaces share one coherent undo history.
  *
- * Callers pass the *current* `operations[]` (server state from the project cache) into each
- * action so the snapshot pushed onto the undo stack is always the live one — the hook holds no
- * copy of its own. Applying an edit records the pre-edit ops as an undo point and persists the
- * next array via `usePutEdl`; undo/redo swap snapshots and persist the result.
+ * The live ops are read from the project cache when an edit runs. `useSaveEdl` writes each edit
+ * there at once and saves it in the background, so an edit always builds on the previous one,
+ * even while saves are in flight. Applying an edit normalizes the result's cut ranges, records
+ * the pre-edit ops with the edit's label as an undo point, and saves the result; undo/redo swap
+ * snapshots and save the result.
  */
-import { usePutEdl } from "@/api/hooks";
-import { useEditStore } from "@/stores/editStore";
-import type { EditOperation } from "@/types/api";
-
-/** Shallow structural equality for op arrays — skips no-op persists. */
-function sameOps(a: EditOperation[], b: EditOperation[]): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  return a.every((op, i) => {
-    const o = b[i];
-    return op.type === o.type && op.start === o.start && op.end === o.end;
-  });
-}
+import { queryKeys } from "@/api/endpoints";
+import { useSaveEdl } from "@/api/hooks";
+import { type EditSnapshot, useEditStore } from "@/stores/editStore";
+import type { EditOperation, ProjectView } from "@/types/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { normalizeCuts, sameOps } from "./cutEdl";
 
 export interface EdlEditor {
-  /** Record `current` as an undo point and persist `next` (unless it's identical to `current`). */
-  applyOps: (current: EditOperation[], next: EditOperation[]) => void;
-  /** Undo the last edit given the `current` ops; no-op if the undo stack is empty. */
-  undo: (current: EditOperation[]) => void;
-  /** Redo the last undone edit given the `current` ops; no-op if the redo stack is empty. */
-  redo: (current: EditOperation[]) => void;
-  /** A persist is in flight. */
-  isPending: boolean;
+  /**
+   * Apply `edit` to the live ops and record it as an undo point named `label` (e.g. "Cut 4.2 s").
+   * Returns the undo point, or null when the edit changes nothing.
+   */
+  apply: (edit: (ops: EditOperation[]) => EditOperation[], label: string) => EditSnapshot | null;
+  /** Undo the last edit; no-op if the undo stack is empty. */
+  undo: () => void;
+  /** Redo the last undone edit; no-op if the redo stack is empty. */
+  redo: () => void;
 }
 
 export function useEdlEditor(projectId: string): EdlEditor {
-  const putEdl = usePutEdl(projectId);
-  const beginEdit = useEditStore((s) => s.beginEdit);
-  const undoStore = useEditStore((s) => s.undo);
-  const redoStore = useEditStore((s) => s.redo);
+  const queryClient = useQueryClient();
+  const save = useSaveEdl(projectId);
+  const live = () => queryClient.getQueryData<ProjectView>(queryKeys.project(projectId));
 
   return {
-    applyOps: (current, next) => {
-      if (sameOps(current, next)) return;
-      beginEdit(current);
-      putEdl.mutate(next);
+    apply: (edit, label) => {
+      const project = live();
+      if (!project) return null;
+      const current = project.edl.operations;
+      const duration = project.audio_source.duration_sec;
+      const next = normalizeCuts(edit(current), duration);
+      if (sameOps(normalizeCuts(current, duration), next)) return null;
+      const snapshot = { ops: current, label };
+      useEditStore.getState().beginEdit(snapshot);
+      save(next);
+      return snapshot;
     },
-    undo: (current) => {
-      const prev = undoStore(current);
-      if (prev) putEdl.mutate(prev);
+    undo: () => {
+      const project = live();
+      const prev = project && useEditStore.getState().undo(project.edl.operations);
+      if (prev) save(prev);
     },
-    redo: (current) => {
-      const next = redoStore(current);
-      if (next) putEdl.mutate(next);
+    redo: () => {
+      const project = live();
+      const next = project && useEditStore.getState().redo(project.edl.operations);
+      if (next) save(next);
     },
-    isPending: putEdl.isPending,
   };
 }

@@ -18,7 +18,9 @@ import { PlayheadDiamond } from "@/features/waveform/PlayheadDiamond";
 import { WaveformProvider } from "@/features/waveform/WaveformContext";
 import { WaveformOverview } from "@/features/waveform/WaveformOverview";
 import { WaveformView } from "@/features/waveform/WaveformView";
+import { useEditStore } from "@/stores/editStore";
 import type { JobRecord, ProjectView } from "@/types/api";
+import { useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 /** Router state carried from the landing page (and across retries). */
@@ -167,7 +169,7 @@ export function EditorPage() {
 /**
  * The editor proper, mounted once the project is loaded. `WaveformProvider` owns the
  * wavesurfer instance and exposes it (via context) to the overview, the transport, the region
- * layer (silence + manual cuts + pending selection), and the marker layer, which slot in around
+ * layer (silence + cut ranges + pending selection), and the marker layer, which slot in around
  * `WaveformView`.
  */
 function EditorWorkspace({ project }: { project: ProjectView }) {
@@ -184,12 +186,17 @@ function EditorWorkspace({ project }: { project: ProjectView }) {
  * When the page is fixed to the window the last row takes the remaining height.
  */
 function EditorBody({ project }: { project: ProjectView }) {
-  const ops = project.edl.operations;
+  const resetEdits = useEditStore((s) => s.reset);
+  // The selection and undo history belong to one project: reset them when it changes or the
+  // editor closes. Refetches of the same project keep them.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: project.id is the reset trigger
+  useEffect(() => resetEdits, [project.id, resetEdits]);
+
   useTransportHotkeys();
   // Single owner of the Regions plugin; cut hotkeys. Live playback-skip over cut spans lives in
   // the waveform engine (it owns the playback element), so no hook is mounted here for it.
-  useEditRegions(project.silences, ops);
-  useEditHotkeys(project.id, ops);
+  useEditRegions(project.silences, project.edl.operations);
+  useEditHotkeys(project.id);
   return (
     <RuledPage className="grid grid-cols-[minmax(0,1fr)] content-start gap-y-4 px-8 pb-5 pt-6 group-[.is-fit]/page:grid-rows-[auto_auto_auto_auto_minmax(0,1fr)]">
       <div className="flex min-w-0 items-center justify-center gap-6">

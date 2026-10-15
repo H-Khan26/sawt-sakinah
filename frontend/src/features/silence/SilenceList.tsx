@@ -16,7 +16,7 @@ export function SilenceList({
   removedIds,
 }: {
   silences: SilenceSegment[];
-  /** Keys of silences currently marked for removal (a `cut` op exists in the EDL). */
+  /** Keys of silences currently marked for removal (fully covered by a cut range). */
   removedIds: Set<string>;
 }) {
   const { controller, timeMap } = useWaveformContext();

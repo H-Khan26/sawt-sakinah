@@ -1,8 +1,9 @@
 /**
- * Manual cut editing: mark a range by playhead (I/O keys) or by typing timestamps, commit it
- * as a non-destructive `cut`, and manage committed cuts (restore = uncut). Shares the EDL and
- * the undo history with the silence tool via `useEdlEditor`; nothing is rendered destructively
- * until export, and the waveform engine skips committed cuts live during playback.
+ * Cut editing: mark a range by playhead (I/O keys) or by typing timestamps, cut it (a union with
+ * the removed audio) or keep only it, and list the removed ranges (restore = subtract the range).
+ * Shares the EDL and the undo history with the silence tool via `useEdlEditor`; nothing is
+ * rendered destructively until export, and the waveform engine skips cut ranges live during
+ * playback.
  */
 import { Button } from "@/components/ui";
 import { FieldLabel } from "@/features/editor/FieldLabel";
@@ -13,11 +14,21 @@ import type { TimeMap } from "@/features/waveform/timeMap";
 import { cn } from "@/lib/cn";
 import { formatClock, formatClockPrecise, parseClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
-import type { EditOperation, ProjectView } from "@/types/api";
+import type { ProjectView } from "@/types/api";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SplitModal } from "./SplitModal";
-import { MIN_CUT_DURATION, addCut, cutKey, keepOnly, manualCuts, removeCutsByKey } from "./cutEdl";
+import {
+  MIN_CUT_DURATION,
+  type Span,
+  cutKey,
+  cutRange,
+  durationLabel,
+  keepOnly,
+  manualCutSpans,
+  mergeCutSpans,
+  restoreRanges,
+} from "./cutEdl";
 import { isTypingTarget } from "./useEditHotkeys";
 import { useEdlEditor } from "./useEdlEditor";
 
@@ -135,12 +146,12 @@ export function CutPanel({ project }: { project: ProjectView }) {
 
   const duration = project.audio_source.duration_sec;
 
-  // Manual cuts are all cut ops that aren't a (possibly clipped) silence removal — classify
-  // against the active silence set so removing a clipped silence doesn't also list it here.
+  // The listed ranges are the merged cut ranges that aren't exactly a (possibly clipped) silence
+  // removal — classified against the active silence set, as the waveform draws them.
   const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
-  const cuts = useMemo(() => manualCuts(ops, active), [ops, active]);
-  const selectedCutKeys = useMemo(
-    () => cuts.map(cutKey).filter((k) => selectedIds.has(k)),
+  const cuts = useMemo(() => manualCutSpans(mergeCutSpans(ops), active), [ops, active]);
+  const selectedCuts = useMemo(
+    () => cuts.filter((span) => selectedIds.has(cutKey(span))),
     [cuts, selectedIds],
   );
 
@@ -148,8 +159,6 @@ export function CutPanel({ project }: { project: ProjectView }) {
     selectionStart != null &&
     selectionEnd != null &&
     Math.abs(selectionEnd - selectionStart) >= MIN_CUT_DURATION;
-
-  const busy = editor.isPending;
 
   // Normalized source-time selection (min/max), or null when no valid range is marked.
   const range =
@@ -160,26 +169,30 @@ export function CutPanel({ project }: { project: ProjectView }) {
         }
       : null;
 
-  const cutRange = () => {
-    if (selectionStart == null || selectionEnd == null) return;
-    editor.applyOps(ops, addCut(ops, selectionStart, selectionEnd));
+  const cutSelection = () => {
+    if (!range) return;
+    editor.apply(
+      (o) => cutRange(o, range.start, range.end),
+      durationLabel("Cut", range.end - range.start),
+    );
     clearSelectionRange();
   };
   const keepOnlyRange = () => {
     if (!range) return;
-    editor.applyOps(ops, keepOnly(ops, range.start, range.end, duration));
+    editor.apply((o) => keepOnly(o, range.start, range.end, duration), "Keep only");
     clearSelectionRange();
   };
   const restoreSelected = () => {
-    if (selectedCutKeys.length === 0) return;
-    editor.applyOps(ops, removeCutsByKey(ops, new Set(selectedCutKeys)));
+    if (selectedCuts.length === 0) return;
+    const seconds = selectedCuts.reduce((sum, [a, b]) => sum + (b - a), 0);
+    editor.apply((o) => restoreRanges(o, selectedCuts), durationLabel("Restore", seconds));
   };
 
   // Selection-action shortcuts (E export, N new recording, K keep-only), co-located here since the
   // range + modal state live in this component. Read via a ref so the listener subscribes once
   // while acting on fresh state; suppressed while typing or while a selection modal is open.
-  const hotkeyRef = useRef({ keepOnlyRange, setExportOpen, setSplitOpen, rangeReady, busy });
-  hotkeyRef.current = { keepOnlyRange, setExportOpen, setSplitOpen, rangeReady, busy };
+  const hotkeyRef = useRef({ keepOnlyRange, setExportOpen, setSplitOpen, rangeReady });
+  hotkeyRef.current = { keepOnlyRange, setExportOpen, setSplitOpen, rangeReady };
   const modalOpen = exportOpen || splitOpen;
   useEffect(() => {
     if (modalOpen) return; // don't fire selection shortcuts while a dialog is up
@@ -196,7 +209,6 @@ export function CutPanel({ project }: { project: ProjectView }) {
         e.preventDefault();
         h.setSplitOpen(true);
       } else if (k === "k") {
-        if (h.busy) return;
         e.preventDefault();
         h.keepOnlyRange();
       }
@@ -260,13 +272,13 @@ export function CutPanel({ project }: { project: ProjectView }) {
 
       {/* Selection actions: operate on the marked range. Enabled only when it's valid. */}
       <div className="flex flex-wrap items-center gap-2 border-t border-dotted border-border pt-4">
-        <Button onClick={cutRange} disabled={!rangeReady || busy} title="Cut the range (Delete)">
+        <Button onClick={cutSelection} disabled={!rangeReady} title="Cut the range (Delete)">
           Cut range
         </Button>
         <Button
           variant="secondary"
           onClick={keepOnlyRange}
-          disabled={!rangeReady || busy}
+          disabled={!rangeReady}
           title="Trim everything outside the selection (K)"
         >
           Keep only
@@ -311,7 +323,7 @@ export function CutPanel({ project }: { project: ProjectView }) {
               size="sm"
               variant="secondary"
               onClick={restoreSelected}
-              disabled={selectedCutKeys.length === 0 || busy}
+              disabled={selectedCuts.length === 0}
             >
               Restore selected
             </Button>
@@ -346,7 +358,7 @@ function CutList({
   onToggle,
   onSeek,
 }: {
-  cuts: EditOperation[];
+  cuts: Span[];
   timeMap: TimeMap;
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
@@ -361,10 +373,10 @@ function CutList({
   }
   return (
     <ul className="max-h-48 divide-y divide-border overflow-y-auto border-y border-border">
-      {cuts.map((op, i) => {
-        const key = cutKey(op);
+      {cuts.map((span, i) => {
+        const [start, end] = span;
+        const key = cutKey(span);
         const selected = selectedIds.has(key);
-        const end = op.end ?? op.start;
         return (
           <li key={key} className="flex items-center gap-3 py-1.5 text-sm">
             <input
@@ -379,15 +391,15 @@ function CutList({
               className="flex flex-1 items-center justify-between gap-4 text-left"
               onClick={() => {
                 if (!selected) onToggle(key);
-                onSeek(op.start);
+                onSeek(start);
               }}
             >
               <span className="w-6 tabular-nums text-text-tertiary">{i + 1}</span>
               <span className="flex-1 tabular-nums text-text-secondary">
-                {formatClock(timeMap.toEdited(op.start))}
+                {formatClock(timeMap.toEdited(start))}
               </span>
               <span className="tabular-nums text-text-tertiary">
-                −{(end - op.start).toFixed(1)}s removed
+                −{(end - start).toFixed(1)}s removed
               </span>
             </button>
           </li>

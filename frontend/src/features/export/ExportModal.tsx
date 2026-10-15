@@ -189,6 +189,11 @@ export function ExportModal({
             {job.data?.error ?? "Something went wrong while rendering."}
           </Alert>
         )}
+        {exportAudio.isError && (
+          <Alert variant="error" title="Couldn't start the export">
+            {exportAudio.error.message}
+          </Alert>
+        )}
 
         {saved && !running && (
           <Alert variant="success" title="Export saved">

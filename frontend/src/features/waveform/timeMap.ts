@@ -11,10 +11,10 @@
  * the server-side `editing/render.py` (`_resolve_keeps` / `_remap_time`) so what you see collapsed
  * matches what export produces.
  */
-import { mergeCutSpans } from "@/features/cuts/cutEdl";
+import { type Span, mergeCutSpans } from "@/features/cuts/cutEdl";
 import type { EditOperation } from "@/types/api";
 
-export type Span = [number, number];
+export type { Span };
 
 export interface TimeMap {
   /** True when edited time == source time (deleted portions shown, or nothing cut). */

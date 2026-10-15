@@ -1,5 +1,5 @@
 /**
- * Projects the silence list, committed manual cuts, and the pending in/out selection onto the
+ * Projects the silence list, the cut ranges, and the pending in/out selection onto the
  * waveform's Regions plugin, and wires region clicks back to selection + seek. The regions are
  * a view of app state, so this hook only reconciles — it holds no state of its own. It is the
  * single owner of the Regions plugin (it clears + rebuilds), so no other hook may draw onto it.
@@ -9,12 +9,13 @@
  * invert through the `TimeMap` back to the source-time selection the store holds.
  */
 import { activeSilences } from "@/features/silence/active";
+import { removedSilenceKeys } from "@/features/silence/edl";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { useThemeColors } from "@/lib/themeColors";
 import { useEditStore } from "@/stores/editStore";
 import type { EditOperation, SilenceSegment } from "@/types/api";
 import { useEffect, useMemo, useRef } from "react";
-import { cutSpanKeys, manualCuts } from "./cutEdl";
+import { manualCutSpans, mergeCutSpans } from "./cutEdl";
 import { SELECTION_REGION_ID, reconcileEditRegions } from "./regions";
 
 export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[]): void {
@@ -24,11 +25,12 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
   const selectionEnd = useEditStore((s) => s.selectionEnd);
   const colors = useThemeColors();
 
-  // Draw only the silence that survives manual cuts; classify manual cuts against that same
-  // active set so a removed clipped-silence isn't also drawn as a manual-cut region.
+  // Draw only the silence that survives content cuts; a cut range that is exactly a removed
+  // silence is drawn as that silence, not again as a cut.
   const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
-  const removedIds = useMemo(() => cutSpanKeys(ops), [ops]);
-  const cuts = useMemo(() => manualCuts(ops, active), [ops, active]);
+  const cutSpans = useMemo(() => mergeCutSpans(ops), [ops]);
+  const removedIds = useMemo(() => removedSilenceKeys(active, cutSpans), [active, cutSpans]);
+  const cuts = useMemo(() => manualCutSpans(cutSpans, active), [cutSpans, active]);
 
   // Reconcile overlays whenever the inputs, the selection, the mapping or the theme's colours
   // change (once laid out).
@@ -37,7 +39,7 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
     reconcileEditRegions(regions, {
       silences: active,
       removedIds,
-      manualCuts: cuts,
+      cutSpans: cuts,
       selectedIds,
       selectionStart,
       selectionEnd,

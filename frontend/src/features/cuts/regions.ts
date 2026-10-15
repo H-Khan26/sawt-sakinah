@@ -3,32 +3,32 @@ import { WAVE_HEIGHT } from "@/features/waveform/layout";
 import type { TimeMap } from "@/features/waveform/timeMap";
 /**
  * Reconciles *all* waveform overlays onto the single shared Regions plugin: detected-silence
- * spans, committed manual cuts, and the pending in/out selection. The regions are a pure
+ * spans, cut ranges, and the pending in/out selection. The regions are a pure
  * projection of app state, so we clear and re-add on every change (counts are modest), keying
  * each region id back to what it represents so a click can map to the right action:
  *
  * - silence  -> id `start:end`      (see `silenceKey`)
- * - cut      -> id `cut:start:end`  (see `cutKey`)
+ * - cut      -> id `cut:start:end`  (a merged cut range; see `cutKey`)
  * - pending  -> id `selection`      (the not-yet-committed range)
  *
- * Silence is a flat band; cut audio (a manual cut, or a removed silence while deleted audio is
+ * Silence is a flat band; cut audio (a cut range, or a removed silence while deleted audio is
  * shown) is a 45° hatch with an edge line at each end.
  */
 import type { ThemeColors } from "@/lib/themeColors";
-import type { EditOperation, SilenceSegment } from "@/types/api";
+import type { SilenceSegment } from "@/types/api";
 import type { Region } from "wavesurfer.js/plugins/regions";
 import type RegionsPlugin from "wavesurfer.js/plugins/regions";
-import { cutKey } from "./cutEdl";
+import { type Span, cutKey } from "./cutEdl";
 
 /** Region id of the pending (uncommitted) in/out selection. */
 export const SELECTION_REGION_ID = "selection";
 
 export interface EditRegionsState {
   silences: SilenceSegment[];
-  /** Keys of silences marked for removal (a matching `cut` op exists). */
+  /** Keys of silences marked for removal (fully covered by a cut range). */
   removedIds: Set<string>;
-  /** Committed manual-cut ops (already filtered to exclude detected-silence cuts). */
-  manualCuts: EditOperation[];
+  /** Merged cut ranges to hatch, excluding those that are exactly a removed silence. */
+  cutSpans: Span[];
   /** Selected silence/cut keys (drives fill emphasis). */
   selectedIds: Set<string>;
   /** Pending in/out points (source time); a region is drawn only when both are set and span > 0. */
@@ -70,7 +70,7 @@ export function reconcileEditRegions(regions: RegionsPlugin, state: EditRegionsS
   const {
     silences,
     removedIds,
-    manualCuts,
+    cutSpans,
     selectedIds,
     selectionStart,
     selectionEnd,
@@ -103,13 +103,13 @@ export function reconcileEditRegions(regions: RegionsPlugin, state: EditRegionsS
   // Cut regions mark deleted audio in place — only meaningful when that audio is still on the
   // timeline (the show-deleted / identity view). Collapsed, there is nothing to mark.
   if (timeMap.identity) {
-    for (const op of manualCuts) {
-      const key = cutKey(op);
+    for (const span of cutSpans) {
+      const key = cutKey(span);
       const region = fitToBars(
         regions.addRegion({
           id: key,
-          start: op.start,
-          end: op.end ?? op.start,
+          start: span[0],
+          end: span[1],
           drag: false,
           resize: false,
           color: "transparent",

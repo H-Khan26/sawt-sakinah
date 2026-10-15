@@ -5,16 +5,17 @@ import { AlertTriangle, Check } from "lucide-react";
 import { useEffect } from "react";
 
 /**
- * Save-state indicator beside the editor title. The editor's EDL/marker edits PUT synchronously
- * per commit; this surfaces that autosave so the user knows closing is safe:
+ * Save-state indicator beside the editor title. The editor's EDL/marker edits are saved in the
+ * background per commit; this surfaces that autosave so the user knows closing is safe:
  *
- * - `Saving…` while any edit-save mutation is in flight,
+ * - `Saving…` while any edit-save mutation is in flight or queued,
  * - `Save failed — Retry` when the most recent edit-save ended in error (with a button that
- *   re-fires that exact mutation), auto-retry having already been exhausted,
+ *   re-fires that mutation; an EDL save always sends the latest local edits), auto-retry
+ *   having already been exhausted,
  * - `Saved` otherwise (idle state is fully persisted server-side).
  *
- * It also guards `beforeunload` while a save is genuinely in flight — never when idle, so
- * normal closes stay seamless.
+ * It also guards `beforeunload` while a save is in flight or has failed — never when everything
+ * is saved, so normal closes stay seamless.
  */
 export function SaveStatus({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -33,16 +34,16 @@ export function SaveStatus({ projectId }: { projectId: string }) {
   );
   const failed = pending === 0 && latest?.status === "error";
 
-  // Warn before unload only while a write is actually in flight.
+  // Warn before unload only while a write is in flight or has failed (the edit isn't stored).
   useEffect(() => {
-    if (pending === 0) return;
+    if (pending === 0 && !failed) return;
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [pending]);
+  }, [pending, failed]);
 
   const retry = () => {
     const all = queryClient.getMutationCache().getAll();
