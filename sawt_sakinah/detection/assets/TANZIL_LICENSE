@@ -1,0 +1,43 @@
+quran-simple-clean.txt and quran-surahs.json in this directory come from the Tanzil Project
+(https://tanzil.net).
+
+quran-simple-clean.txt is the Tanzil Quran text "Simple Clean" (Hafs), version 1.1, in the
+"surah|ayah|text" format. It is included unmodified, as downloaded from
+https://tanzil.net/download/, with Tanzil's copyright block at its end.
+
+quran-surahs.json is derived from the Tanzil Quran metadata file quran-data.xml
+(https://tanzil.net/res/text/metadata/quran-data.xml, version 1.0, (C) 2008-2009
+Tanzil.info, license cc-by): the per-surah number, name, tname, ename, ayas and type
+attributes are selected and reformatted as JSON. No values are changed.
+
+Both are redistributed here under Tanzil's terms of use, reproduced below exactly as they
+appear in the copyright block of quran-simple-clean.txt.
+
+# PLEASE DO NOT REMOVE OR CHANGE THIS COPYRIGHT BLOCK
+#====================================================================
+#
+#  Tanzil Quran Text (Simple Clean, Version 1.1)
+#  Copyright (C) 2007-2026 Tanzil Project
+#  License: Creative Commons Attribution 3.0
+#
+#  This copy of the Quran text is carefully produced, highly 
+#  verified and continuously monitored by a group of specialists 
+#  at Tanzil Project.
+#
+#  TERMS OF USE:
+#
+#  - Permission is granted to copy and distribute verbatim copies 
+#    of this text, but CHANGING IT IS NOT ALLOWED.
+#
+#  - This Quran text can be used in any website or application, 
+#    provided that its source (Tanzil Project) is clearly indicated, 
+#    and a link is made to tanzil.net to enable users to keep
+#    track of changes.
+#
+#  - This copyright notice shall be included in all verbatim copies 
+#    of the text, and shall be reproduced appropriately in all files 
+#    derived from or containing substantial portion of this text.
+#
+#  Please check updates at: http://tanzil.net/updates/
+#
+#====================================================================
