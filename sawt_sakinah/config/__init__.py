@@ -141,14 +141,14 @@ class EditingConfig(_Section):
     mp3_vbr_quality: str
     embed_chapters: bool
     embed_metadata: bool
-    # Retired key, accepted and ignored.
+    # Retired; `embed_chapters` replaces it. Accepted and ignored.
     embed_markers: Optional[bool] = None
 
 
 class ServiceConfig(_Section):
     max_workers: int
     transcription_workers: int
-    # Retired key, accepted and ignored.
+    # Retired; `transcription_workers` replaces it. Accepted and ignored.
     phrase_workers: Optional[int] = None
     max_pending_jobs: int
     waveform_rate: int = Field(gt=0)
@@ -179,7 +179,7 @@ class Config(_Section):
     editing: EditingConfig
     service: ServiceConfig
     app: AppConfig
-    # Retired key, accepted and ignored.
+    # Retired; `transcription` and `surahs` replace it. Accepted and ignored.
     phrases: Optional[dict[str, Any]] = None
 
     @model_validator(mode="after")

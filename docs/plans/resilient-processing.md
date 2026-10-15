@@ -40,7 +40,7 @@ checkpointing, no persistence of in-flight state, and no recovery on restart:
 | Intermediate detection results | None — only final lists written to `project.json` |
 | Retry | None |
 | Timeout | Each ffmpeg/ffprobe run stops after `ffmpeg.timeout_sec` |
-| Graceful shutdown | Queued jobs dropped; running ones get `service.shutdown_grace_sec` to stop, then are recorded as cancelled |
+| Graceful shutdown | Queued jobs never start and are recorded as cancelled; running ones get `service.shutdown_grace_sec` to stop, then are recorded as cancelled |
 | yt-dlp partial files | yt-dlp writes `.part` files; they survive restart but are never resumed |
 | Whisper model | In-memory cache (`transcribe._MODEL_CACHE`) used by the transcription pool; reloaded on restart |
 | Frontend job state | Router `location.state` only; lost on refresh |

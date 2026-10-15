@@ -78,17 +78,16 @@ and `has_transcript` (surahs can be matched again without transcribing); exports
 Each project is a folder under the projects directory holding `project.json`,
 `audio/` (the mp3, the working copy, the speech map and `transcript.json`), `exports/`
 and a cached `waveform.json`. `project.json` is the `Project` model dumped as JSON plus
-a top-level `schema_version` integer (currently **3**; files from before versioning have
+a top-level `schema_version` integer (currently **2**; files from before versioning have
 none and count as 0).
 
 - **Migrations** live in `models/migrations.py`: a registry of `version -> step`
   functions applied in order on every load. v0 -> v1 fills the library name, timestamps
   and `source_kind` that early files lack; v1 -> v2 drops the `markers` and `structure`
-  fields of the retired phrase detection, which the surah map replaced (a v2 file has
-  `surahs` instead, `null` until recognition runs) and keeps `status.analyzed` only when
-  silences remain; v2 -> v3 drops `marker` ops from `edl.operations`, since an EDL op is
-  now only `cut`, `keep` or `fade`. The upgraded form is written on the
-  next save; the store always writes the current version, never an older one.
+  fields of the retired phrase detection and the `marker` ops in `edl.operations`, which
+  the surah map replaced (a v2 file has `surahs` instead, `null` until recognition runs),
+  and keeps `status.analyzed` only when silences remain. The upgraded form is written on
+  the next save; the store always writes the current version, never an older one.
 - **Missing files are healed on load**: a `working_copy`, `speech_map` or `transcript`
   whose file is gone is set to `null`, and exports kept in the project whose files are
   gone are dropped (exports saved to a user folder stay listed).

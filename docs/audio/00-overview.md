@@ -30,8 +30,9 @@ prayer holds, in order, for each **rak'ah** (unit):
 - a **takbir** ("Allahu Akbar") as the imam moves into standing;
 - **Al-Fatihah**, then a **surah** or a stretch of one (later rak'ahs often hold
   Al-Fatihah alone);
-- quiet or near-silent **ruku'** (bowing) and **sujood** (prostration), each entered and
-  left with a takbir;
+- quiet or near-silent **ruku'** (bowing), entered with a takbir and left with the
+  **tasmi'** ("Sami'a Allahu liman hamidah") and the **tahmid** ("Rabbana wa lakal-hamd");
+- quiet **sujood** (prostrations), each entered and left with a takbir;
 
 and the prayer closes with the tasleem and often **adhkar** or a du'a after it. Al-Fatihah
 is recited in every rak'ah, so a four-rak'ah prayer holds it four times; the surah after
@@ -47,10 +48,10 @@ Consequences for the engine:
   voice-activity detection does this, with a dB gate as the fallback.
 - **The surahs are what the user navigates by.** Knowing which surah sits where lets the
   user keep one surah, split it into its own recording, or label the export by surah.
-  Everything else in the recording is what the matcher steps over: takbirs, Amin after
-  Al-Fatihah, adhkar and du'a are speech that doesn't match the Quran text, so a passage
-  ends there; and a long pause (ruku', sujood) separates the rak'ahs of a surah read
-  across a prayer into separate passages.
+  Everything else in the recording is what the matcher steps over: takbirs, the tasmi'
+  and tahmid, Amin after Al-Fatihah, adhkar and du'a are speech that doesn't match the
+  Quran text, so a passage ends there; and a long pause (ruku', sujood) separates the
+  rak'ahs of a surah read across a prayer into separate passages.
 
 ## Module boundaries (the key separation)
 

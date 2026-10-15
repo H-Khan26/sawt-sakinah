@@ -124,6 +124,12 @@ Wire shapes mirror the pydantic models exactly
 [app.py](../../sawt_sakinah/service/app.py)); async failures surface in
 `JobRecord.error` / `error_type`.
 
+**Timeline invariant:** the editor works entirely on the original source timeline: the
+EDL, silences, surah passages and cut authoring are all source seconds. The waveform only
+presents a collapsed view through a `TimeMap` (`features/waveform/timeMap.ts`); there is no
+audio edit preview, and cuts are applied and times remapped (`_remap_time`) only at export,
+server-side.
+
 ### Jobs are the async backbone
 
 Extraction, both detections, and export return `202 { job_id }`. Poll
