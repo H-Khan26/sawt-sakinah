@@ -1,9 +1,10 @@
 /**
  * The cut tool's actions, shared by the Cut panel's buttons, the keyboard and the waveform: cut
- * or restore the pending selection, restore the selected cut range, commit an edge drag of a cut
- * range, and step the playhead between cuts. Each reads the live EDL, the selection and the
- * playhead when it runs, so callers subscribe to nothing for them. Edits go through
- * `useEdlEditor` and carry an undo label naming the audio they change ("Restore 2.1 s").
+ * or restore the pending selection, restore the selected cut range or a seam's whole range,
+ * commit an edge drag of a cut range, and step the playhead between cuts. Each reads the live
+ * EDL, the selection and the playhead when it runs, so callers subscribe to nothing for them.
+ * Edits go through `useEdlEditor` and carry an undo label naming the audio they change
+ * ("Restore 2.1 s").
  *
  * A cut range is selected only while deleted audio is shown (the full view), where it is drawn
  * with edge handles; in the collapsed view it has no extent on screen, so a selected one is
@@ -14,6 +15,7 @@ import { useEditStore } from "@/stores/editStore";
 import {
   MIN_CUT_DURATION,
   type Span,
+  coveredDuration,
   cutKey,
   cutRange,
   cutRanges,
@@ -32,6 +34,8 @@ export interface CutCommands {
   cut: () => boolean;
   /** Restore the cut audio under the pending selection, else the selected cut range. */
   restore: () => boolean;
+  /** Restore the cut audio in `span` (a seam's whole range); false when there is none. */
+  restoreCut: (span: Span) => boolean;
   /**
    * Commit a drag of the `side` edge of the cut range keyed `key` to source time `time`: audio
    * the range no longer covers is restored, audio it newly covers is cut. Selects the resulting
@@ -76,6 +80,12 @@ export function useCutCommands(projectId: string): CutCommands {
       if (target.pending) store.clearSelectionRange();
       else store.selectCut(null);
       return true;
+    },
+
+    restoreCut: ([a, b]) => {
+      const seconds = coveredDuration(cutSpans(), a, b);
+      if (seconds < MIN_CUT_DURATION) return false;
+      return !!editor.apply((ops) => restoreRange(ops, a, b), durationLabel("Restore", seconds));
     },
 
     resizeCut: (key, side, time) => {

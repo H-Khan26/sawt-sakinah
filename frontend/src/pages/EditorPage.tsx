@@ -3,6 +3,7 @@ import { useCreateProject, useJob, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { SaveStatus } from "@/components/SaveStatus";
 import { Alert, EmptyState, WaveformLoader } from "@/components/ui";
+import { SeamLayer } from "@/features/cuts/SeamLayer";
 import { useEditHotkeys } from "@/features/cuts/useEditHotkeys";
 import { useEditRegions } from "@/features/cuts/useEditRegions";
 import { LowerBand } from "@/features/editor/LowerBand";
@@ -169,8 +170,8 @@ export function EditorPage() {
 /**
  * The editor proper, mounted once the project is loaded. `WaveformProvider` owns the
  * wavesurfer instance and exposes it (via context) to the overview, the transport, the region
- * layer (silence + cut ranges + pending selection), and the marker layer, which slot in around
- * `WaveformView`.
+ * layer (silence + cut ranges + pending selection), the marker layer and the seam layer, which
+ * slot in around `WaveformView`.
  */
 function EditorWorkspace({ project }: { project: ProjectView }) {
   return (
@@ -209,6 +210,7 @@ function EditorBody({ project }: { project: ProjectView }) {
         overlay={
           <>
             <MarkerLayer markers={project.markers} structure={project.structure} />
+            <SeamLayer projectId={project.id} />
             <PlayheadDiamond />
           </>
         }

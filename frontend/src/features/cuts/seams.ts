@@ -5,6 +5,7 @@
  * to seam; anything drawn at the joins reads the same positions.
  */
 import type { TimeMap } from "@/features/waveform/timeMap";
+import { formatClockPrecise } from "@/lib/time";
 import type { Span } from "./cutEdl";
 
 /** A merged cut range and where it sits on the edited timeline (seconds). */
@@ -25,6 +26,16 @@ const AT_EPSILON = 0.01;
  * repeated steps back would otherwise keep landing on the same cut.
  */
 const PLAYING_BACK_SLOP = 0.75;
+
+/** A seam chip's text: the removed length, `−4.2 s`, or `−1:05.3` from a minute up. */
+export function removedLabel([start, end]: Span): string {
+  const seconds = end - start;
+  return `−${seconds < 60 ? `${seconds.toFixed(1)} s` : formatClockPrecise(seconds)}`;
+}
+
+/** Where a range sits in the original recording, e.g. `12:34.2–12:38.4`. */
+export const originalRange = ([start, end]: Span): string =>
+  `${formatClockPrecise(start)}–${formatClockPrecise(end)}`;
 
 /** The seam of every merged cut range in `cutSpans`, in order. */
 export const cutSeams = (cutSpans: Span[], timeMap: TimeMap): CutSeam[] =>

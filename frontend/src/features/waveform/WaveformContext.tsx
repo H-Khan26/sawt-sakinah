@@ -2,7 +2,8 @@
  * Owns the waveform engine (renderer + playback) and shares it with the transport, the region
  * layer (silence + cuts + selection), and the marker layer, so features reach it without
  * prop-drilling. Only low-frequency facts live here (the instance, ready/error state, the
- * playback `controller`, and the current source<->edited `TimeMap`); the per-frame playhead
+ * playback `controller`, the current source<->edited `TimeMap`, the merged cut ranges and the
+ * decoded source levels); the per-frame playhead
  * stays in `playbackStore` so consuming this context does not couple a component to frame-rate
  * re-renders.
  *
@@ -12,7 +13,7 @@
  * derived here so the engine stays a pure mechanism.
  */
 import { useWaveform } from "@/api/hooks";
-import { mergeCutSpans } from "@/features/cuts/cutEdl";
+import { type Span, mergeCutSpans } from "@/features/cuts/cutEdl";
 import { useViewPrefs } from "@/stores/viewPrefs";
 import type { ProjectView } from "@/types/api";
 import { type ReactNode, type RefObject, createContext, useContext, useMemo, useRef } from "react";
@@ -20,6 +21,7 @@ import type WaveSurfer from "wavesurfer.js";
 import type RegionsPlugin from "wavesurfer.js/plugins/regions";
 import {
   type RenderPeaks,
+  type SourceLevels,
   decodeWaveform,
   sliceEditedPeaks,
   sourceRenderPeaks,
@@ -40,6 +42,10 @@ interface WaveformContextValue {
   controller: WaveformController;
   /** Current source <-> edited mapping (identity when deleted portions are shown). */
   timeMap: TimeMap;
+  /** The merged cut ranges (source time) — what playback skips. */
+  cutSpans: Span[];
+  /** The recording's decoded levels, for drawing any stretch of it; undefined until loaded. */
+  sourceLevels: SourceLevels | undefined;
   /** True once the waveform is rendered. */
   isReady: boolean;
   /** Peaks are still being fetched. */
@@ -105,6 +111,8 @@ export function WaveformProvider({
       regions,
       controller,
       timeMap,
+      cutSpans,
+      sourceLevels,
       isReady,
       isLoadingPeaks: peaksQuery.isPending,
       error: error ?? (peaksQuery.error as Error | null),
@@ -115,6 +123,8 @@ export function WaveformProvider({
       regions,
       controller,
       timeMap,
+      cutSpans,
+      sourceLevels,
       isReady,
       peaksQuery.isPending,
       peaksQuery.error,
