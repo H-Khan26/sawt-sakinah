@@ -90,9 +90,3 @@ export function coveredDuration(ranges: Span[], start: number, end: number): num
   }
   return total;
 }
-
-/** Whether `[start, end]` lies entirely within one of the sorted, disjoint `ranges`. */
-export function isCovered(ranges: Span[], start: number, end: number): boolean {
-  const range = ranges[firstEndingAfter(ranges, end - TOUCH_EPSILON)];
-  return !!range && range[0] <= start + TOUCH_EPSILON && end <= range[1] + TOUCH_EPSILON;
-}
