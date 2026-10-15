@@ -300,6 +300,22 @@ class _WindowFocus:
             _log.exception("could not focus the window")
 
 
+class _FolderPicker:
+    """Shows a native folder dialog over the window; called from
+    ``POST /app/export-folder/pick``. Returns the chosen folder, or None when cancelled."""
+
+    def __init__(self, window: Any) -> None:
+        self.window = window
+
+    def __call__(self, initial: Path) -> Optional[str]:
+        import webview
+
+        kind = webview.FileDialog.FOLDER if hasattr(webview, "FileDialog") else webview.FOLDER_DIALOG
+        directory = str(initial) if initial.is_dir() else ""
+        chosen = self.window.create_file_dialog(kind, directory=directory)
+        return str(chosen[0]) if chosen else None
+
+
 # -- the app ------------------------------------------------------------------------------
 
 
@@ -351,7 +367,7 @@ def run(host: str = "127.0.0.1", port: Optional[int] = None) -> int:
         from .service.security import SESSION_PATH
         from .service.settings import ServiceSettings
 
-        settings = ServiceSettings(auth_token=new_token())
+        settings = ServiceSettings(auth_token=new_token(), export_to_folder=True)
         if settings.static_dir is None or not settings.static_dir.is_dir():
             raise StartupError(
                 "The app is incomplete (its interface files are missing). Download it again "
@@ -378,6 +394,7 @@ def run(host: str = "127.0.0.1", port: Optional[int] = None) -> int:
                 min_size=(900, 600),
             )
             service.app.state.focus_window = _WindowFocus(window)
+            service.app.state.pick_folder = _FolderPicker(window)
             storage = runtime.data_dir() / "webview"
             storage.mkdir(parents=True, exist_ok=True)
             # Private mode keeps no cookies between launches and deletes the engine's
@@ -386,6 +403,7 @@ def run(host: str = "127.0.0.1", port: Optional[int] = None) -> int:
             webview.start(private_mode=True, storage_path=str(storage))
         finally:
             service.app.state.focus_window = None
+            service.app.state.pick_folder = None
             service.stop()
     finally:
         lock.release()

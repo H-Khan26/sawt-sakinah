@@ -219,6 +219,8 @@ class ProjectStore:
         References to files that no longer exist on disk are healed: a missing
         ``working_copy`` or ``speech_map`` is nulled out and export artifacts whose
         files are gone are dropped, so the wire never advertises dangling resources.
+        Exports saved to a user folder stay listed: the user may have moved them, and
+        checking would touch folders (or drives) outside the app on every load.
 
         Raises:
             ProjectTooNewError: If a newer app version saved the project.
@@ -244,7 +246,7 @@ class ProjectStore:
             src_updates["speech_map"] = None
         if src_updates:
             updates["audio_source"] = src.model_copy(update=src_updates)
-        live = [a for a in project.exports if Path(a.path).exists()]
+        live = [a for a in project.exports if a.external or Path(a.path).exists()]
         if len(live) != len(project.exports):
             updates["exports"] = live
         return project.model_copy(update=updates) if updates else project

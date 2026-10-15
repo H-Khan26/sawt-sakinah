@@ -10,7 +10,8 @@ module adds two things on top:
 * **Wire views** -- ``ProjectView`` / ``AudioSourceView`` / ``ExportArtifactView`` strip
   server filesystem paths (``local_path``, ``working_copy``, ``speech_map``, artifact
   ``path``) and expose endpoint URLs (or a presence flag) instead, so Windows/server
-  paths never leak to the client.
+  paths never leak to the client. The one path shown is an export the user saved to
+  their own folder (``saved_path``).
 """
 
 from __future__ import annotations
@@ -86,6 +87,20 @@ def check_cookies_file(value: str, *, must_exist: bool = True) -> str:
         raise ValueError("cookies_file must be on this computer, not a network share")
     path = Path(value)
     if not path.is_absolute() or (must_exist and not path.is_file()):
+        raise ValueError(message)
+    return value
+
+
+def check_export_dir(value: str, *, must_exist: bool = True) -> str:
+    """An export folder: absolute, local (no UNC share) and, with ``must_exist``, an
+    existing directory. Returned as given."""
+    message = "export_dir must be an absolute path to an existing folder"
+    if not value or len(value) > _MAX_PATH_LEN or "\x00" in value:
+        raise ValueError(message)
+    if value.startswith(("\\\\", "//")):
+        raise ValueError("export_dir must be on this computer, not a network share")
+    path = Path(value)
+    if not path.is_absolute() or (must_exist and not path.is_dir()):
         raise ValueError(message)
     return value
 
@@ -207,7 +222,7 @@ class ExportRequest(BaseModel):
     format: str = CONFIG.editing.out_format
     bitrate: Optional[str] = None
     embed_markers: bool = CONFIG.editing.embed_markers
-    name: Optional[str] = None  # download-filename label; defaults to the project name
+    name: Optional[str] = None  # file name label; defaults to the project name
     # Optional source-time range: when set, render only ``[range_start, range_end]`` (with the
     # project's existing edits inside it still applied) instead of the whole saved EDL. Leaves
     # the saved EDL untouched -- purely a scoped export of a selection.
@@ -296,7 +311,8 @@ class ExportArtifactView(BaseModel):
     edl_ref: Optional[str] = None
     created_at: datetime
     name: Optional[str] = None
-    download_url: str
+    download_url: Optional[str] = None  # None once the file was saved to a user folder
+    saved_path: Optional[str] = None  # where it was saved; it may have moved since
 
 
 class ProjectView(BaseModel):
@@ -359,7 +375,8 @@ def to_project_view(project: Project) -> ProjectView:
             edl_ref=a.edl_ref,
             created_at=a.created_at,
             name=a.name,
-            download_url=f"/projects/{project.id}/exports/{a.id}",
+            download_url=None if a.external else f"/projects/{project.id}/exports/{a.id}",
+            saved_path=str(a.path) if a.external else None,
         )
         for a in project.exports
     ]

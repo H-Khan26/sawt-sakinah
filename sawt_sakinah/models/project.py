@@ -46,11 +46,15 @@ class ExportArtifact(BaseModel):
     Attributes:
         id: Stable identifier (used in the export-download URL).
         format: Container/codec of the artifact, e.g. "mp3" or "wav".
-        path: On-disk location of the rendered file.
+        path: On-disk location of the rendered file: inside the project, or the user's
+            copy when ``external``.
         duration_sec: Duration of the rendered audio, via ffprobe.
         bitrate: Encode bitrate if applicable (e.g. "192K"); ``None`` for VBR/lossless.
         edl_ref: ``EditDecisionList`` reference the artifact was rendered from.
         created_at: When the artifact was rendered.
+        name: User-supplied label; drives the saved or downloaded file name.
+        external: The file was saved to a user folder and belongs to the user: it may be
+            moved or deleted outside the app, and deleting the project leaves it in place.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -62,7 +66,8 @@ class ExportArtifact(BaseModel):
     bitrate: Optional[str] = None
     edl_ref: Optional[str] = None
     created_at: datetime = Field(default_factory=_now)
-    name: Optional[str] = None  # user-supplied label; drives the download filename only
+    name: Optional[str] = None
+    external: bool = False
 
 
 class Project(BaseModel):

@@ -39,6 +39,7 @@ from ..models import (
     UnsupportedMediaError,
     VideoUnavailableError,
 )
+from .export_folder import ExportFolderError
 from .jobs import JobQueueFullError, JobRegistry
 from .projects import ProjectStore
 from .routes import detect, export, jobs, media, models, projects, system, ytdlp
@@ -63,6 +64,7 @@ _ERROR_STATUS: list[tuple[type[Exception], int]] = [
     (ProjectInUseError, 409),
     (ProjectTooNewError, 409),
     (ProjectUnreadableError, 422),
+    (ExportFolderError, 409),  # the export folder is missing or blocked
 ]
 
 

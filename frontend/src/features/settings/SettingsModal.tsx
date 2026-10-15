@@ -1,6 +1,6 @@
 /**
- * App settings: the appearance (theme and the dome landing), the speech-model catalog (download, remove, choose the active model), the
- * YouTube cookies source, the update checks (app and yt-dlp), a shortcut to the logs folder,
+ * App settings: the appearance (theme and the dome landing), where desktop exports are saved,
+ * the speech-model catalog (download, remove, choose the active model), the YouTube cookies source, the update checks (app and yt-dlp), a shortcut to the logs folder,
  * and what the app talks to over the network. Everything here is backend state (`/models`,
  * `/app/*`); the parent mounts this only while open. A download keeps running server-side
  * after close and resumes its progress on reopen.
@@ -9,8 +9,10 @@ import {
   useAppInfo,
   useDeleteModel,
   useModels,
+  useOpenExportFolder,
   useOpenLogs,
   usePatchPreferences,
+  usePickExportFolder,
   usePreferences,
   useSelectModel,
   useUpdateStatus,
@@ -83,6 +85,69 @@ function AppearanceSection() {
           </span>
         </span>
       </label>
+    </Section>
+  );
+}
+
+/**
+ * Where the desktop app saves exports: the Downloads folder unless the user picked another in
+ * the native folder dialog. Files already saved stay where they are when this changes.
+ */
+function ExportsSection() {
+  const info = useAppInfo();
+  const prefs = usePreferences();
+  const patch = usePatchPreferences();
+  const pick = usePickExportFolder();
+  const open = useOpenExportFolder();
+
+  if (!info.data?.export_to_folder) return null;
+  const custom = prefs.data?.export_dir ?? null;
+  const folder = custom ?? info.data.default_export_dir;
+  const error = pick.error ?? open.error ?? patch.error;
+
+  return (
+    <Section title="Exports">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-sm text-text">Save exports to</span>
+        <span className="break-all text-sm text-text-secondary">
+          {folder ?? "Your Downloads folder"}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={pick.isPending}
+          disabled={!prefs.data}
+          onClick={() => pick.mutate()}
+        >
+          Change…
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={open.isPending}
+          onClick={() => open.mutate()}
+        >
+          <FolderOpen size={16} />
+          Open folder
+        </Button>
+        {custom && (
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={patch.isPending}
+            onClick={() => patch.mutate({ export_dir: null })}
+          >
+            Use Downloads
+          </Button>
+        )}
+      </div>
+      <p className="text-sm text-text-tertiary">
+        Files you've already exported stay where they are, even if you change this or delete the
+        recording.
+      </p>
+      {error && <p className="text-sm text-danger">{error.message}</p>}
     </Section>
   );
 }
@@ -433,6 +498,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
       <div className="flex flex-col gap-6 px-5 py-4">
         <AppearanceSection />
+        <ExportsSection />
         <SpeechModelSection />
         <CookiesSection />
         <UpdatesSection />

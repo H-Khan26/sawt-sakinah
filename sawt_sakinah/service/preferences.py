@@ -9,6 +9,10 @@ YouTube cookies are either a browser to read them from (``cookies_browser``, one
 ``schemas.COOKIE_BROWSERS``) or a cookies.txt file (``cookies_file``, an absolute path that
 must exist when it is set); at most one is set. Only the choice is stored here: the
 cookies stay where they are and are read on each YouTube import.
+
+``export_dir`` is the folder desktop exports are saved to; ``None`` means the Downloads
+folder (see ``export_folder.py``). A stored folder that went missing stays set, and the
+next export says so.
 """
 
 from __future__ import annotations
@@ -28,10 +32,11 @@ from .schemas import (
     WHISPER_MODELS,
     check_cookie_browser,
     check_cookies_file,
+    check_export_dir,
 )
 
 _LOCK = threading.Lock()
-_NULLABLE = frozenset({"dismissed_update", "cookies_browser", "cookies_file"})
+_NULLABLE = frozenset({"dismissed_update", "cookies_browser", "cookies_file", "export_dir"})
 _MAX_VERSION_LEN = 64
 THEMES = frozenset({"system", "day", "night"})
 LIBRARY_VIEWS = frozenset({"icons", "list"})
@@ -82,6 +87,7 @@ class Preferences(BaseModel):
     theme: str = "system"  # "system" follows the OS colour scheme
     landing: bool = True  # open on the dome landing at launch
     library_view: str = "icons"
+    export_dir: Optional[str] = None  # None saves exports to Downloads
 
     @field_validator("whisper_model")
     @classmethod
@@ -98,6 +104,11 @@ class Preferences(BaseModel):
     def _check_file(cls, v: Optional[str]) -> Optional[str]:
         # A stored file that went missing stays set; the import then says so.
         return v if v is None else check_cookies_file(v, must_exist=False)
+
+    @field_validator("export_dir")
+    @classmethod
+    def _check_export_dir(cls, v: Optional[str]) -> Optional[str]:
+        return v if v is None else check_export_dir(v, must_exist=False)
 
     @model_validator(mode="after")
     def _one_cookie_source(self) -> "Preferences":
@@ -129,7 +140,7 @@ class Preferences(BaseModel):
 class PreferencesPatch(BaseModel):
     """Body of ``PATCH /app/preferences``: any subset of :class:`Preferences`.
 
-    Unknown keys are rejected, and only ``dismissed_update`` may be set to ``null``.
+    Unknown keys are rejected, and only the keys in ``_NULLABLE`` may be set to ``null``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -145,6 +156,7 @@ class PreferencesPatch(BaseModel):
     theme: Optional[str] = None
     landing: Optional[bool] = None
     library_view: Optional[str] = None
+    export_dir: Optional[str] = None
 
     @field_validator("whisper_model")
     @classmethod
@@ -160,6 +172,11 @@ class PreferencesPatch(BaseModel):
     @classmethod
     def _check_file(cls, v: Optional[str]) -> Optional[str]:
         return v if v is None else check_cookies_file(v)
+
+    @field_validator("export_dir")
+    @classmethod
+    def _check_export_dir(cls, v: Optional[str]) -> Optional[str]:
+        return v if v is None else check_export_dir(v)
 
     @field_validator("silence_detector")
     @classmethod

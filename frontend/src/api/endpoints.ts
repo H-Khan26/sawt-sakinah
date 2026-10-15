@@ -98,6 +98,23 @@ export const checkYtdlp = () => request<JobRecord>("/app/ytdlp/check", { method:
 /** Open the logs folder in the OS file manager. Resolves on 204. */
 export const openLogs = () => request<void>("/app/open-logs", { method: "POST" });
 
+/** Choose the export folder in a native dialog; returns the (possibly unchanged) preferences. */
+export const pickExportFolder = () =>
+  request<AppPreferences>("/app/export-folder/pick", { method: "POST" });
+
+/** Open the export folder in the OS file manager. Resolves on 204. */
+export const openExportFolder = () => request<void>("/app/export-folder/open", { method: "POST" });
+
+/** Move an export kept in the project into the export folder; returns where it was saved. */
+export const saveExport = (projectId: string, artifactId: string) =>
+  request<{ saved_path: string }>(`/projects/${projectId}/exports/${artifactId}/save`, {
+    method: "POST",
+  });
+
+/** Show an exported file in the OS file manager. Resolves on 204; 404 when it was moved. */
+export const revealExport = (projectId: string, artifactId: string) =>
+  request<void>(`/projects/${projectId}/exports/${artifactId}/reveal`, { method: "POST" });
+
 export const listModels = (signal?: AbortSignal) => request<SpeechModel[]>("/models", { signal });
 
 /** Start downloading a speech model; returns the `download_model` job record. */

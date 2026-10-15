@@ -122,6 +122,9 @@ GET  /projects/{id}/audio      -> audio stream (range requests for waveform/seek
 GET  /projects/{id}/waveform   -> precomputed peaks (optional, for fast rendering)
 PUT  /projects/{id}/edl        { operations }          -> updated EDL
 POST /projects/{id}/export     { format, params }      -> { job_id } -> artifact
+POST /projects/{id}/exports/{a}/save    -> { saved_path } (desktop: move into the folder)
+POST /projects/{id}/exports/{a}/reveal  -> 204, or 404 once the file was moved
+POST /app/export-folder/pick            -> preferences (native folder dialog)
 ```
 
 - **Progress**: poll `GET /jobs/{id}` or push via WebSocket/SSE. Wire yt-dlp and
@@ -173,7 +176,9 @@ checked against allow-lists in `service/schemas.py`, and export paths must stay 
 the project's exports folder. The YouTube cookies preferences are checked the same way:
 `cookies_browser` against a fixed browser allow-list (`GET /app/info` lists the ones
 offered on this OS), `cookies_file` as an absolute path to an existing local file (no
-network share); at most one is set.
+network share); at most one is set. `export_dir` must be an absolute path to an existing
+local folder; the export request never carries a path, and the saved file's name comes
+from the sanitized export name.
 
 ## Contract discipline
 
