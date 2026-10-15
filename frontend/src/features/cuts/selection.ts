@@ -3,7 +3,8 @@
  * range, the cut range selected on the waveform, and how much audio a cut or a restore of them
  * would change. The Cut panel reads them to label its buttons; `useCutCommands` reads them to act.
  */
-import { MIN_CUT_DURATION, type Span, coveredDuration, cutKey } from "./cutEdl";
+import { type Span, coveredDuration } from "@/lib/edl";
+import { MIN_CUT_DURATION, cutKey } from "./cutEdl";
 
 /** Audio a restore brings back: the source span to restore and its cut seconds. */
 export interface RestoreTarget {

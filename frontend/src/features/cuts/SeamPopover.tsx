@@ -20,13 +20,14 @@
 import { Button } from "@/components/ui";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import type { SourceLevels } from "@/features/waveform/editedPeaks";
+import type { Span } from "@/lib/edl";
 import { useThemeColors } from "@/lib/themeColors";
 import { useEditStore } from "@/stores/editStore";
 import { type Audition, usePlaybackStore } from "@/stores/playbackStore";
 import { useViewPrefs } from "@/stores/viewPrefs";
 import { Eye, Play, RotateCcw, Square } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
-import { type Span, cutKey } from "./cutEdl";
+import { cutKey } from "./cutEdl";
 import { type CutSeam, originalRange } from "./seams";
 import { useCutCommands } from "./useCutCommands";
 

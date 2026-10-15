@@ -13,7 +13,8 @@
  * derived here so the engine stays a pure mechanism.
  */
 import { useWaveform } from "@/api/hooks";
-import { type Span, mergeCutSpans } from "@/features/cuts/cutEdl";
+import { mergeCutSpans } from "@/features/cuts/cutEdl";
+import type { Span } from "@/lib/edl";
 import { useViewPrefs } from "@/stores/viewPrefs";
 import type { ProjectView } from "@/types/api";
 import { type ReactNode, type RefObject, createContext, useContext, useMemo, useRef } from "react";
@@ -80,11 +81,11 @@ export function WaveformProvider({
   const collapsed = !showDeleted;
   const sourceDuration = sourceLevels?.duration ?? project.audio_source.duration_sec;
 
-  const timeMap = useMemo(
-    () => buildTimeMap(ops, sourceDuration, collapsed),
-    [ops, sourceDuration, collapsed],
-  );
   const cutSpans = useMemo(() => mergeCutSpans(ops), [ops]);
+  const timeMap = useMemo(
+    () => buildTimeMap(cutSpans, sourceDuration, collapsed),
+    [cutSpans, sourceDuration, collapsed],
+  );
 
   const render = useMemo<RenderPeaks | undefined>(() => {
     if (!sourceLevels) return undefined;

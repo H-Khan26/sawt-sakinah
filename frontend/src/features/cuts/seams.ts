@@ -5,8 +5,8 @@
  * to seam; anything drawn at the joins reads the same positions.
  */
 import type { TimeMap } from "@/features/waveform/timeMap";
+import type { Span } from "@/lib/edl";
 import { formatClockPrecise } from "@/lib/time";
-import type { Span } from "./cutEdl";
 
 /** A merged cut range and where it sits on the edited timeline (seconds). */
 export interface CutSeam {

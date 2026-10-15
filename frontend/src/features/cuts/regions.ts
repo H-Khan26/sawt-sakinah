@@ -21,11 +21,12 @@ import type { TimeMap } from "@/features/waveform/timeMap";
  * a selection; `useEditRegions` maps clicks on them from the waveform's own click. Only the
  * selection region and the selected cut's grips take the pointer.
  */
+import type { Span } from "@/lib/edl";
 import type { ThemeColors } from "@/lib/themeColors";
 import type { SilenceSegment } from "@/types/api";
 import type { Region } from "wavesurfer.js/plugins/regions";
 import type RegionsPlugin from "wavesurfer.js/plugins/regions";
-import { type Span, cutKey } from "./cutEdl";
+import { cutKey } from "./cutEdl";
 
 /** Region id of the pending (uncommitted) in/out selection. */
 export const SELECTION_REGION_ID = "selection";

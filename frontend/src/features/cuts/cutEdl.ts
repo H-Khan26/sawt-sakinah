@@ -8,18 +8,14 @@
  * from it, which may trim a range or split it in two. Every edit returns normalized ops, so a
  * legacy EDL with overlapping cuts is normalized by its first edit. The other ops
  * (keep/fade/marker, and any open-ended cut) pass through untouched after the cuts. The server
- * stores the same normal form (`normalize_cuts` in `models/edl.py`).
+ * stores the same normal form (`normalize_cuts` in `models/edl.py`). The span algebra underneath
+ * is generic and lives in `lib/edl.ts`.
  */
+import { type Span, mergeSpans, subtractSpans } from "@/lib/edl";
 import type { EditOperation } from "@/types/api";
-
-/** A source-time range `[start, end]` in seconds. */
-export type Span = [number, number];
 
 /** Ignore ranges shorter than this (seconds) — a stray double-tap of I/O, not a real cut. */
 export const MIN_CUT_DURATION = 0.02;
-
-/** Ranges closer than this (seconds) count as touching: they merge, and coverage tolerates it. */
-export const TOUCH_EPSILON = 1e-6;
 
 /** Prefix of a cut range's selection key; silence keys (`start:end`) never start with it. */
 export const CUT_KEY_PREFIX = "cut:";
@@ -38,52 +34,6 @@ const ordered = (a: number, b: number): Span => [Math.min(a, b), Math.max(a, b)]
 
 /** A cut with both ends — the kind that removes a range. */
 const isRangeCut = (op: EditOperation): boolean => op.type === "cut" && op.end != null;
-
-/** Merge spans into sorted, disjoint ranges; overlapping or touching spans join, empty ones drop. */
-export function mergeSpans(spans: Span[]): Span[] {
-  const sorted = spans.filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]);
-  const merged: Span[] = [];
-  for (const [a, b] of sorted) {
-    const last = merged[merged.length - 1];
-    if (last && a <= last[1] + TOUCH_EPSILON) last[1] = Math.max(last[1], b);
-    else merged.push([a, b]);
-  }
-  return merged;
-}
-
-/**
- * Subtract `remove` from `spans` (both sorted and disjoint). A span `remove` doesn't touch is
- * kept as is; a trimmed or split piece shorter than `minPiece` is dropped.
- */
-export function subtractSpans(spans: Span[], remove: Span[], minPiece = 0): Span[] {
-  const result: Span[] = [];
-  for (const [a, b] of spans) {
-    const pieces: Span[] = [];
-    let cursor = a;
-    for (const [c, d] of remove) {
-      if (d <= cursor || c >= b) continue;
-      if (c > cursor) pieces.push([cursor, c]);
-      cursor = Math.max(cursor, d);
-      if (cursor >= b) break;
-    }
-    if (cursor < b) pieces.push([cursor, b]);
-    const untouched = pieces.length === 1 && pieces[0][0] === a && pieces[0][1] === b;
-    result.push(...(untouched ? pieces : pieces.filter(([c, d]) => d - c >= minPiece)));
-  }
-  return result;
-}
-
-/** Seconds of `[start, end]` that the sorted, disjoint `ranges` cover. */
-export function coveredDuration(ranges: Span[], start: number, end: number): number {
-  let total = 0;
-  for (const [a, b] of ranges) total += Math.max(0, Math.min(b, end) - Math.max(a, start));
-  return total;
-}
-
-/** Whether `[start, end]` lies entirely within one of the sorted, disjoint `ranges`. */
-export function isCovered(ranges: Span[], start: number, end: number): boolean {
-  return ranges.some(([a, b]) => a <= start + TOUCH_EPSILON && end <= b + TOUCH_EPSILON);
-}
 
 /**
  * The removed audio: every `cut` range merged into sorted, disjoint spans. Works on a legacy
@@ -150,14 +100,4 @@ export function keepOnly(
 ): EditOperation[] {
   const [a, b] = ordered(start, end);
   return cutRange(cutRange(ops, 0, Math.max(0, a)), Math.min(duration, b), duration);
-}
-
-/** Structural equality for op arrays. */
-export function sameOps(a: EditOperation[], b: EditOperation[]): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  return a.every((op, i) => {
-    const o = b[i];
-    return op.type === o.type && op.start === o.start && op.end === o.end;
-  });
 }

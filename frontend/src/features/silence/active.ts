@@ -15,14 +15,8 @@
  * A silence covered at a range's edge borders kept audio, so it stays listed (as removed). A
  * silence only partly covered is clipped to its uncovered part.
  */
-import {
-  type Span,
-  TOUCH_EPSILON,
-  isCovered,
-  mergeCutSpans,
-  mergeSpans,
-  subtractSpans,
-} from "@/features/cuts/cutEdl";
+import { mergeCutSpans } from "@/features/cuts/cutEdl";
+import { type Span, TOUCH_EPSILON, isCovered, mergeSpans, subtractSpans } from "@/lib/edl";
 import type { EditOperation, SilenceSegment } from "@/types/api";
 
 /** Surviving silence at or below this length (seconds) after clipping is a sliver — dropped. */

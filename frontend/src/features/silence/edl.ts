@@ -5,7 +5,8 @@
  * the backend applies cuts (with boundary fades) only at export. The UI never mutates loaded
  * audio. A silence counts as removed when one merged cut range fully covers it.
  */
-import { type Span, cutRanges, isCovered, restoreRanges } from "@/features/cuts/cutEdl";
+import { cutRanges, restoreRanges } from "@/features/cuts/cutEdl";
+import { type Span, isCovered } from "@/lib/edl";
 import type { EditOperation, SilenceSegment } from "@/types/api";
 import { silenceKey } from "./regions";
 

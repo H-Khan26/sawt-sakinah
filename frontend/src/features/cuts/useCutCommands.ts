@@ -11,11 +11,10 @@
  * ignored there.
  */
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
+import { type Span, coveredDuration, spanTotal, subtractSpans } from "@/lib/edl";
 import { useEditStore } from "@/stores/editStore";
 import {
   MIN_CUT_DURATION,
-  type Span,
-  coveredDuration,
   cutKey,
   cutRange,
   cutRanges,
@@ -23,7 +22,6 @@ import {
   mergeCutSpans,
   restoreRange,
   restoreRanges,
-  subtractSpans,
 } from "./cutEdl";
 import { adjacentSeam, cutSeams } from "./seams";
 import { cutGain, pendingSpan, restoreTarget, selectedCutSpan } from "./selection";
@@ -45,8 +43,6 @@ export interface CutCommands {
   /** Move the playhead to the previous (`-1`) or next (`1`) cut, selecting it in the full view. */
   stepCut: (direction: -1 | 1) => void;
 }
-
-const total = (spans: Span[]) => spans.reduce((sum, [a, b]) => sum + (b - a), 0);
 
 export function useCutCommands(projectId: string): CutCommands {
   const { controller, timeMap } = useWaveformContext();
@@ -98,10 +94,10 @@ export function useCutCommands(projectId: string): CutCommands {
       const restored = subtractSpans([from], [to]);
       const added = subtractSpans([to], [from]);
       // A nudge shorter than a cut (the grips move from the first pixel) changes nothing.
-      const restoring = total(restored) >= MIN_CUT_DURATION;
-      if (!restoring && total(added) < MIN_CUT_DURATION) return false;
+      const restoring = spanTotal(restored) >= MIN_CUT_DURATION;
+      if (!restoring && spanTotal(added) < MIN_CUT_DURATION) return false;
       const label = restoring
-        ? durationLabel("Restore", total(restored))
+        ? durationLabel("Restore", spanTotal(restored))
         : durationLabel(
             "Cut",
             added.reduce((sum, span) => sum + cutGain(spans, span), 0),

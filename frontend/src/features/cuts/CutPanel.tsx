@@ -12,13 +12,14 @@ import { FieldLabel } from "@/features/editor/FieldLabel";
 import { ExportModal } from "@/features/export/ExportModal";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import type { TimeMap } from "@/features/waveform/timeMap";
+import { type Span, spanTotal } from "@/lib/edl";
 import { formatClockPrecise, parseClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
 import type { ProjectView } from "@/types/api";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SplitModal } from "./SplitModal";
-import { MIN_CUT_DURATION, type Span, keepOnly, mergeCutSpans } from "./cutEdl";
+import { MIN_CUT_DURATION, keepOnly, mergeCutSpans } from "./cutEdl";
 import { cutGain, pendingSpan, restoreTarget, selectedCutSpan } from "./selection";
 import { useCutCommands } from "./useCutCommands";
 import { isTypingTarget } from "./useEditHotkeys";
@@ -135,7 +136,7 @@ function CutSummary({
   disabled: boolean;
   onStep: (direction: -1 | 1) => void;
 }) {
-  const removed = cutSpans.reduce((sum, [a, b]) => sum + (b - a), 0);
+  const removed = spanTotal(cutSpans);
   const none = cutSpans.length === 0;
   return (
     <div className="flex items-center justify-between gap-3 border-t border-dotted border-border pt-4 text-sm text-text-secondary">

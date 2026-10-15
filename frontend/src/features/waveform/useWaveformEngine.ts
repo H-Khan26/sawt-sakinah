@@ -23,6 +23,7 @@
  * `controller`; the source<->edited mapping lives here and in `timeMap.ts` alone.
  */
 import { audioUrl, canPlayMp3InMp4 } from "@/api/endpoints";
+import { firstEndingAfter } from "@/lib/edl";
 import { useThemeColors } from "@/lib/themeColors";
 import { formatClock, formatTimelineTime } from "@/lib/time";
 import { ZOOM_MAX, clampZoom, usePlaybackStore } from "@/stores/playbackStore";
@@ -306,12 +307,10 @@ export function useWaveformEngine({
     const audio = audioRef.current;
     if (!audio) return;
     const heard = auditionRef.current?.playCut;
-    for (const span of cutSpansRef.current) {
-      if (heard && overlaps(span, heard)) continue;
-      if (audio.currentTime >= span[0] && audio.currentTime < span[1] - EDGE_EPSILON) {
-        audio.currentTime = span[1];
-        break;
-      }
+    const spans = cutSpansRef.current;
+    const span = spans[firstEndingAfter(spans, audio.currentTime + EDGE_EPSILON)];
+    if (span && audio.currentTime >= span[0] && !(heard && overlaps(span, heard))) {
+      audio.currentTime = span[1];
     }
     const audition = auditionRef.current;
     if (audition && audio.currentTime >= audition.end - AUDITION_END_SLOP) stopAudition.current();
@@ -327,9 +326,10 @@ export function useWaveformEngine({
     const t = audio.currentTime;
     const audition = auditionRef.current;
     const heard = audition?.playCut;
-    const next = cutSpansRef.current.find(
-      (span) => t < span[1] - EDGE_EPSILON && !(heard && overlaps(span, heard)),
-    );
+    const spans = cutSpansRef.current;
+    let i = firstEndingAfter(spans, t + EDGE_EPSILON);
+    while (i < spans.length && heard && overlaps(spans[i], heard)) i++;
+    const next = spans[i];
     const at = Math.min(
       next?.[0] ?? Number.POSITIVE_INFINITY,
       audition?.end ?? Number.POSITIVE_INFINITY,

@@ -1,6 +1,6 @@
 import { ApiError } from "@/api/client";
 import { useToast } from "@/components/ui";
-import { sameOps } from "@/features/cuts/cutEdl";
+import { sameOps } from "@/lib/edl";
 import type {
   AppPreferences,
   CreateProjectRequest,

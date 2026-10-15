@@ -10,10 +10,11 @@
  */
 import { queryKeys } from "@/api/endpoints";
 import { useSaveEdl } from "@/api/hooks";
+import { sameOps } from "@/lib/edl";
 import { type EditSnapshot, useEditStore } from "@/stores/editStore";
 import type { EditOperation, ProjectView } from "@/types/api";
 import { useQueryClient } from "@tanstack/react-query";
-import { normalizeCuts, sameOps } from "./cutEdl";
+import { normalizeCuts } from "./cutEdl";
 
 export interface EdlEditor {
   /**
