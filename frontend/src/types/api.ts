@@ -96,10 +96,12 @@ export interface ExportArtifactView {
   bitrate: string | null;
   edl_ref: string | null;
   created_at: string;
-  /** User-supplied export label; drives the download filename. */
+  /** User-supplied export label; drives the saved or downloaded file name. */
   name: string | null;
-  /** Relative URL to download the rendered file. */
-  download_url: string;
+  /** Relative URL to download the rendered file; `null` once it was saved to a folder. */
+  download_url: string | null;
+  /** Where the desktop app saved the file. The user may have moved or deleted it since. */
+  saved_path: string | null;
 }
 
 export interface ProjectStatus {
@@ -324,6 +326,8 @@ export interface AppPreferences {
   theme: ThemePreference;
   /** Open on the dome landing at launch ("Open under the dome"). */
   landing: boolean;
+  /** Folder desktop exports are saved to; `null` means the Downloads folder. */
+  export_dir: string | null;
   /** How the library lists recordings. */
   library_view: LibraryView;
 }
@@ -354,6 +358,10 @@ export interface AppInfo {
   frozen: boolean;
   /** Browsers offered for YouTube cookies on this OS, in display order. */
   cookie_browsers: CookieBrowser[];
+  /** Exports are saved straight to a folder (the desktop app) instead of downloaded. */
+  export_to_folder: boolean;
+  /** The Downloads folder exports go to by default; `null` unless `export_to_folder`. */
+  default_export_dir: string | null;
 }
 
 /** `GET /app/update` — the backend's cached release check (honours the preferences). */

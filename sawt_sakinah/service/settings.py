@@ -54,6 +54,9 @@ class ServiceSettings(BaseSettings):
         auth_token: Per-launch secret required on every request (``X-Sawt-Token`` header
             or the session cookie set by ``/_session``). ``None`` disables the check; the
             desktop shell always sets one.
+        export_to_folder: Save each export straight to the user's export folder
+            (``preferences.export_dir``, Downloads by default) instead of keeping it in the
+            project for download. The desktop shell sets it; a browser downloads instead.
     """
 
     model_config = SettingsConfigDict(
@@ -74,3 +77,4 @@ class ServiceSettings(BaseSettings):
     allowed_hosts: list[str] = Field(default_factory=lambda: ["127.0.0.1", "localhost"])
     allowed_origins: list[str] = Field(default_factory=list)
     auth_token: Optional[str] = None
+    export_to_folder: bool = False

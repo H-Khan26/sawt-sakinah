@@ -1,18 +1,29 @@
 /**
- * Export dialog: pick format / whether to embed markers, render the EDL, and
- * download the result. Export is the one destructive/rendered step — cuts are applied and
- * (when embedding) the project's markers are written as labeled chapters, all server-side.
+ * Export dialog: pick format / whether to embed markers, render the EDL, and deliver the
+ * result. Export is the one destructive/rendered step — cuts are applied and (when embedding)
+ * the project's markers are written as labeled chapters, all server-side.
  *
- * Flow: `useExport` -> poll the job with `useJob` -> on success read the artifact id from
- * the job result and offer its download URL. The parent mounts this only while open, so each
- * open starts from a clean state and no job keeps polling after close.
+ * Flow: `useExport` -> poll the job with `useJob` -> on success read the job result. In the
+ * desktop app (`AppInfo.export_to_folder`) the backend has already saved the file to the export
+ * folder, so the dialog offers "Show in folder" (or, when that save failed, says why and keeps
+ * the render in the project to retry); in a browser it offers the download URL. The
+ * parent mounts this only while open, so each open starts from a clean state and no job keeps
+ * polling after close.
  */
 import { exportDownloadUrl } from "@/api/endpoints";
-import { useExport, useJob } from "@/api/hooks";
+import {
+  useAppInfo,
+  useExport,
+  useJob,
+  usePreferences,
+  useRevealExport,
+  useSaveExport,
+} from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { Alert, Button, Input, Modal, ModalTitle } from "@/components/ui";
 import { formatClock } from "@/lib/time";
-import type { ProjectView } from "@/types/api";
+import type { ExportArtifactView, ProjectView } from "@/types/api";
+import { FolderOpen } from "lucide-react";
 import { useEffect, useState } from "react";
 
 /** A source-time range to scope the export to (from a waveform selection). */
@@ -30,6 +41,12 @@ const SELECT_CLASS =
 const DOWNLOAD_LINK_CLASS =
   "inline-flex h-10 items-center justify-center gap-2 rounded bg-accent px-4 text-base font-medium text-accent-on transition-colors duration-fast hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
+/** Split a saved path into its folder and file name (either separator). */
+function splitPath(path: string): { folder: string; file: string } {
+  const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return { folder: path.slice(0, cut), file: path.slice(cut + 1) };
+}
+
 export function ExportModal({
   project,
   range,
@@ -46,23 +63,37 @@ export function ExportModal({
   const [name, setName] = useState(range ? `${project.name} (${rangeLabel})` : project.name);
   const [jobId, setJobId] = useState<string | undefined>(undefined);
   const [artifactId, setArtifactId] = useState<string | null>(null);
+  const [savedPath, setSavedPath] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const info = useAppInfo();
+  const prefs = usePreferences();
+  const toFolder = info.data?.export_to_folder ?? false;
+  const folder = prefs.data?.export_dir ?? info.data?.default_export_dir ?? null;
 
   const exportAudio = useExport(project.id);
+  const reveal = useRevealExport(project.id);
+  const saveExport = useSaveExport(project.id);
   const job = useJob(jobId, { invalidateProject: true });
   const state = job.data?.state;
   const running = exportAudio.isPending || state === "pending" || state === "running";
 
-  // Capture the artifact id from the job result once the render succeeds.
+  // Capture the artifact id (and, in the desktop app, where it was saved) once it succeeds.
   useEffect(() => {
     if (state === "succeeded") {
-      const id = job.data?.result?.artifact_id;
-      if (typeof id === "string") setArtifactId(id);
+      const result = job.data?.result;
+      if (typeof result?.artifact_id === "string") setArtifactId(result.artifact_id);
+      if (typeof result?.saved_path === "string") setSavedPath(result.saved_path);
+      if (typeof result?.save_error === "string") setSaveError(result.save_error);
     }
   }, [state, job.data?.result]);
 
   const trimmedName = name.trim();
   const runExport = () => {
     setArtifactId(null);
+    setSavedPath(null);
+    setSaveError(null);
+    reveal.reset();
     exportAudio.mutate(
       {
         format,
@@ -76,9 +107,18 @@ export function ExportModal({
     );
   };
 
-  const downloadUrl = artifactId ? exportDownloadUrl(project.id, artifactId) : null;
+  const done = artifactId !== null && !running;
+  const downloadUrl = done && !toFolder ? exportDownloadUrl(project.id, artifactId) : null;
+  const retrySave = (id: string) =>
+    saveExport.mutate(id, {
+      onSuccess: (r) => {
+        setSavedPath(r.saved_path);
+        setSaveError(null);
+      },
+    });
   // Fallback filename only; the backend's Content-Disposition wins on download.
   const downloadName = `${trimmedName || project.name}.${format}`;
+  const saved = savedPath ? splitPath(savedPath) : null;
   const noMarkers = embedMarkers && project.markers.length === 0;
   const priorExports = project.exports;
 
@@ -102,7 +142,11 @@ export function ExportModal({
           value={name}
           disabled={running}
           onChange={(e) => setName(e.target.value)}
-          hint="Used for the download filename."
+          hint={
+            toFolder && folder
+              ? `Used for the file name. Saved to ${folder}; change the folder in Settings.`
+              : "Used for the download filename."
+          }
         />
 
         <label className="flex flex-col gap-1.5 text-sm font-medium text-text-secondary">
@@ -146,7 +190,28 @@ export function ExportModal({
           </Alert>
         )}
 
-        {downloadUrl && !running && (
+        {saved && !running && (
+          <Alert variant="success" title="Export saved">
+            Saved to <span className="break-all">{saved.folder}</span> as{" "}
+            <span className="break-all font-medium">{saved.file}</span>.
+          </Alert>
+        )}
+
+        {done && saveError && !savedPath && (
+          <Alert
+            variant="warning"
+            title="Rendered, but not saved to your folder"
+            action={{
+              label: "Try again",
+              onClick: () => artifactId && retrySave(artifactId),
+              loading: saveExport.isPending,
+            }}
+          >
+            {saveError} The file is kept in the app until then.
+          </Alert>
+        )}
+
+        {downloadUrl && (
           <Alert variant="success" title="Export ready">
             Your file is rendered. Download it below.
           </Alert>
@@ -157,19 +222,23 @@ export function ExportModal({
             <span className="text-sm font-medium text-text-secondary">Previous exports</span>
             <ul className="flex flex-col gap-1">
               {priorExports.map((ex) => (
-                <li key={ex.id}>
-                  <a
-                    href={exportDownloadUrl(project.id, ex.id)}
-                    className="flex items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-text hover:bg-background-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
-                  >
-                    <span className="truncate">{ex.name ?? project.name}</span>
-                    <span className="shrink-0 text-xs uppercase text-text-tertiary">
-                      {ex.format}
-                    </span>
-                  </a>
-                </li>
+                <PriorExport
+                  key={ex.id}
+                  projectId={project.id}
+                  projectName={project.name}
+                  artifact={ex}
+                  toFolder={toFolder}
+                  onReveal={() => reveal.mutate(ex.id)}
+                  onSave={() => saveExport.mutate(ex.id)}
+                  saving={saveExport.isPending && saveExport.variables === ex.id}
+                  saveBusy={saveExport.isPending}
+                />
               ))}
             </ul>
+            {reveal.isError && <p className="text-sm text-danger">{reveal.error.message}</p>}
+            {saveExport.isError && (
+              <p className="text-sm text-danger">Couldn't save it: {saveExport.error.message}</p>
+            )}
           </div>
         )}
       </div>
@@ -178,7 +247,12 @@ export function ExportModal({
         <Button variant="secondary" onClick={onClose}>
           Close
         </Button>
-        {downloadUrl && !running ? (
+        {done && saved && artifactId ? (
+          <Button onClick={() => reveal.mutate(artifactId)} loading={reveal.isPending}>
+            <FolderOpen size={16} />
+            Show in folder
+          </Button>
+        ) : downloadUrl ? (
           <a href={downloadUrl} download={downloadName} className={DOWNLOAD_LINK_CLASS}>
             Download
           </a>
@@ -189,5 +263,65 @@ export function ExportModal({
         )}
       </div>
     </Modal>
+  );
+}
+
+/** One earlier export: shown in its folder, saved to the folder, or downloaded. */
+function PriorExport({
+  projectId,
+  projectName,
+  artifact,
+  toFolder,
+  onReveal,
+  onSave,
+  saving,
+  saveBusy,
+}: {
+  projectId: string;
+  projectName: string;
+  artifact: ExportArtifactView;
+  toFolder: boolean;
+  onReveal: () => void;
+  onSave: () => void;
+  saving: boolean;
+  /** Any save is running; only one runs at a time. */
+  saveBusy: boolean;
+}) {
+  const label = artifact.name ?? projectName;
+  const format = (
+    <span className="shrink-0 text-xs uppercase text-text-tertiary">{artifact.format}</span>
+  );
+
+  if (!artifact.saved_path && !toFolder) {
+    return (
+      <li>
+        <a
+          href={exportDownloadUrl(projectId, artifact.id)}
+          className="flex items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-text hover:bg-background-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+        >
+          <span className="truncate">{label}</span>
+          {format}
+        </a>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-center gap-3 rounded px-2 py-1 text-sm text-text">
+      <span className="min-w-0 flex-1 truncate" title={artifact.saved_path ?? undefined}>
+        {label}
+      </span>
+      {format}
+      {artifact.saved_path ? (
+        <Button size="sm" variant="ghost" onClick={onReveal}>
+          <FolderOpen size={14} />
+          Show in folder
+        </Button>
+      ) : (
+        <Button size="sm" variant="ghost" onClick={onSave} loading={saving} disabled={saveBusy}>
+          Save to folder
+        </Button>
+      )}
+    </li>
   );
 }

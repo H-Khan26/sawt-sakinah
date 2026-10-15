@@ -8,7 +8,8 @@ reusable from a CLI. All audio writes happen here or in the editing layer -- det
 endpoints never produce files.
 
 A job removes the partial output it owns when it fails or is stopped at shutdown: an
-export renders to ``<id>.part.<ext>`` and is renamed into place only once complete. The
+export renders to ``<id>.part.<ext>`` and is renamed into place only once complete (in the
+desktop app it is then moved to the user's export folder; see ``export_folder.py``). The
 half-built folder of a job creating a project (download, upload, split) is removed by the
 route's ``on_finish`` hook (``ProjectStore.discard_unfinished``), which also covers a job
 dropped from the queue. What a hard exit still leaves behind is removed by
@@ -43,6 +44,7 @@ from ..models import (
     ProjectStatus,
 )
 from ..prayer import derive_structure
+from . import export_folder
 from .jobs import TaskFn
 from .preferences import load_preferences
 from .projects import ProjectStore
@@ -425,6 +427,8 @@ def export_worker(
         # project's exports folder.
         if out_path.parent != exports_root:
             raise InvalidInputError(f"invalid export format: {req.format!r}")
+        # Checked before rendering, so a blocked or missing folder fails in a moment.
+        folder = export_folder.checked_export_dir() if settings.export_to_folder else None
         # Scope to a selected range when requested: render the saved EDL plus a keep op for the
         # range (edits inside it stay applied), leaving the project's saved EDL untouched.
         scoped = req.range_start is not None and req.range_end is not None
@@ -471,14 +475,23 @@ def export_worker(
         if scoped and not req.name:
             base = project.name or project.audio_source.title
             default_name = f"{base} ({_range_label(req.range_start, req.range_end)})"
+        name = req.name or default_name
+        saved = save_error = None
+        if folder is not None:
+            try:
+                saved = export_folder.save_render(out_path, folder, name or "export", req.format)
+            except export_folder.ExportFolderError as exc:
+                # The render stays in the project, where "Save to folder" can retry it.
+                save_error = str(exc)
         artifact = ExportArtifact(
             id=artifact_id,
             format=req.format,
-            path=out_path,
+            path=saved or out_path,
             duration_sec=meta["duration_sec"],
             bitrate=req.bitrate,
             edl_ref=project.edl.source_id,
-            name=req.name or default_name,
+            name=name,
+            external=saved is not None,
         )
         store.update(
             project_id,
@@ -490,7 +503,11 @@ def export_worker(
             ),
         )
         progress({"stage": "export", "status": "done"})
-        return {"artifact_id": artifact_id}
+        return {
+            "artifact_id": artifact_id,
+            "saved_path": str(saved) if saved else None,
+            "save_error": save_error,
+        }
 
     return run
 

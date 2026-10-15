@@ -37,11 +37,15 @@ import {
   getYtdlpStatus,
   listModels,
   listProjects,
+  openExportFolder,
   openLogs,
   patchPreferences,
+  pickExportFolder,
   putEdl,
   queryKeys,
   renameProject,
+  revealExport,
+  saveExport,
   splitProject,
   updateMarkers,
   uploadProject,
@@ -251,6 +255,20 @@ export function useExport(projectId: string) {
   });
 }
 
+/** Move an export kept in the project to the export folder, then refetch the project. */
+export function useSaveExport(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (artifactId: string) => saveExport(projectId, artifactId),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId) }),
+  });
+}
+
+/** Show an exported file in the OS file manager. */
+export function useRevealExport(projectId: string) {
+  return useMutation({ mutationFn: (artifactId: string) => revealExport(projectId, artifactId) });
+}
+
 /**
  * Carve a source-time range into a new project: `POST /projects/{id}/split` -> `{ project_id,
  * job_id }`. The caller navigates to the new project carrying `job_id`, so the editor's normal
@@ -348,6 +366,20 @@ export function useCheckYtdlp() {
 /** Open the logs folder in the OS file manager. */
 export function useOpenLogs() {
   return useMutation({ mutationFn: () => openLogs() });
+}
+
+/** Choose the export folder in a native dialog; stores the returned preferences. */
+export function usePickExportFolder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => pickExportFolder(),
+    onSuccess: (prefs) => queryClient.setQueryData(queryKeys.preferences, prefs),
+  });
+}
+
+/** Open the export folder in the OS file manager. */
+export function useOpenExportFolder() {
+  return useMutation({ mutationFn: () => openExportFolder() });
 }
 
 // --- speech models -------------------------------------------------------------
