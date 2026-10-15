@@ -5,7 +5,8 @@
  *
  * Flow: `useExport` -> poll the job with `useJob` -> on success read the job result. In the
  * desktop app (`AppInfo.export_to_folder`) the backend has already saved the file to the export
- * folder, so the dialog offers "Show in folder"; in a browser it offers the download URL. The
+ * folder, so the dialog offers "Show in folder" (or, when that save failed, says why and keeps
+ * the render in the project to retry); in a browser it offers the download URL. The
  * parent mounts this only while open, so each open starts from a clean state and no job keeps
  * polling after close.
  */
@@ -63,6 +64,7 @@ export function ExportModal({
   const [jobId, setJobId] = useState<string | undefined>(undefined);
   const [artifactId, setArtifactId] = useState<string | null>(null);
   const [savedPath, setSavedPath] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const info = useAppInfo();
   const prefs = usePreferences();
@@ -82,6 +84,7 @@ export function ExportModal({
       const result = job.data?.result;
       if (typeof result?.artifact_id === "string") setArtifactId(result.artifact_id);
       if (typeof result?.saved_path === "string") setSavedPath(result.saved_path);
+      if (typeof result?.save_error === "string") setSaveError(result.save_error);
     }
   }, [state, job.data?.result]);
 
@@ -89,6 +92,7 @@ export function ExportModal({
   const runExport = () => {
     setArtifactId(null);
     setSavedPath(null);
+    setSaveError(null);
     reveal.reset();
     exportAudio.mutate(
       {
@@ -104,7 +108,14 @@ export function ExportModal({
   };
 
   const done = artifactId !== null && !running;
-  const downloadUrl = done && !savedPath ? exportDownloadUrl(project.id, artifactId) : null;
+  const downloadUrl = done && !toFolder ? exportDownloadUrl(project.id, artifactId) : null;
+  const retrySave = (id: string) =>
+    saveExport.mutate(id, {
+      onSuccess: (r) => {
+        setSavedPath(r.saved_path);
+        setSaveError(null);
+      },
+    });
   // Fallback filename only; the backend's Content-Disposition wins on download.
   const downloadName = `${trimmedName || project.name}.${format}`;
   const saved = savedPath ? splitPath(savedPath) : null;
@@ -186,6 +197,20 @@ export function ExportModal({
           </Alert>
         )}
 
+        {done && saveError && !savedPath && (
+          <Alert
+            variant="warning"
+            title="Rendered, but not saved to your folder"
+            action={{
+              label: "Try again",
+              onClick: () => artifactId && retrySave(artifactId),
+              loading: saveExport.isPending,
+            }}
+          >
+            {saveError} The file is kept in the app until then.
+          </Alert>
+        )}
+
         {downloadUrl && (
           <Alert variant="success" title="Export ready">
             Your file is rendered. Download it below.
@@ -206,6 +231,7 @@ export function ExportModal({
                   onReveal={() => reveal.mutate(ex.id)}
                   onSave={() => saveExport.mutate(ex.id)}
                   saving={saveExport.isPending && saveExport.variables === ex.id}
+                  saveBusy={saveExport.isPending}
                 />
               ))}
             </ul>
@@ -249,6 +275,7 @@ function PriorExport({
   onReveal,
   onSave,
   saving,
+  saveBusy,
 }: {
   projectId: string;
   projectName: string;
@@ -257,6 +284,8 @@ function PriorExport({
   onReveal: () => void;
   onSave: () => void;
   saving: boolean;
+  /** Any save is running; only one runs at a time. */
+  saveBusy: boolean;
 }) {
   const label = artifact.name ?? projectName;
   const format = (
@@ -289,7 +318,7 @@ function PriorExport({
           Show in folder
         </Button>
       ) : (
-        <Button size="sm" variant="ghost" onClick={onSave} loading={saving}>
+        <Button size="sm" variant="ghost" onClick={onSave} loading={saving} disabled={saveBusy}>
           Save to folder
         </Button>
       )}

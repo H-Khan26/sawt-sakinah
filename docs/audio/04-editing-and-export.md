@@ -71,11 +71,13 @@ segments, which it turns into `cut` operations and hands to the same render path
   once ffmpeg and the probe succeed; a failed or interrupted export removes its partial
   file, and the startup sweep removes any a hard exit left behind (see
   [05-data-model-and-api.md](05-data-model-and-api.md)).
-- In the desktop app (`ServiceSettings.export_to_folder`) the finished file is then copied
-  to the user's export folder (`preferences.export_dir`, Downloads by default) under its
-  name, never overwriting (`name (2).mp3`), and the project's copy is removed
+- In the desktop app (`ServiceSettings.export_to_folder`) the finished file is then moved
+  (copied across drives) to the user's export folder (`preferences.export_dir`, Downloads
+  by default) under its name, never overwriting (`name (2).mp3`)
   (`service/export_folder.py`). The folder is checked before rendering, so a missing or
-  blocked folder fails at once with a message that says what to do. The saved file belongs
+  blocked folder fails at once with a message that says what to do. If saving still fails,
+  the render stays in the project and the job reports `save_error`; "Save to folder"
+  (`POST /projects/{id}/exports/{a}/save`) retries it. The saved file belongs
   to the user (`ExportArtifact.external`): its entry stays listed if it is moved, and
   deleting the recording leaves it in place. A browser downloads the project's copy
   instead.

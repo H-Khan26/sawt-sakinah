@@ -39,9 +39,8 @@ export function DeleteDialog({
       confirm={{ label: "Delete", onClick: onConfirm, variant: "danger", loading: del.isPending }}
     >
       Delete <span className="font-medium text-text">{name}</span>? This permanently removes its
-      audio
-      {toFolder ? ". Files you exported stay in their folders" : " and any exports"}. This can't be
-      undone.
+      audio and any exports kept in the app
+      {toFolder && "; files you saved to a folder stay there"}. This can't be undone.
     </SimpleModal>
   );
 }

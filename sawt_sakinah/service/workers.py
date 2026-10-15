@@ -9,7 +9,7 @@ endpoints never produce files.
 
 A job removes the partial output it owns when it fails or is stopped at shutdown: an
 export renders to ``<id>.part.<ext>`` and is renamed into place only once complete (in the
-desktop app it is then copied to the user's export folder; see ``export_folder.py``). The
+desktop app it is then moved to the user's export folder; see ``export_folder.py``). The
 half-built folder of a job creating a project (download, upload, split) is removed by the
 route's ``on_finish`` hook (``ProjectStore.discard_unfinished``), which also covers a job
 dropped from the queue. What a hard exit still leaves behind is removed by
@@ -33,7 +33,7 @@ from ..editing import render
 from ..extraction import extract_audio, import_file
 from ..extraction.probe import probe
 from ..extraction.segment import write_speech_map
-from ..fileio import part_path, replace_file, retry_locked
+from ..fileio import part_path, replace_file
 from ..models import (
     AudioSource,
     EditDecisionList,
@@ -428,11 +428,7 @@ def export_worker(
         if out_path.parent != exports_root:
             raise InvalidInputError(f"invalid export format: {req.format!r}")
         # Checked before rendering, so a blocked or missing folder fails in a moment.
-        folder = None
-        if settings.export_to_folder:
-            chosen = load_preferences().export_dir
-            folder = export_folder.export_dir(chosen)
-            export_folder.check_folder(folder, is_default=chosen is None)
+        folder = export_folder.checked_export_dir() if settings.export_to_folder else None
         # Scope to a selected range when requested: render the saved EDL plus a keep op for the
         # range (edits inside it stay applied), leaving the project's saved EDL untouched.
         scoped = req.range_start is not None and req.range_end is not None
@@ -480,13 +476,13 @@ def export_worker(
             base = project.name or project.audio_source.title
             default_name = f"{base} ({_range_label(req.range_start, req.range_end)})"
         name = req.name or default_name
-        saved = None
+        saved = save_error = None
         if folder is not None:
             try:
-                stem = export_folder.safe_base(name or "export", sep=" ")
-                saved = export_folder.save_copy(out_path, folder, stem, req.format)
-            finally:
-                remove_render(out_path)
+                saved = export_folder.save_render(out_path, folder, name or "export", req.format)
+            except export_folder.ExportFolderError as exc:
+                # The render stays in the project, where "Save to folder" can retry it.
+                save_error = str(exc)
         artifact = ExportArtifact(
             id=artifact_id,
             format=req.format,
@@ -507,17 +503,13 @@ def export_worker(
             ),
         )
         progress({"stage": "export", "status": "done"})
-        return {"artifact_id": artifact_id, "saved_path": str(saved) if saved else None}
+        return {
+            "artifact_id": artifact_id,
+            "saved_path": str(saved) if saved else None,
+            "save_error": save_error,
+        }
 
     return run
-
-
-def remove_render(path: Path) -> None:
-    """Remove a project's copy of an export once it was saved to the user's folder."""
-    try:
-        retry_locked(lambda: path.unlink(missing_ok=True))
-    except OSError as exc:
-        _log.warning("could not remove the rendered export %s: %s", path, exc)
 
 
 def split_worker(

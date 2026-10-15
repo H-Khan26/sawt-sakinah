@@ -3,6 +3,7 @@ desktop app, saving an export to the user's folder and showing it there."""
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
@@ -12,13 +13,15 @@ from ...models import ExportArtifact, Project
 from .. import export_folder
 from ..deps import get_jobs, get_settings, get_store
 from ..jobs import JobKind
-from ..preferences import load_preferences
 from ..ranges import media_type_for, ranged_file_response
 from ..schemas import ExportRequest, JobAccepted
-from ..workers import export_worker, remove_render
+from ..workers import export_worker
 from .common import validate_id
 
 router = APIRouter(prefix="/projects", tags=["export"])
+
+# One save at a time, so a double click can't save the same export twice.
+_SAVE_LOCK = threading.Lock()
 
 
 class SavedExport(BaseModel):
@@ -97,13 +100,6 @@ def save_export(
     into the user's export folder."""
     if not settings.export_to_folder:
         raise HTTPException(status_code=404, detail="saving to a folder needs the desktop app")
-    project, artifact = _find(store, project_id, artifact_id)
-    src = _rendered_file(store, project_id, artifact)
-    chosen = load_preferences().export_dir
-    folder = export_folder.export_dir(chosen)
-    export_folder.check_folder(folder, is_default=chosen is None)
-    stem = export_folder.safe_base(artifact.name or project.name or "export", sep=" ")
-    saved = export_folder.save_copy(src, folder, stem, artifact.format)
 
     def mutate(p: Project) -> Project:
         exports = [
@@ -112,8 +108,13 @@ def save_export(
         ]
         return p.model_copy(update={"exports": exports})
 
-    store.update(project_id, mutate)
-    remove_render(src)
+    with _SAVE_LOCK:
+        project, artifact = _find(store, project_id, artifact_id)
+        src = _rendered_file(store, project_id, artifact)
+        folder = export_folder.checked_export_dir()
+        name = artifact.name or project.name or "export"
+        saved = export_folder.save_render(src, folder, name, artifact.format)
+        store.update(project_id, mutate)
     return SavedExport(saved_path=str(saved))
 
 
