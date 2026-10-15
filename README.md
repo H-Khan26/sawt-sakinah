@@ -6,222 +6,187 @@
 </p>
 
 <p align="center">
-  A non-destructive editor for salah and Quran recitation recordings.<br>
-  Paste a YouTube link or drop in a file, find the silences and the surahs, cut what you do not need, export.
+  Save the recitations you love, and nothing else.<br>
+  Paste a YouTube link or drop in a recording, find the surahs, trim the rest, export.
 </p>
+
+<p align="center">
+  <img src="docs/assets/screenshots/landing.jpg" alt="The landing screen: the Sawt Sakinah calligraphy inside a dome rosette, ringed by lamps" width="860">
+</p>
+
+## Why this exists
+
+This started with a small problem I kept running into. I'd hear a beautiful recitation,
+on YouTube or in person at taraweeh or a qiyam, and I'd want to keep it and listen to it
+on repeat. Lots of masjids livestream, so the recording is usually out there somewhere.
+But getting just the audio out of it meant YouTube Premium, some editing software, and a
+lot of time I didn't have.
+
+So instead, I over-engineered an audio editor for exactly this one problem.
 
 ## What it does
 
-- **Acquires** audio from a YouTube URL or an uploaded file and keeps a 16 kHz working copy per project.
-- **Detects silence** with Silero voice-activity detection, so quiet dhikr and room noise are treated as non-speech rather than as recitation. An ffmpeg energy gate remains available as a fallback.
-- **Recognises surahs.** A small Quran-tuned Whisper model transcribes the recitation and the words are matched against the Quran text (from [Tanzil](https://tanzil.net)) to find which surahs and ayat are recited and where. Each surah is marked on the waveform; keep only that surah, copy it into a new recording, or add the surahs as chapters on export.
-- **Edits non-destructively.** Cuts and keeps live in an edit decision list. The waveform collapses cut audio out of view, and nothing is rendered until you export.
-- **Exports** the edited result, or a selected range, with chapters embedded. A range can also be split off into its own project.
+- **Grabs the audio** from a YouTube link or a file you already have (mp3, m4a, wav, flac, opus, or an mp4/mov video).
+- **Finds the silences**: the ruku', the sujood, the long pauses. It tells real
+  recitation apart from quiet dhikr and room noise.
+- **Finds the surahs.** It transcribes the recitation, matches it against the Quran text
+  and marks which surah and ayat are recited where, right on the waveform.
+- **Lets you edit without wrecking anything.** Cuts are just a list of decisions until
+  you export. Keep a single surah, remove all the silence in one click, or copy a surah
+  out into its own recording.
+- **Exports** MP3, M4A or WAV, with each surah added as a chapter.
 
-Detection returns data; only export writes audio. That rule shapes every module in the repo.
+Everything runs on your own computer. No account, no telemetry, and your recordings stay on your machine.
 
-## Download
+## A look around
 
-Sawt Sakinah runs on your own computer, and your recordings stay on it. Download the zip
-for your system from the
+The whole app is themed after the inside of a masjid at night. Dark mode is the
+**Night** theme (there's a vellum-and-oxblood **Day** theme too).
+
+You land under a **dome**: the name in gold calligraphy at the centre of a rosette, with
+a ring of lamps around it (the screenshot at the top). Hit **Enter**, or just scroll, and
+the dome lowers into the header. The lamps become a **chandelier** strung across the top
+of the library, lighting the wall below.
+
+**Library.** Each recording sits in its own mihrab-shaped niche on a star-lattice wall.
+There's a list view too if you have a lot of them.
+
+<p align="center">
+  <img src="docs/assets/screenshots/library.jpg" alt="The library: recordings shown as arched niches under a string of lamps" width="860">
+</p>
+
+**Editor.** The waveform with the recognised surahs marked across the top, silence
+controls on the left, and the surah list on the right.
+
+<p align="center">
+  <img src="docs/assets/screenshots/editor.jpg" alt="The editor: a taraweeh recording with three Surah Yunus passages marked above the waveform" width="860">
+</p>
+
+**Export.** Pick a name and a format, and add the surahs as chapters.
+
+<p align="center">
+  <img src="docs/assets/screenshots/export.jpg" alt="The export dialog over the editor" width="860">
+</p>
+
+## Download and run
+
+Grab the zip for your system from the
 [latest release](https://github.com/H-Khan26/sawt-sakinah/releases/latest).
 
-### Windows
+The app isn't code-signed (that costs money every year and this is a hobby project), so
+Windows and macOS will both be suspicious of it the first time. Here's how to get past
+that.
 
-1. Download `SawtSakinah-<version>-windows-x64.zip`.
-2. Unzip it anywhere you like (for example `Documents\SawtSakinah`) and run
-   `SawtSakinah.exe` in the unzipped folder.
-3. The app is not code-signed yet, so Windows SmartScreen stops the first launch. Choose
-   **More info**, then **Run anyway**.
+### Windows (10 or 11, 64-bit)
 
-The window uses Microsoft Edge WebView2, which Windows 10 and 11 already include. If the
-window stays blank, install the
-[WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+1. Download `SawtSakinah-<version>-windows-x64.zip`. If your browser warns that the
+   file "isn't commonly downloaded", choose **Keep** (in Edge: **...** > **Keep** >
+   **Show more** > **Keep anyway**).
+2. Unzip it anywhere, for example `Documents\SawtSakinah`, and run `SawtSakinah.exe`
+   from inside the unzipped folder.
+3. Windows SmartScreen shows **"Windows protected your PC"**. Click **More info**, then
+   **Run anyway**. You only have to do this once.
 
-### macOS (Apple Silicon)
+If the window stays blank, install the
+[WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). Windows 10
+and 11 usually have it already.
 
-1. Download `SawtSakinah-<version>-macos-arm64.zip`. It runs on Macs with an Apple
-   Silicon chip (M1 or newer) and macOS 14 Sonoma or later.
-2. Open the zip (Finder unzips it) and move `SawtSakinah.app` to your Applications folder.
-3. The app is not signed or notarized by Apple yet, so macOS blocks the first launch.
-   Open the app once and close the warning. Then open **System Settings > Privacy &
-   Security**, scroll down to **Security**, click **Open Anyway** next to the message
-   about SawtSakinah, and confirm. Later launches open normally.
+### macOS (Apple Silicon, macOS 14 or newer)
 
-If there is no **Open Anyway** button, remove the download quarantine in Terminal and
-open the app again:
+1. Download `SawtSakinah-<version>-macos-arm64.zip`, open it, and drag
+   `SawtSakinah.app` into **Applications**.
+2. Open the app. macOS says it can't verify the developer. Click **Done** (or **OK**).
+3. Go to **System Settings** > **Privacy & Security**, scroll down to **Security**, and
+   click **Open Anyway** next to the message about SawtSakinah. Confirm with your
+   password. From then on it opens normally.
+
+No **Open Anyway** button? Clear the quarantine flag in Terminal, then open the app
+again:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/SawtSakinah.app
 ```
 
-Intel Macs are not supported by the download; they can [run from source](#run-from-source).
+macOS may ask a couple more things the first time:
 
-### Requirements
+- **"SawtSakinah would like to access files in your Downloads folder"**: click **Allow**.
+  That's where exports go by default.
+- A **Keychain** prompt: this only comes up if you turn on YouTube cookies from a
+  browser in the settings, so the app can read that browser's cookies. Click
+  **Allow**, or don't use the cookies option.
 
-The speech model for surah recognition is not in the zip. The app downloads it (about
-80 MB) the first time you find surahs, and keeps it for later. Recognising surahs
-transcribes the speech on the CPU and takes a few minutes per hour of audio. Silence
-detection and editing are quick: a 39-minute Taraweeh recording imported from YouTube in
-42 seconds and exported in 22.
+Intel Macs aren't supported by the download, but they can run it from source (below).
 
-| | Minimum | Recommended |
-|---|---|---|
-| System | Windows 10 22H2 or Windows 11, 64-bit (x64); or macOS 14 on Apple Silicon | |
-| CPU | 4 cores, x86-64 with AVX2, or any Apple Silicon chip | 6 cores or more |
-| Memory | 8 GB | 16 GB |
-| Disk | 2 GB free: about 0.6 GB for the app, under 100 MB for the speech model, 150 MB per hour of recording per project | |
-| GPU | Not used | |
-| Network | For YouTube imports and the one-time model download | |
+### First run
 
-### Verify the download
+The speech model used to find surahs isn't in the zip. The app downloads it (about
+80 MB) the first time you click **Find surahs**, then keeps it. Recognition runs on the
+CPU and takes a few minutes per hour of audio. Importing and trimming are quick.
 
-Each release zip carries a signed build-provenance attestation, made by the release
-workflow in this repository. With the [GitHub CLI](https://cli.github.com/):
-
-```sh
-gh attestation verify SawtSakinah-<version>-windows-x64.zip -R H-Khan26/sawt-sakinah
-gh attestation verify SawtSakinah-<version>-macos-arm64.zip -R H-Khan26/sawt-sakinah
-```
-
-Or compare the file's SHA-256 with `SHA256SUMS` on the release page: `Get-FileHash <zip>`
-in PowerShell, `shasum -a 256 <zip>` in the macOS Terminal.
-
-### Your data and updates
-
-Projects, the speech model and settings live outside the app, so an update loses nothing:
-
-| | Windows | macOS |
-|---|---|---|
-| Projects, model, settings | `%LOCALAPPDATA%\SawtSakinah` | `~/Library/Application Support/SawtSakinah` |
-| Logs | `%LOCALAPPDATA%\SawtSakinah\logs` | `~/Library/Logs/SawtSakinah` |
-
-The app's settings have a button that opens the logs folder, for bug reports. To update,
-replace the old app with the new release: on Windows, delete the old folder and unzip the
-new one in its place; on macOS, move the new `SawtSakinah.app` into Applications over the
-old one (macOS may ask for **Open Anyway** again on its first launch).
-YouTube changes sometimes break the app's YouTube downloader
-([yt-dlp](https://github.com/yt-dlp/yt-dlp)) before a new release is out. With **Keep the
-YouTube downloader up to date** turned on in the settings, the app checks PyPI when it
-starts (at most once a day) for the newest yt-dlp nightly build, downloads it into the `plugins` folder of its data
-directory (checked against the SHA-256 that PyPI publishes) and uses it from the next
-launch. If the downloaded copy fails its checks, the app falls back to the copy it came
-with; turning the option off does the same at the next launch and deletes the download.
-The settings show which yt-dlp version is in use.
-
-To keep everything somewhere else for one run (a test, for example), launch the app
-with the environment variable `SAWT_DATA_DIR` set to an absolute folder path; the
-logs then go to its `logs` folder on both systems.
-
-### What goes over the network
-
-- **YouTube**, when you import a video by its URL.
-- **Hugging Face**, to download the speech model once.
-- **GitHub API**, to check for a newer release. This is on by default and can be turned
-  off in the app's settings.
-- **PyPI**, once a day, only if you turn on **Keep the YouTube downloader up to date** in
-  the settings (it is off by default).
-
-There is no telemetry, no account and no analytics.
-
-Downloading from YouTube is something you do yourself, on your own machine. Make sure it
-is allowed for the video you import, under
-[YouTube's Terms of Service](https://www.youtube.com/t/terms) and the rights of whoever
-made the recording.
+Please only download recordings you're allowed to: check
+[YouTube's Terms of Service](https://www.youtube.com/t/terms) and the wishes of whoever
+streamed it.
 
 ## How it works
 
+```mermaid
+flowchart LR
+    A[YouTube link<br>or file] -->|yt-dlp + FFmpeg| B[MP3 + 16 kHz<br>working copy]
+    B -->|Silero VAD| C[Speech map]
+    C --> D[Silences<br>gaps of 3 s+]
+    C -->|speech clips only| E[Whisper Quran model<br>words + timestamps]
+    E -->|match against<br>Tanzil Quran text| F[Surah passages<br>surah, ayat, start, end]
+    D --> G[Edit list<br>cut / keep]
+    F --> G
+    G -->|FFmpeg render| H[MP3 / M4A / WAV<br>+ surah chapters]
 ```
- YouTube / file ──> extraction ──> mp3 + working copy + speech map ──┐
-                                                                    │
-            ┌────────────── detection (read-only) ──────────────────┘
-            │  silence:  speech map ──> spans ──> gaps >= 3 s
-            │  surahs:   speech clips ──> Whisper (Quran) ──> match to Quran text ──> surah passages
-            ▼
-      edit decision list  (cut / keep, built in the UI)
-            │
-            ▼
-        editing (ffmpeg render) ──> exported audio + chapters
-```
 
-The speech map is a per-frame speech-probability track computed once when a source is
-acquired. Every later silence re-detect is a numpy threshold over that track, so the
-speech-threshold slider responds instantly, and surah recognition transcribes only the
-speech it describes.
+1. **Extract.** [yt-dlp](https://github.com/yt-dlp/yt-dlp) pulls the audio from YouTube
+   (with [Deno](https://deno.com/) for YouTube's JS challenges), or you import a file.
+   [FFmpeg](https://ffmpeg.org/) turns it into an MP3 plus a 16 kHz mono working copy
+   for analysis.
+2. **Map the speech.** [Silero VAD](https://github.com/snakers4/silero-vad) (ONNX) runs
+   once and scores every frame for "is someone speaking". Silences are the gaps of 3
+   seconds or more. Moving the threshold slider just re-reads that map, so it's instant.
+   An FFmpeg volume gate is there as a fallback.
+3. **Transcribe.** Only the speech gets transcribed. The clips are packed into one
+   stream and run through
+   [tarteel-ai/whisper-base-ar-quran](https://huggingface.co/tarteel-ai/whisper-base-ar-quran),
+   a Whisper base model fine-tuned on Quran recitation. It runs on CPU through
+   [faster-whisper](https://github.com/SYSTRAN/faster-whisper) /
+   [CTranslate2](https://github.com/OpenNMT/CTranslate2), using an int8 conversion
+   hosted at
+   [hkhan0327/faster-whisper-base-ar-quran](https://huggingface.co/hkhan0327/faster-whisper-base-ar-quran)
+   and pinned to a commit. The output is words with timestamps on the original timeline.
+4. **Match.** Both the transcript and the [Tanzil](https://tanzil.net) Quran text
+   (Simple Clean, Hafs) get stripped down to bare letters. Every three-word sequence
+   from the transcript is looked up in the Quran. From each hit the matcher walks
+   forward and back through the mushaf, word by word, with fuzzy matching
+   ([RapidFuzz](https://github.com/rapidfuzz/RapidFuzz)) so a misheard word doesn't
+   break the run. Takbirs, Amin and du'a don't match, so a passage ends there, and long
+   pauses split a surah across rak'ahs. Passages are scored, marked **accept** or
+   **unsure**, and their edges are snapped out into the pauses so a cut never clips a
+   word.
+5. **Edit and export.** Your cuts and keeps live in a non-destructive edit list.
+   Nothing touches the audio until export, when FFmpeg renders the result and writes the
+   accepted surahs in as chapters.
 
-## Configuration
-
-Every tuning knob lives in one strictly validated file, `sawt_sakinah/config/defaults.yaml`
-(silence thresholds, VAD sensitivity, transcription and surah matching, export format). Point
-`SAWT_CONFIG_FILE` at a copy to override the whole set. Operational settings such as
-storage directories, worker counts and the ffmpeg path accept `SAWT_*` environment
-variables or a `.env` file.
+The deep dive (architecture, thresholds, data model) is in [docs/](docs/README.md).
 
 ## Run from source
 
-Prerequisites: Python 3.10+, [FFmpeg](https://ffmpeg.org/) (ffmpeg and ffprobe on `PATH`), [Deno](https://deno.com/) 2.3+ on `PATH` (yt-dlp uses it for YouTube), [Node.js](https://nodejs.org/), and GNU make (on Windows: `choco install make`, or use Git Bash or WSL).
+You need Python 3.10+, [FFmpeg](https://ffmpeg.org/) and [Deno](https://deno.com/) on
+`PATH`, [Node.js](https://nodejs.org/), and GNU make.
 
 ```sh
-make requirements   # pip install -e ".[service,transcription,vad,desktop]"
-make dev            # backend http://127.0.0.1:38427 + frontend http://localhost:38428, hot reload
-make desktop        # build the frontend and open the app in a native window
+make requirements   # install the Python package and its extras
+make desktop        # build the frontend and open the app in a window
+make dev            # or: backend + frontend with hot reload
 ```
-
-`make help` lists every target. The Quran recognition model (about 80 MB) downloads the first time you find surahs.
-
-One-shot extraction with silence removal, no server:
-
-```sh
-python -m sawt_sakinah extract "https://www.youtube.com/watch?v=..."
-```
-
-To build the Windows zip yourself, in a fresh virtual environment:
-
-```sh
-make requirements-bundle   # hash-pinned release dependencies + PyInstaller
-make bundle                # SPA, ffmpeg/Deno download, PyInstaller, zip -> packaging/dist/
-```
-
-On an Apple Silicon Mac, add `BUNDLE_PLATFORM=macos-arm64` to both commands to build
-`SawtSakinah.app` and its zip instead.
-
-`make lock` regenerates the pinned lock files in `packaging/` (Windows and macOS) after a
-dependency change.
-
-## Repository layout
-
-```
-sawt_sakinah/
-  config/       defaults.yaml + strict schema (the single source of tuning knobs)
-  models/       pydantic contracts shared by every layer
-  extraction/   YouTube download, file import, working copy, speech map, cache
-  detection/    silence (VAD / ffmpeg), transcription + surah matching (Whisper, Quran text), Silero ONNX and Tanzil assets
-  editing/      EDL render and export (the only layer that writes audio)
-  service/      FastAPI app, job pools, project store, routes
-frontend/       React 18 + TypeScript + Vite + Tailwind + TanStack Query, wavesurfer.js
-docs/           architecture (audio/, frontend/), design records (plans/), README assets
-packaging/      desktop bundle: PyInstaller spec, lock files, helper-binary manifest
-.github/        CI, release and weekly rebuild workflows
-scripts/dev.py  runs backend and frontend together
-```
-
-## Documentation
-
-Start at [docs/README.md](docs/README.md) for the architecture map, then the audio-engine
-and frontend documents it links. Design records for larger changes are kept in
-[docs/plans/](docs/plans/).
 
 ## License
 
-[MIT](LICENSE). Bundled third-party assets keep their own licenses: the Silero VAD model
-(MIT, `sawt_sakinah/detection/assets/SILERO_LICENSE`), the Tanzil Quran text and surah
-metadata (CC BY 3.0, verbatim, `sawt_sakinah/detection/assets/TANZIL_LICENSE`) and the
-webfonts (SIL OFL, `frontend/public/fonts/`). The releases also ship FFmpeg, Deno (MIT) and the Python
-packages the app runs on. The Windows FFmpeg is an LGPL build; the macOS one is a GPL v3
-build, which the app runs as a separate program. `THIRD_PARTY_LICENSES.txt` (next to
-`SawtSakinah.exe` on Windows, in `SawtSakinah.app/Contents/Resources` on macOS) lists each
-component with its license text and source link.
-
-## Security
-
-To report a vulnerability, see [SECURITY.md](SECURITY.md).
+[MIT](LICENSE). Bundled third-party pieces keep their own licenses: Silero VAD (MIT),
+the Tanzil Quran text (CC BY 3.0, used verbatim), the Quran Whisper model (Apache-2.0),
+the webfonts (SIL OFL), and FFmpeg. Each release ships a `THIRD_PARTY_LICENSES.txt` with
+the full list. Security issues: see [SECURITY.md](SECURITY.md).
