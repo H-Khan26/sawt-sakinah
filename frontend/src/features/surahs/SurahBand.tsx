@@ -20,7 +20,8 @@ import { cn } from "@/lib/cn";
 import { formatHms } from "@/lib/time";
 import { useSurahStore } from "@/stores/surahStore";
 import { useViewPrefs } from "@/stores/viewPrefs";
-import type { ProjectView, SurahPassage } from "@/types/api";
+import type { ProjectView, SurahInfo, SurahPassage } from "@/types/api";
+import { useMemo } from "react";
 import { type SurahTone, ayahRange, surahName, visiblePassages } from "./surahModel";
 import { useSelectSurah, useSurahGroups } from "./useSurahView";
 import "./surahs.css";
@@ -41,25 +42,35 @@ interface Placed {
   to: number;
 }
 
-/** The passages the surah view shows, each with its tone and its span on the edited timeline. */
-function usePlacedPassages(project: ProjectView): Placed[] {
+/**
+ * The passages the surah view shows, each with its tone and its span on the edited timeline, and
+ * the surah table. Memoized on what changes them, so a scroll or zoom (which only moves them)
+ * reuses the list.
+ */
+function usePlacedPassages(project: ProjectView): {
+  placed: Placed[];
+  infos: ReadonlyMap<number, SurahInfo> | undefined;
+} {
   const { timeMap } = useWaveformContext();
   const surahView = useViewPrefs((s) => s.surahView);
   const showFatihah = useViewPrefs((s) => s.showFatihah);
   const selected = useSurahStore((s) => s.selected);
-  const { passages, groups } = useSurahGroups(project);
-  if (!surahView) return [];
-  const toneOf = new Map(groups.map((g) => [g.surah, g.tone]));
-  return visiblePassages(passages, showFatihah)
-    .map(
-      (passage): Placed => ({
-        passage,
-        tone: passage.surah === selected ? "sel" : (toneOf.get(passage.surah) ?? "a"),
-        from: timeMap.toEdited(passage.start),
-        to: timeMap.toEdited(passage.end),
-      }),
-    )
-    .filter((p) => p.to > p.from);
+  const { passages, groups, infos } = useSurahGroups(project);
+  const placed = useMemo(() => {
+    if (!surahView) return [];
+    const toneOf = new Map(groups.map((g) => [g.surah, g.tone]));
+    return visiblePassages(passages, showFatihah)
+      .map(
+        (passage): Placed => ({
+          passage,
+          tone: passage.surah === selected ? "sel" : (toneOf.get(passage.surah) ?? "a"),
+          from: timeMap.toEdited(passage.start),
+          to: timeMap.toEdited(passage.end),
+        }),
+      )
+      .filter((p) => p.to > p.from);
+  }, [surahView, showFatihah, selected, passages, groups, timeMap]);
+  return { placed, infos };
 }
 
 /** A passage's tooltip and accessible name, with its times on the edited timeline. */
@@ -80,8 +91,7 @@ const passageKey = (p: SurahPassage) => `${p.surah}:${p.start}`;
 export function SurahBand({ project }: { project: ProjectView }) {
   const { timeMap } = useWaveformContext();
   const layout = useOverlayLayout();
-  const placed = usePlacedPassages(project);
-  const { infos } = useSurahGroups(project);
+  const { placed, infos } = usePlacedPassages(project);
   const selectSurah = useSelectSurah(project);
   if (!layout || layout.pxPerSec <= 0) return null;
 
@@ -135,7 +145,7 @@ export function SurahBand({ project }: { project: ProjectView }) {
 /** Tints behind the bars; rendered into `WaveformView`'s underlay slot. */
 export function SurahTints({ project }: { project: ProjectView }) {
   const layout = useOverlayLayout();
-  const placed = usePlacedPassages(project);
+  const { placed } = usePlacedPassages(project);
   if (!layout || layout.pxPerSec <= 0) return null;
   return (
     <>
@@ -158,7 +168,7 @@ export function SurahTints({ project }: { project: ProjectView }) {
 /** Tints on the overview strip, which spans the whole edited timeline. */
 export function SurahOverviewTints({ project }: { project: ProjectView }) {
   const { timeMap } = useWaveformContext();
-  const placed = usePlacedPassages(project);
+  const { placed } = usePlacedPassages(project);
   const total = timeMap.editedTotal;
   if (total <= 0) return null;
   return (

@@ -17,14 +17,14 @@ import { keepOnlyRanges } from "@/features/cuts/cutEdl";
 import { useEdlEditor } from "@/features/cuts/useEdlEditor";
 import { useUndoToast } from "@/features/cuts/useUndoToast";
 import { ModelDownloadPrompt } from "@/features/models/ModelDownload";
-import { formatRelativeTime } from "@/lib/format";
-import { formatClock } from "@/lib/time";
+import { formatRelativeTime, plural } from "@/lib/format";
+import { formatHms } from "@/lib/time";
 import { useSurahStore } from "@/stores/surahStore";
 import { useViewPrefs } from "@/stores/viewPrefs";
 import type { ProjectView } from "@/types/api";
 import { type ReactNode, useState } from "react";
 import { SurahRow, UnsureFlag } from "./SurahRow";
-import { FATIHAH, type SurahGroup, acceptedRanges, plural, surahName } from "./surahModel";
+import { FATIHAH, type SurahGroup, acceptedRanges, surahName } from "./surahModel";
 import { type SurahDetection, surahJobProgress, useSurahDetection } from "./useSurahDetection";
 import { useHiddenFatihahDeselect, useSelectSurah, useSurahGroups } from "./useSurahView";
 
@@ -84,7 +84,7 @@ function FindButton({
 }
 
 function Finding({ detection }: { detection: SurahDetection }) {
-  const { fraction, text } = surahJobProgress(detection.job, formatClock);
+  const { fraction, text } = surahJobProgress(detection.job, formatHms);
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm text-text-secondary">Listening</p>

@@ -5,22 +5,28 @@
  * - `needs-model`: the Quran recognition model isn't on disk. The catalog says so; without it, a
  *   409 `ModelNotInstalledError` (or a job that lost the model) does, and refetches the catalog.
  * - `idle`: nothing found yet, and nothing running.
- * - `finding`: the request or job is under way, until the project shows this run's result.
- * - `failed`: the request or job failed for another reason; `error` says why.
+ * - `finding`: the request or job is under way, until the project shows this run's result or
+ *   the refetch after it has settled without it (an older map then shows as `done`).
+ * - `failed`: the request, the job or the refetch after it failed for another reason; `error`
+ *   says why.
  * - `done`: the project holds a surah map (which may have no passages).
  *
  * The job id is kept per project in `surahStore`, so the progress survives leaving the recording
- * and coming back. A run that succeeds turns the Surah view on, so the result shows at once.
+ * and coming back. A run that succeeds turns the Surah view on once, so the result shows at
+ * once; the store marks the job announced, so a later remount leaves the user's choice alone.
+ * The panel is keyed by project, so a request error or a missing-model answer stays with the
+ * recording it came from.
  * Running again reuses the saved transcript, so only the matching repeats.
  */
 import { queryKeys } from "@/api/endpoints";
-import { useDetectSurahs, useJob, useModels } from "@/api/hooks";
+import { useDetectSurahs, useJob, useModels, useProject } from "@/api/hooks";
 import { MODEL_NOT_INSTALLED, isModelNotInstalled } from "@/features/models/useModelDownload";
+import { finiteNumber as num } from "@/lib/format";
 import { useSurahStore } from "@/stores/surahStore";
 import { useViewPrefs } from "@/stores/viewPrefs";
 import type { JobRecord, ProjectView, SpeechModel } from "@/types/api";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 export type SurahPhase = "loading" | "needs-model" | "idle" | "finding" | "failed" | "done";
 
@@ -34,10 +40,6 @@ export interface SurahDetection {
   job: JobRecord | undefined;
   /** Why the last run failed, while `phase` is `failed`. */
   error: string | null;
-}
-
-function num(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 /** A matching job's progress as a fraction (while transcribing) and a line of text. */
@@ -72,6 +74,8 @@ export function useSurahDetection(project: ProjectView): SurahDetection {
   const jobId = useSurahStore((s) => s.jobs[projectId]);
   const setJob = useSurahStore((s) => s.setJob);
   const job = useJob(jobId, { invalidateProject: true });
+  // The query the editor reads; its fetch times tell whether the refetch after success has run.
+  const projectQuery = useProject(projectId);
   const state = job.data?.state;
   const jobMissingModel = state === "failed" && job.data?.error_type === MODEL_NOT_INSTALLED;
 
@@ -80,11 +84,13 @@ export function useSurahDetection(project: ProjectView): SurahDetection {
     if (jobMissingModel) queryClient.invalidateQueries({ queryKey: queryKeys.models });
   }, [jobMissingModel, queryClient]);
 
-  // The first time this run's success is seen, turn the Surah view on.
-  const announced = useRef<string | null>(null);
+  // The first time this run's success is seen, turn the Surah view on. The store remembers the
+  // job as announced, so a remount that finds it succeeded in the cache leaves the view alone.
   useEffect(() => {
-    if (state !== "succeeded" || !jobId || announced.current === jobId) return;
-    announced.current = jobId;
+    if (state !== "succeeded" || !jobId) return;
+    const surahs = useSurahStore.getState();
+    if (surahs.announced[jobId]) return;
+    surahs.markAnnounced(jobId);
     const prefs = useViewPrefs.getState();
     if (!prefs.surahView) prefs.setSurahView(true);
   }, [state, jobId]);
@@ -108,18 +114,27 @@ export function useSurahDetection(project: ProjectView): SurahDetection {
     );
   };
 
-  // A succeeded job counts as finding until the refetched project carries its result.
+  // A succeeded job counts as finding until the project carries its result, or until the refetch
+  // its success started has settled: a failed refetch then shows its error, and one that came
+  // back without the result shows the map the project has.
   const matchedAt = project.surahs ? Date.parse(project.surahs.matched_at) : null;
-  const awaitingResult =
-    state === "succeeded" &&
-    job.data !== undefined &&
-    (matchedAt === null || matchedAt < Date.parse(job.data.created_at));
+  const hasResult =
+    job.data !== undefined && matchedAt !== null && matchedAt >= Date.parse(job.data.created_at);
+  const successSeenAt = job.dataUpdatedAt;
+  const refetchFailed = projectQuery.isError && projectQuery.errorUpdatedAt >= successSeenAt;
+  const refetchSettled =
+    !projectQuery.isFetching && (projectQuery.dataUpdatedAt >= successSeenAt || refetchFailed);
+  const awaitingResult = state === "succeeded" && !hasResult && !refetchSettled;
   const finding = detect.isPending || state === "pending" || state === "running" || awaitingResult;
 
   const jobError = state === "failed" && !jobMissingModel ? (job.data?.error ?? null) : null;
   const requestError =
     detect.isError && !isModelNotInstalled(detect.error) ? detect.error.message : null;
-  const error = finding ? null : (requestError ?? jobError);
+  const resultError =
+    state === "succeeded" && !hasResult && refetchFailed
+      ? `The surahs were found, but the recording didn't reload: ${projectQuery.error?.message}`
+      : null;
+  const error = finding ? null : (requestError ?? jobError ?? resultError);
 
   let phase: SurahPhase;
   if (finding) phase = "finding";

@@ -6,18 +6,31 @@
  *
  * The selected row opens: the two actions, which act on the accepted passages only, then a chip
  * per passage (its time on the edited timeline and its ayat; a chip seeks there). A surah
- * whose passages are all unsure keeps them disabled with a hint to listen first. The row scrolls
- * to the top of the column, so its actions show, however it was selected (the row, the band, `[` / `]`). While
- * Al-Fatihah is hidden its row collapses to one quiet line.
+ * whose passages are all unsure keeps them disabled with a hint to listen first. However it was
+ * selected (the row, the band, `[` / `]`), the row scrolls to the top of the column, so its
+ * actions show. While Al-Fatihah is hidden its row collapses to one quiet line.
  */
 import { RubElHizb } from "@/components/ornament";
 import { Button } from "@/components/ui";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { cn } from "@/lib/cn";
+import { plural } from "@/lib/format";
 import { formatHms } from "@/lib/time";
 import type { SurahInfo, SurahPassage } from "@/types/api";
 import { useEffect, useRef } from "react";
-import { FATIHAH, type SurahGroup, ayahRange, plural, surahName } from "./surahModel";
+import { FATIHAH, type SurahGroup, ayahRange, surahName } from "./surahModel";
+
+/**
+ * Scroll `el` to the top of its nearest scrolling ancestor (the Surahs column), and nothing
+ * else: unlike `scrollIntoView`, the page and the editor never move. A column that isn't
+ * scrolling (the page grows instead) is left as is.
+ */
+function scrollToColumnTop(el: HTMLElement) {
+  let box = el.parentElement;
+  while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement;
+  if (!box || box.scrollHeight <= box.clientHeight) return;
+  box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top;
+}
 
 /** The amber "Unsure" flag. */
 export function UnsureFlag({ children = "Unsure" }: { children?: string }) {
@@ -56,7 +69,7 @@ export function SurahRow({
   const isFatihah = group.surah === FATIHAH;
   const ref = useRef<HTMLLIElement>(null);
   useEffect(() => {
-    if (selected) ref.current?.scrollIntoView({ block: "start" });
+    if (selected && ref.current) scrollToColumnTop(ref.current);
   }, [selected]);
 
   if (hidden) {

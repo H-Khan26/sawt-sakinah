@@ -1,6 +1,7 @@
 import { ApiError } from "@/api/client";
 import { useToast } from "@/components/ui";
 import { sameOps } from "@/lib/edl";
+import { useSurahStore } from "@/stores/surahStore";
 import type {
   AppPreferences,
   CreateProjectRequest,
@@ -240,6 +241,7 @@ export function useDeleteProject() {
       queryClient.removeQueries({ queryKey: queryKeys.project(id) });
       queryClient.removeQueries({ queryKey: queryKeys.waveform(id) });
       localEdls.delete(id);
+      useSurahStore.getState().clearJob(id);
     },
   });
 }

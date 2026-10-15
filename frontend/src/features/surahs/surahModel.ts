@@ -92,7 +92,3 @@ export const surahName = (surah: number, infos: ReadonlyMap<number, SurahInfo> |
 /** An ayah range, `1–24`, or a single ayah. */
 export const ayahRange = (from: number, to: number): string =>
   from === to ? String(from) : `${from}–${to}`;
-
-/** `n` with the singular or plural noun. */
-export const plural = (n: number, one: string, many: string): string =>
-  `${n} ${n === 1 ? one : many}`;

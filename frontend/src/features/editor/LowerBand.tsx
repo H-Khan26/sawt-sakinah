@@ -25,7 +25,8 @@ export function LowerBand({ project }: { project: ProjectView }) {
         aria-label="Surahs"
         className="min-h-0 overflow-y-auto border-l border-border pb-2 pl-8 pt-5"
       >
-        <SurahsPanel project={project} />
+        {/* Keyed by project: its request error and model answer belong to one recording. */}
+        <SurahsPanel key={project.id} project={project} />
       </section>
     </div>
   );

@@ -16,6 +16,7 @@ import { Button } from "@/components/ui";
 import { useCutModel } from "@/features/cuts/cutModel";
 import { useEdlEditor } from "@/features/cuts/useEdlEditor";
 import { useUndoToast } from "@/features/cuts/useUndoToast";
+import { plural } from "@/lib/format";
 import { formatClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
 import type { ProjectView, SilenceSegment } from "@/types/api";
@@ -25,8 +26,6 @@ import { SilenceControls, useSilenceDetection } from "./SilenceControls";
 import { SilenceList } from "./SilenceList";
 import { removeSilences, restoreSilences, silenceStats } from "./edl";
 import { silenceKey } from "./regions";
-
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** Whether two detected-silence lists hold the same spans. */
 const sameSpans = (a: SilenceSegment[], b: SilenceSegment[]) =>

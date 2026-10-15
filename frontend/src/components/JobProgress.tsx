@@ -1,15 +1,11 @@
 import { Progress } from "@/components/ui";
+import { finiteNumber as num } from "@/lib/format";
 import type { JobRecord } from "@/types/api";
 
 export interface JobProgressProps {
   job: JobRecord | undefined;
   /** Headline shown above the bar (e.g. "Extracting audio"). */
   title?: string;
-}
-
-/** Coerce an unknown progress-dict value to a finite number, or null. */
-function num(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 /** Human label for the yt-dlp `eta` (seconds) field, when present. */
