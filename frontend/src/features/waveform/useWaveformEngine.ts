@@ -13,6 +13,12 @@
  * Browsers pause animation frames in a hidden or minimised window, so a timer set for the next
  * cut's start performs the same skip there; frames still draw the cursor.
  *
+ * The engine also keeps the cursor in view (wavesurfer's own auto-scroll is off): a seek scrolls
+ * to it when it is off screen, and playback does the same unless the view was scrolled by hand in
+ * the last few seconds, so the user can look elsewhere while it plays. An *audition* plays a
+ * stretch of source time once and stops, optionally hearing one cut range instead of skipping it,
+ * then returns the playhead; a seek, play or pause from elsewhere takes over from it.
+ *
  * Everything outside this module addresses playback in *source* time via the returned
  * `controller`; the source<->edited mapping lives here and in `timeMap.ts` alone.
  */
@@ -35,6 +41,23 @@ const EDGE_EPSILON = 0.05;
 
 /** Pointer travel (px) below which a press on the overview's range box counts as a click. */
 const CLICK_SLOP = 3;
+
+/** After a scroll by hand, playback leaves the view alone this long (ms) before following again. */
+const FOLLOW_HOLD_MS = 3000;
+
+/** An audition ends this close (seconds) to its end, so a timer firing early still ends it. */
+const AUDITION_END_SLOP = 0.02;
+
+/** A revealed range narrower than this (px) is zoomed in on; one wider than the view, out from. */
+const REVEAL_MIN_PX = 48;
+/** Share of the view a range takes once `reveal` zooms to it. */
+const REVEAL_FILL = 0.5;
+
+const overlaps = (a: Span, b: Span): boolean => a[0] < b[1] && b[0] < a[1];
+
+/** The x of edited time `edited` on the renderer's (scrolling) content, in px. */
+const cursorX = (ws: WaveSurfer, edited: number): number =>
+  (edited / Math.max(ws.getDuration(), Number.EPSILON)) * ws.getWrapper().scrollWidth;
 
 type WaveformColors = ReturnType<typeof useThemeColors>["waveformColors"];
 
@@ -109,16 +132,43 @@ function mountOverview(
   };
 }
 
+export interface AuditionOptions {
+  /** A cut range to hear instead of skipping; other cuts are skipped as usual. */
+  playCut?: Span;
+  /** Source time the playhead returns to when the audition ends; defaults to where it was. */
+  returnTo?: number;
+}
+
 /** Source-time playback surface every feature drives (seek, play, read the playhead). */
 export interface WaveformController {
+  /** Play or pause. Play ends an audition where it is; pause stops it as `stopAudition` does. */
   play(): void;
   pause(): void;
   playPause(): void;
   isPlaying(): boolean;
   /** Current playhead in source seconds. */
   getSourceTime(): number;
-  /** Seek to a source time (moves audio + cursor). */
+  /** Seek to a source time (moves audio + cursor), ending any audition. */
   setSourceTime(sourceT: number): void;
+  /**
+   * Play source `[start, end]` once, then pause and return the playhead. Progress shows in
+   * `playbackStore.audition` and `sourceTime`; a new audition replaces a running one.
+   */
+  audition(start: number, end: number, options?: AuditionOptions): void;
+  /** Stop the audition, if any, and return the playhead. */
+  stopAudition(): void;
+  /**
+   * Zoom and scroll so source `[start, end]` is in view with room to work on it; when the
+   * waveform is reloading (a view switch), once it has.
+   */
+  reveal(start: number, end: number): void;
+}
+
+/** The running audition (see `WaveformController.audition`). */
+interface ActiveAudition {
+  end: number;
+  playCut: Span | null;
+  returnTo: number;
 }
 
 interface UseWaveformEngineArgs {
@@ -155,6 +205,17 @@ export function useWaveformEngine({
   const rafRef = useRef<number>(0);
   const skipTimerRef = useRef<number>(0);
   const lastLoadedRef = useRef<RenderPeaks | null>(null);
+  /** A new envelope is loading into the renderer; cleared on its `ready`. */
+  const loadingRef = useRef(false);
+  /** The cursor was in view when the load began, so it is kept in view once it lands. */
+  const followOnReadyRef = useRef(false);
+  const auditionRef = useRef<ActiveAudition | null>(null);
+  /** A source range to bring into view once the renderer has settled (see `reveal`). */
+  const revealRef = useRef<Span | null>(null);
+  /** When the view was last scrolled by hand (`performance.now()`). */
+  const manualScrollAtRef = useRef(Number.NEGATIVE_INFINITY);
+  /** The scroll offset the engine itself last set, so its scroll event isn't taken as a user's. */
+  const ownScrollRef = useRef<number | null>(null);
 
   // Latest map / cut spans, read by the rAF loop and controller without resubscribing.
   const timeMapRef = useRef(timeMap);
@@ -180,52 +241,115 @@ export function useWaveformEngine({
 
   const hasRender = !!render;
 
-  // Move the cursor + store to the edited position for the current source time.
-  const syncCursor = useRef(() => {
+  // Scroll the renderer to `px` (clamped), noted as the engine's own scroll.
+  const scrollTo = useRef((px: number) => {
+    const ws = wsRef.current;
+    if (!ws) return;
+    const max = Math.max(0, ws.getWrapper().scrollWidth - ws.getWidth());
+    const target = Math.round(Math.min(max, Math.max(0, px)));
+    if (target === Math.round(ws.getScroll())) return;
+    ownScrollRef.current = target;
+    ws.setScroll(target);
+  });
+
+  // Whether the cursor is within the visible part of the renderer.
+  const cursorInView = useRef((): boolean => {
+    const ws = wsRef.current;
+    if (!ws) return false;
+    const x = cursorX(ws, usePlaybackStore.getState().currentTime);
+    return x >= ws.getScroll() && x <= ws.getScroll() + ws.getWidth();
+  });
+
+  // Move the cursor + store to the edited position for the current source time. With `follow`,
+  // a cursor that is off screen is scrolled to the middle of the view.
+  const syncCursor = useRef((follow = false) => {
     const audio = audioRef.current;
     const ws = wsRef.current;
     if (!audio || !ws) return;
     const edited = timeMapRef.current.toEdited(audio.currentTime);
     ws.setTime(edited);
     usePlaybackStore.getState().setPlayhead(edited, audio.currentTime);
-  });
-
-  // Jump past the cut span the playhead is in, if any. Seeking moves `currentTime` at once, so
-  // a second call (the frame loop and the timer both run it) finds nothing left to skip.
-  const skipCut = useRef(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    for (const [start, end] of cutSpansRef.current) {
-      if (audio.currentTime >= start && audio.currentTime < end - EDGE_EPSILON) {
-        audio.currentTime = end;
-        break;
-      }
+    if (follow && !cursorInView.current()) {
+      scrollTo.current(cursorX(ws, edited) - ws.getWidth() / 2);
     }
   });
 
-  // While playing, set a timer for the start of the next cut span ahead so the skip happens even
-  // without animation frames. Re-armed on play, seek, rate change and a cut-spans change.
+  // Sync after a seek: the view follows the cursor at once, even just after a scroll by hand.
+  const syncSeek = useRef(() => {
+    manualScrollAtRef.current = Number.NEGATIVE_INFINITY;
+    syncCursor.current(true);
+  });
+
+  // End the audition, if any, leaving playback as it is (a seek or play took over).
+  const dropAudition = useRef((): ActiveAudition | null => {
+    const audition = auditionRef.current;
+    if (!audition) return null;
+    auditionRef.current = null;
+    usePlaybackStore.getState().setAudition(null);
+    return audition;
+  });
+
+  // Stop the audition, if any: pause and return the playhead.
+  const stopAudition = useRef(() => {
+    const audition = dropAudition.current();
+    const audio = audioRef.current;
+    if (!audition || !audio) return;
+    audio.pause();
+    audio.currentTime = audition.returnTo;
+    syncSeek.current();
+  });
+
+  // Jump past the cut span the playhead is in, unless the audition is hearing it, and stop an
+  // audition that has reached its end. Seeking moves `currentTime` at once, so a second call
+  // (the frame loop and the timer both run it) finds nothing left to do.
+  const skipCut = useRef(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const heard = auditionRef.current?.playCut;
+    for (const span of cutSpansRef.current) {
+      if (heard && overlaps(span, heard)) continue;
+      if (audio.currentTime >= span[0] && audio.currentTime < span[1] - EDGE_EPSILON) {
+        audio.currentTime = span[1];
+        break;
+      }
+    }
+    const audition = auditionRef.current;
+    if (audition && audio.currentTime >= audition.end - AUDITION_END_SLOP) stopAudition.current();
+  });
+
+  // While playing, set a timer for the start of the next cut span ahead (or the audition's end)
+  // so the skip happens even without animation frames. Re-armed on play, seek, rate change, a
+  // cut-spans change and the start of an audition.
   const armSkipTimer = useRef(() => {
     clearTimeout(skipTimerRef.current);
     const audio = audioRef.current;
     if (!audio || audio.paused || audio.ended) return;
     const t = audio.currentTime;
-    const next = cutSpansRef.current.find(([, end]) => t < end - EDGE_EPSILON);
-    if (!next) return;
-    const delayMs = (Math.max(0, next[0] - t) / (audio.playbackRate || 1)) * 1000;
+    const audition = auditionRef.current;
+    const heard = audition?.playCut;
+    const next = cutSpansRef.current.find(
+      (span) => t < span[1] - EDGE_EPSILON && !(heard && overlaps(span, heard)),
+    );
+    const at = Math.min(
+      next?.[0] ?? Number.POSITIVE_INFINITY,
+      audition?.end ?? Number.POSITIVE_INFINITY,
+    );
+    if (!Number.isFinite(at)) return;
+    const delayMs = (Math.max(0, at - t) / (audio.playbackRate || 1)) * 1000;
     skipTimerRef.current = window.setTimeout(() => {
       skipCut.current();
       armSkipTimer.current();
     }, delayMs);
   });
 
-  // Per-frame loop while playing: skip cut spans, then sync the cursor to the edited time.
+  // Per-frame loop while playing: skip cut spans, then sync the cursor to the edited time,
+  // following it unless the view was scrolled by hand a moment ago.
   const tick = useRef(() => {
     const audio = audioRef.current;
     const ws = wsRef.current;
     if (!audio || !ws) return;
     skipCut.current();
-    syncCursor.current();
+    syncCursor.current(performance.now() - manualScrollAtRef.current > FOLLOW_HOLD_MS);
     if (!audio.paused && !audio.ended) rafRef.current = requestAnimationFrame(tick.current);
   });
 
@@ -233,8 +357,37 @@ export function useWaveformEngine({
   const seekEdited = useRef((editedTime: number) => {
     const audio = audioRef.current;
     if (!audio) return;
+    dropAudition.current();
     audio.currentTime = timeMapRef.current.toSource(editedTime);
-    if (audio.paused) syncCursor.current();
+    syncSeek.current();
+  });
+
+  // Zoom and scroll to the pending `reveal` range, if any. A new zoom goes through the store like
+  // any other; the scroll follows once the renderer has applied it.
+  const applyReveal = useRef(() => {
+    const span = revealRef.current;
+    const ws = wsRef.current;
+    if (!span || !ws) return;
+    revealRef.current = null;
+    const duration = ws.getDuration();
+    const width = ws.getWidth();
+    if (!(duration > 0) || width <= 0) return;
+    const map = timeMapRef.current;
+    const a = map.toEdited(span[0]);
+    const b = map.toEdited(span[1]);
+    const centre = () =>
+      scrollTo.current(((a + b) / 2) * (ws.getWrapper().scrollWidth / duration) - width / 2);
+    const shown = (b - a) * (ws.getWrapper().scrollWidth / duration);
+    if (b > a && (shown < REVEAL_MIN_PX || shown > width)) {
+      const store = usePlaybackStore.getState();
+      const zoom = clampZoom((width * REVEAL_FILL) / (b - a), store.zoomMin);
+      store.setZoom(zoom);
+      if (ws.options.minPxPerSec !== zoom) {
+        ws.once("zoom", centre);
+        return;
+      }
+    }
+    centre();
   });
 
   /** Unmounts the overview; replaced whenever it is re-mounted for a new theme. */
@@ -268,6 +421,8 @@ export function useWaveformEngine({
     const onPause = () => {
       usePlaybackStore.getState().setIsPlaying(false);
       stopLoop();
+      // Paused from elsewhere (the file's end, a media key): the audition is over.
+      stopAudition.current();
     };
     const onSeeked = () => {
       if (audio.paused) syncCursor.current();
@@ -301,6 +456,7 @@ export function useWaveformEngine({
     return () => {
       cancelAnimationFrame(rafRef.current);
       clearTimeout(skipTimerRef.current);
+      dropAudition.current();
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener("ended", onPause);
@@ -357,6 +513,8 @@ export function useWaveformEngine({
       interact: true,
       // The overview's range box is the scroller; the renderer's own scrollbar stays hidden.
       hideScrollbar: true,
+      // The engine keeps the cursor in view itself (`syncCursor`), so a scroll by hand can hold.
+      autoScroll: false,
       plugins: [
         TimelinePlugin.create({
           height: TIMELINE_HEIGHT,
@@ -386,6 +544,7 @@ export function useWaveformEngine({
     }
 
     ws.on("ready", () => {
+      loadingRef.current = false;
       const store = usePlaybackStore.getState();
       const duration = renderRef.current?.duration ?? 0;
       store.setDuration(duration);
@@ -396,7 +555,9 @@ export function useWaveformEngine({
         store.setZoom(store.zoom == null ? min : clampZoom(store.zoom, min));
       }
       setIsReady(true);
-      syncCursor.current();
+      syncCursor.current(followOnReadyRef.current);
+      followOnReadyRef.current = false;
+      applyReveal.current();
     });
     // A click on the renderer seeks: map the edited click position back to source time.
     ws.on("interaction", seekEdited.current);
@@ -404,8 +565,18 @@ export function useWaveformEngine({
       if (err?.name === "AbortError") return;
       setError(err instanceof Error ? err : new Error(String(err)));
     });
+    // A scroll the engine didn't make itself is the user's (the wheel, the overview box, a zoom).
+    const scroller = ws.getWrapper().parentElement;
+    const onScroll = () => {
+      const own = ownScrollRef.current;
+      ownScrollRef.current = null;
+      if (own != null && Math.abs(ws.getScroll() - own) <= 1) return;
+      manualScrollAtRef.current = performance.now();
+    };
+    scroller?.addEventListener("scroll", onScroll, { passive: true });
 
     return () => {
+      scroller?.removeEventListener("scroll", onScroll);
       unmountOverviewRef.current?.();
       unmountOverviewRef.current = null;
       wsRef.current = null;
@@ -429,6 +600,8 @@ export function useWaveformEngine({
     const ws = wsRef.current;
     if (!ws || !isReady || !render || render === lastLoadedRef.current) return;
     lastLoadedRef.current = render;
+    loadingRef.current = true;
+    followOnReadyRef.current = cursorInView.current();
     ws.load("", [render.levels], render.duration).catch(() => {
       // A newer load / destroy superseded this one; ignore.
     });
@@ -465,12 +638,19 @@ export function useWaveformEngine({
 
   const controller = useMemo<WaveformController>(
     () => ({
-      play: () => void audioRef.current?.play().catch(() => undefined),
-      pause: () => audioRef.current?.pause(),
+      play: () => {
+        dropAudition.current();
+        void audioRef.current?.play().catch(() => undefined);
+      },
+      pause: () => {
+        if (auditionRef.current) stopAudition.current();
+        else audioRef.current?.pause();
+      },
       playPause: () => {
         const audio = audioRef.current;
         if (!audio) return;
-        if (audio.paused) void audio.play().catch(() => undefined);
+        if (auditionRef.current) stopAudition.current();
+        else if (audio.paused) void audio.play().catch(() => undefined);
         else audio.pause();
       },
       isPlaying: () => !!audioRef.current && !audioRef.current.paused && !audioRef.current.ended,
@@ -478,8 +658,30 @@ export function useWaveformEngine({
       setSourceTime: (sourceT) => {
         const audio = audioRef.current;
         if (!audio) return;
+        dropAudition.current();
         audio.currentTime = Math.max(0, sourceT);
-        syncCursor.current();
+        syncSeek.current();
+      },
+      audition: (start, end, options = {}) => {
+        const audio = audioRef.current;
+        if (!audio || !(end > start)) return;
+        const playCut = options.playCut ?? null;
+        const returnTo = options.returnTo ?? audio.currentTime;
+        auditionRef.current = { end, playCut, returnTo };
+        usePlaybackStore.getState().setAudition({ start, end, playCut });
+        audio.currentTime = Math.max(0, start);
+        syncSeek.current();
+        if (audio.paused) audio.play().catch(() => dropAudition.current());
+        else armSkipTimer.current();
+      },
+      stopAudition: () => stopAudition.current(),
+      reveal: (start, end) => {
+        revealRef.current = [start, end];
+        // A view switch made in the same event has started reloading the renderer by the next
+        // frame, and its `ready` applies the reveal; otherwise it applies then.
+        requestAnimationFrame(() => {
+          if (!loadingRef.current) applyReveal.current();
+        });
       },
     }),
     [],
