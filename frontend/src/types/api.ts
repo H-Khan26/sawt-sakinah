@@ -14,38 +14,46 @@ export interface SilenceSegment {
   duration: number;
 }
 
-export type MarkerType = "takbir" | "tasmi" | "tahmid" | "tasleem" | "custom" | string;
-export type MarkerSource = "auto" | "user";
+/** `models/surahs.py` PassageLevel: `unsure` passages are shown flagged and never acted on. */
+export type PassageLevel = "accept" | "unsure";
 
-/** `models/markers.py` Marker. `duration` is a computed field (null when no `end`). */
-export interface Marker {
-  id: string;
-  time: number;
-  end: number | null;
-  label: string;
-  type: MarkerType;
+/**
+ * `models/surahs.py` SurahPassage: one continuous stretch of recitation recognised as a run of
+ * ayat of one surah, on the source timeline. `start` / `end` are padded into the pauses around it.
+ */
+export interface SurahPassage {
+  /** Surah number, 1..114. */
+  surah: number;
+  /** First and last ayah heard (1-based, inclusive). */
+  ayah_from: number;
+  ayah_to: number;
+  start: number;
+  end: number;
+  /** Matched transcript words over the words the passage spans (0..1). */
   confidence: number;
-  source: MarkerSource;
-  duration: number | null;
+  level: PassageLevel;
 }
 
-export type PrayerPositionName =
-  | "qiyam"
-  | "ruku"
-  | "itidal"
-  | "sujood"
-  | "julus"
-  | "tasleem"
-  | string;
+/** `models/surahs.py` SurahMap: the result of one matching run. */
+export interface SurahMap {
+  /** Catalog id of the model the transcript came from. */
+  model: string;
+  matched_at: string;
+  /** Accepted and unsure passages, ordered by `start`. */
+  passages: SurahPassage[];
+}
 
-/** `models/structure.py` PrayerPosition. */
-export interface PrayerPosition {
-  index: number;
-  name: PrayerPositionName;
-  rakah: number;
-  start: number;
-  end: number | null;
-  derived_from: string[];
+/** `GET /quran/surahs` item: Tanzil's metadata for one surah. */
+export interface SurahInfo {
+  number: number;
+  /** Arabic name. */
+  name: string;
+  /** Transliteration, e.g. `Al-Faatiha`. */
+  tname: string;
+  /** English meaning. */
+  ename: string;
+  ayas: number;
+  type: "Meccan" | "Medinan" | string;
 }
 
 // --- edit decision list (models/edl.py) -------------------------------------
@@ -87,6 +95,8 @@ export interface AudioSourceView {
   /** True once the speech-probability map for the source is persisted server-side; VAD
    * re-detects then reuse it instead of re-running the model over the audio. */
   has_speech_map: boolean;
+  /** True once a transcript is saved, so surahs can be matched again without transcribing. */
+  has_transcript: boolean;
 }
 
 export interface ExportArtifactView {
@@ -116,8 +126,8 @@ export interface ProjectView {
   /** User-facing library label; seeded from the source title, editable via PATCH. */
   name: string;
   silences: SilenceSegment[];
-  markers: Marker[];
-  structure: PrayerPosition[];
+  /** The recognised surahs; `null` until matching has run. */
+  surahs: SurahMap | null;
   edl: EditDecisionList;
   status: ProjectStatus;
   exports: ExportArtifactView[];
@@ -155,7 +165,7 @@ export type JobState = "pending" | "running" | "succeeded" | "failed";
 export type JobKind =
   | "extract"
   | "detect_silence"
-  | "detect_phrases"
+  | "detect_surahs"
   | "export"
   | "split"
   | "download_model"
@@ -163,11 +173,11 @@ export type JobKind =
 
 /**
  * `GET /jobs/{id}`. `progress` is an arbitrary, per-kind dict: detection/export jobs
- * emit `{ stage, status }`; extraction emits the yt-dlp progress hook payload
- * (`status`, `downloaded_bytes`, `total_bytes`, ...); a model download emits
- * {@link ModelDownloadProgress}. `result` is the job's summary
+ * emit `{ stage, status }`; surah matching also emits {@link SurahJobProgress}; extraction
+ * emits the yt-dlp progress hook payload (`status`, `downloaded_bytes`, `total_bytes`, ...); a
+ * model download emits {@link ModelDownloadProgress}. `result` is the job's summary
  * (e.g. `{ project_id, duration_sec }`, `{ detector, fallback?, silences }`,
- * `{ artifact_id }`). A silence job reports the detector that actually ran; when the
+ * `{ artifact_id }`, `{ passages, accept, unsure }`). A silence job reports the detector that actually ran; when the
  * requested VAD could not run it still succeeds with `detector: "ffmpeg"` and a
  * `fallback` reason, so callers must read `result` rather than infer from the request.
  */
@@ -182,6 +192,17 @@ export interface JobRecord {
   error_type: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * `progress` of a `detect_surahs` job while it works: `transcribing` with the seconds of speech
+ * handed to the model so far out of the total, then `matching`. It starts and ends with the
+ * generic `{ stage: "detect", status }`.
+ */
+export interface SurahJobProgress {
+  stage: "transcribing" | "matching" | string;
+  done_sec?: number;
+  total_sec?: number;
 }
 
 /**
@@ -231,42 +252,21 @@ export interface SilenceParams {
   min_speech_duration?: number;
 }
 
-export interface PhraseParams {
-  phrases?: string[] | null;
-  /** Whisper model id; omitted, the backend uses the `whisper_model` preference. */
-  model_size?: string;
-  /** Inference device; the desktop build runs on the CPU only. */
-  device?: "cpu";
-  compute_type?: string;
-  language?: string;
-  min_confidence?: number;
-  min_gap_between_markers?: number;
-  max_word_gap?: number;
-  vad_filter?: boolean;
-  snap_window?: number;
-  clip_merge_gap?: number;
-  clip_pad?: number;
-}
-
-export interface PhraseRequest {
-  params?: PhraseParams;
-  references?: Record<string, unknown> | null;
+/** Body of `POST /projects/{id}/detect/surahs`. The model and thresholds come from the config. */
+export interface SurahRequest {
+  /** Match the saved transcript again instead of transcribing anew (server default true). */
+  reuse_transcript?: boolean;
 }
 
 export interface EdlUpdate {
   operations: EditOperation[];
 }
 
-/** Body of `PUT /projects/{id}/markers`; replaces the whole marker list (structure is
- * re-derived server-side). User-placed markers carry `source: "user"`. */
-export interface MarkersUpdate {
-  markers: Marker[];
-}
-
 export interface ExportRequest {
   format?: string;
   bitrate?: string | null;
-  embed_markers?: boolean;
+  /** Write the accepted surah passages as chapters (mp3 / m4a). */
+  embed_chapters?: boolean;
   /** Download-filename label; defaults to the project name. */
   name?: string | null;
   /** Optional source-time range: render only `[range_start, range_end]` (edits inside it
@@ -275,10 +275,13 @@ export interface ExportRequest {
   range_end?: number | null;
 }
 
-/** Body of `POST /projects/{id}/split` — carve a source-time range into a new project. */
+/**
+ * Body of `POST /projects/{id}/split` — copy source-time ranges, joined back to back, into a new
+ * project. The server sorts the ranges and merges any that overlap or touch.
+ */
 export interface SplitRequest {
-  range_start: number;
-  range_end: number;
+  /** `[start, end]` pairs in source seconds; at least one. */
+  ranges: [number, number][];
   /** Library label for the new project; defaults to a derived name. */
   name?: string | null;
 }
@@ -314,8 +317,6 @@ export interface AppPreferences {
   update_check: boolean;
   /** The release version the user dismissed the update banner for. */
   dismissed_update: string | null;
-  /** Id of the speech model phrase detection uses. */
-  whisper_model: string;
   /** Show cut audio on the waveform instead of collapsing it out. */
   show_deleted: boolean;
   /** Silence detector last chosen in the silence panel. */
@@ -336,6 +337,10 @@ export interface AppPreferences {
   export_dir: string | null;
   /** How the library lists recordings. */
   library_view: LibraryView;
+  /** Tint the recognised surahs on the waveform and show the surah band. */
+  surah_view: boolean;
+  /** Include Al-Fatihah in the surah band and list (visual only). */
+  show_fatihah: boolean;
 }
 
 /** The stored theme choice. */
@@ -368,6 +373,8 @@ export interface AppInfo {
   export_to_folder: boolean;
   /** The Downloads folder exports go to by default; `null` unless `export_to_folder`. */
   default_export_dir: string | null;
+  /** The attribution the Tanzil terms ask for, shown under the speech model in Settings. */
+  quran_text_credit: string;
 }
 
 /** `GET /app/update` — the backend's cached release check (honours the preferences). */
@@ -412,8 +419,6 @@ export interface SpeechModel {
   description: string;
   size_mb: number;
   installed: boolean;
-  /** True for the model the `whisper_model` preference names. */
-  selected: boolean;
   /** The in-flight `download_model` job, so progress resumes after a reload. */
   download_job_id: string | null;
 }

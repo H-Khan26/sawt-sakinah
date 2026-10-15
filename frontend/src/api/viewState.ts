@@ -21,7 +21,7 @@ export function jobToViewState(job: JobRecord | undefined): EditorViewState {
     case "extract":
       return "extracting";
     case "detect_silence":
-    case "detect_phrases":
+    case "detect_surahs":
       return "analyzing";
     case "export":
       return "exporting";

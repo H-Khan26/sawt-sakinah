@@ -9,14 +9,14 @@ import type {
   ExportRequest,
   JobAccepted,
   JobRecord,
-  Marker,
-  PhraseRequest,
   PreferencesPatch,
   ProjectListResponse,
   ProjectView,
   SilenceParams,
   SpeechModel,
   SplitRequest,
+  SurahInfo,
+  SurahRequest,
   UpdateStatus,
   WaveformPeaks,
   YtdlpStatus,
@@ -51,8 +51,13 @@ export const getJob = (jobId: string, signal?: AbortSignal) =>
 export const detectSilence = (projectId: string, params: SilenceParams) =>
   request<JobAccepted>(`/projects/${projectId}/detect/silence`, { method: "POST", body: params });
 
-export const detectPhrases = (projectId: string, body: PhraseRequest) =>
-  request<JobAccepted>(`/projects/${projectId}/detect/phrases`, { method: "POST", body });
+/** Find the surahs recited in the recording. Answers 409 `ModelNotInstalledError` without the model. */
+export const detectSurahs = (projectId: string, body: SurahRequest) =>
+  request<JobAccepted>(`/projects/${projectId}/detect/surahs`, { method: "POST", body });
+
+/** The 114 surahs with their names and ayah counts (fixed data). */
+export const listSurahs = (signal?: AbortSignal) =>
+  request<SurahInfo[]>("/quran/surahs", { signal });
 
 export const putEdl = (projectId: string, operations: EditOperation[]) =>
   request<EditDecisionList>(`/projects/${projectId}/edl`, {
@@ -60,17 +65,10 @@ export const putEdl = (projectId: string, operations: EditOperation[]) =>
     body: { operations },
   });
 
-/** Replace the marker list; returns the updated project (markers + re-derived structure). */
-export const updateMarkers = (projectId: string, markers: Marker[]) =>
-  request<ProjectView>(`/projects/${projectId}/markers`, {
-    method: "PUT",
-    body: { markers },
-  });
-
 export const exportAudio = (projectId: string, body: ExportRequest) =>
   request<JobAccepted>(`/projects/${projectId}/export`, { method: "POST", body });
 
-/** Carve a source-time range into a new independent project. Returns `{ project_id, job_id }`. */
+/** Copy source-time ranges, joined, into a new independent project. Returns `{ project_id, job_id }`. */
 export const splitProject = (projectId: string, body: SplitRequest) =>
   request<CreateProjectResponse>(`/projects/${projectId}/split`, { method: "POST", body });
 
@@ -154,4 +152,5 @@ export const queryKeys = {
   appUpdate: ["app", "update"] as const,
   models: ["models"] as const,
   ytdlp: ["app", "ytdlp"] as const,
+  surahs: ["quran", "surahs"] as const,
 };

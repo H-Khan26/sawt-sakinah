@@ -4,15 +4,14 @@ import { AlertTriangle, Check } from "lucide-react";
 import { useEffect } from "react";
 
 /**
- * Save-state indicator beside the editor title. The editor's EDL/marker edits are saved in the
+ * Save-state indicator beside the editor title. The editor's EDL edits are saved in the
  * background per commit; this surfaces that autosave (`useSaveState`) so the user knows closing
  * is safe:
  *
- * - `Saving…` while an EDL or marker save is queued or in flight,
- * - `Save failed — Retry` while an EDL edit is unsaved or the latest marker save failed, auto-retry
- *   having already been exhausted. Retry re-sends everything that failed: the latest local EDL
- *   and the failed marker list. An unsaved EDL edit shows here for as long as it stays unsaved,
- *   whatever was saved after it,
+ * - `Saving…` while an EDL save is queued or in flight,
+ * - `Save failed — Retry` while an EDL edit is unsaved, auto-retry having already been
+ *   exhausted. Retry re-sends the latest local EDL. An unsaved EDL edit shows here for as long as
+ *   it stays unsaved, whatever was saved after it,
  * - `Saved` otherwise (every edit is stored server-side).
  *
  * It also guards `beforeunload` while anything is saving or unsaved — never when everything is

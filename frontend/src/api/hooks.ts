@@ -6,14 +6,13 @@ import type {
   CreateProjectRequest,
   EditOperation,
   ExportRequest,
-  Marker,
-  PhraseRequest,
   PreferencesPatch,
   ProjectSummary,
   ProjectView,
   SilenceParams,
   SpeechModel,
   SplitRequest,
+  SurahRequest,
   UpdateStatus,
 } from "@/types/api";
 /** React Query hooks over the typed endpoints. Server state lives here, not in stores. */
@@ -30,8 +29,8 @@ import {
   createProject,
   deleteModel,
   deleteProject,
-  detectPhrases,
   detectSilence,
+  detectSurahs,
   downloadModel,
   exportAudio,
   getAppInfo,
@@ -43,6 +42,7 @@ import {
   getYtdlpStatus,
   listModels,
   listProjects,
+  listSurahs,
   openExportFolder,
   openLogs,
   patchPreferences,
@@ -53,7 +53,6 @@ import {
   revealExport,
   saveExport,
   splitProject,
-  updateMarkers,
   uploadProject,
 } from "./endpoints";
 
@@ -85,23 +84,6 @@ interface LocalEdl {
 
 const localEdls = new Map<string, LocalEdl>();
 
-/** A project's marker saves: how many are queued or in flight, and the list whose save failed. */
-interface MarkerSaves {
-  saving: number;
-  failed: Marker[] | null;
-}
-
-const markerSaves = new Map<string, MarkerSaves>();
-
-function markerSavesOf(projectId: string): MarkerSaves {
-  let saves = markerSaves.get(projectId);
-  if (!saves) {
-    saves = { saving: 0, failed: null };
-    markerSaves.set(projectId, saves);
-  }
-  return saves;
-}
-
 /** Listeners told whenever an edit save starts or settles (`useSaveState`, `settleEdl`). */
 const saveListeners = new Set<() => void>();
 
@@ -121,22 +103,18 @@ export function hasUnsavedEdl(projectId: string): boolean {
 }
 
 /**
- * A project's edit saves as the header shows them: `saving` while an EDL or marker save is
- * queued or in flight, `failed` while an EDL edit is unsaved or the latest marker save failed,
- * `saved` otherwise.
+ * A project's edit saves as the header shows them: `saving` while an EDL save is queued or in
+ * flight, `failed` while an EDL edit is unsaved, `saved` otherwise.
  */
 export type SaveState = "saving" | "failed" | "saved";
 
 function saveStateOf(projectId: string): SaveState {
-  const edlSaving = localEdls.get(projectId)?.saving ?? 0;
-  const markers = markerSaves.get(projectId);
-  if (edlSaving > 0 || (markers?.saving ?? 0) > 0) return "saving";
-  return hasUnsavedEdl(projectId) || markers?.failed ? "failed" : "saved";
+  if ((localEdls.get(projectId)?.saving ?? 0) > 0) return "saving";
+  return hasUnsavedEdl(projectId) ? "failed" : "saved";
 }
 
-/** Mutation scopes of a project's EDL and marker saves: each kind runs one at a time, in order. */
+/** Mutation scope of a project's EDL saves: they run one at a time, in order. */
 const edlScope = (projectId: string) => `edl:${projectId}`;
-const markerScope = (projectId: string) => `markers:${projectId}`;
 
 /**
  * Wait for a project's queued EDL saves to finish, then fail if an edit is still unsaved, so a
@@ -161,7 +139,7 @@ async function settleEdl(projectId: string): Promise<void> {
 /**
  * The project query's `structuralSharing`: every write to the query, a fetch or any
  * `setQueryData`, passes through it. Once the project has a local EDL, its ops replace the
- * written ones, so no writer (a refetch, a rename or marker reply) can roll back an edit.
+ * written ones, so no writer (a refetch or a rename reply) can roll back an edit.
  */
 function keepLocalEdl(prev: unknown, next: unknown): unknown {
   const project = next as ProjectView | undefined;
@@ -262,7 +240,6 @@ export function useDeleteProject() {
       queryClient.removeQueries({ queryKey: queryKeys.project(id) });
       queryClient.removeQueries({ queryKey: queryKeys.waveform(id) });
       localEdls.delete(id);
-      markerSaves.delete(id);
     },
   });
 }
@@ -276,7 +253,7 @@ interface UseJobOptions {
 
 /**
  * Poll `GET /jobs/{id}` until the job settles (succeeded/failed), then stop. Optionally
- * invalidates the affected project query on success so the waveform/silence/marker data
+ * invalidates the affected project query on success so the waveform/silence/surah data
  * refetches once detection or extraction completes.
  */
 export function useJob(jobId: string | undefined, options: UseJobOptions = {}) {
@@ -340,9 +317,20 @@ export function useDetectSilence(projectId: string) {
   });
 }
 
-export function useDetectPhrases(projectId: string) {
+/** Start surah matching: `POST /detect/surahs` -> `{ job_id }`. */
+export function useDetectSurahs(projectId: string) {
   return useMutation({
-    mutationFn: (body: PhraseRequest) => detectPhrases(projectId, body),
+    mutationFn: (body: SurahRequest) => detectSurahs(projectId, body),
+  });
+}
+
+/** The 114 surahs' names and ayah counts; fixed data, so cached for the session. */
+export function useSurahs() {
+  return useQuery({
+    queryKey: queryKeys.surahs,
+    queryFn: ({ signal }) => listSurahs(signal),
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: Number.POSITIVE_INFINITY,
   });
 }
 
@@ -420,56 +408,13 @@ export function useSaveEdl(projectId: string) {
   );
 }
 
-/**
- * Persist the marker list and patch the cached project. The server re-derives prayer
- * structure from the markers and returns the full view, so we patch markers, structure,
- * and status together — keeping the prayer outline in sync in one shot. Saves run in order;
- * a failed list is kept for the header's retry until a later save succeeds.
- */
-export function useUpdateMarkers(projectId: string) {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  return useMutation({
-    scope: { id: markerScope(projectId) },
-    mutationFn: (markers: Marker[]) => updateMarkers(projectId, markers),
-    retry: editSaveRetry,
-    retryDelay: editSaveRetryDelay,
-    onMutate: () => {
-      markerSavesOf(projectId).saving += 1;
-      notifySaves();
-    },
-    onSuccess: (view) => {
-      markerSavesOf(projectId).failed = null;
-      queryClient.setQueryData<ProjectView>(queryKeys.project(projectId), (prev) =>
-        prev
-          ? { ...prev, markers: view.markers, structure: view.structure, status: view.status }
-          : prev,
-      );
-    },
-    onError: (_err, markers) => {
-      markerSavesOf(projectId).failed = markers;
-      toast("Couldn't save your last edit. Use “retry” in the header.", "error");
-    },
-    onSettled: () => {
-      markerSavesOf(projectId).saving -= 1;
-      notifySaves();
-    },
-  });
-}
-
-/**
- * The project's save state for the header (see `SaveState`), and a retry that re-sends
- * everything that failed: a fresh save of the latest local EDL, and the failed marker list.
- */
+/** The project's save state for the header (see `SaveState`), and a retry of an unsaved edit. */
 export function useSaveState(projectId: string): { state: SaveState; retry: () => void } {
   const state = useSyncExternalStore(subscribeSaves, () => saveStateOf(projectId));
   const queueEdlSave = useQueueEdlSave(projectId);
-  const { mutate: saveMarkers } = useUpdateMarkers(projectId);
   const retry = useCallback(() => {
     if (hasUnsavedEdl(projectId)) queueEdlSave();
-    const failed = markerSaves.get(projectId)?.failed;
-    if (failed) saveMarkers(failed);
-  }, [projectId, queueEdlSave, saveMarkers]);
+  }, [projectId, queueEdlSave]);
   return { state, retry };
 }
 
@@ -498,8 +443,8 @@ export function useRevealExport(projectId: string) {
 }
 
 /**
- * Carve a source-time range into a new project: `POST /projects/{id}/split` -> `{ project_id,
- * job_id }`. The caller navigates to the new project carrying `job_id`, so the editor's normal
+ * Copy source-time ranges, joined, into a new project: `POST /projects/{id}/split` ->
+ * `{ project_id, job_id }`. The caller navigates to the new project carrying `job_id`, so the editor's normal
  * `useJob` poll tracks the render+import (same as extraction/upload).
  */
 export function useSplitProject(projectId: string) {
@@ -615,7 +560,7 @@ export function useOpenExportFolder() {
 
 // --- speech models -------------------------------------------------------------
 
-/** The speech-model catalog with install/selection state and any in-flight download job. */
+/** The speech-model catalog with install state and any in-flight download job. */
 export function useModels() {
   return useQuery({
     queryKey: queryKeys.models,
@@ -645,35 +590,6 @@ export function useDeleteModel() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (modelId: string) => deleteModel(modelId),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.models }),
-  });
-}
-
-/**
- * Choose the active speech model (`whisper_model`). Optimistically moves the `selected` flag in
- * the catalog and the preference, rolls both back on error, and refetches the catalog after.
- */
-export function useSelectModel() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (modelId: string) => patchPreferences({ whisper_model: modelId }),
-    onMutate: async (modelId) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.models });
-      const prevModels = queryClient.getQueryData<SpeechModel[]>(queryKeys.models);
-      const prevPrefs = queryClient.getQueryData<AppPreferences>(queryKeys.preferences);
-      queryClient.setQueryData<SpeechModel[]>(queryKeys.models, (list) =>
-        list?.map((m) => ({ ...m, selected: m.id === modelId })),
-      );
-      queryClient.setQueryData<AppPreferences>(queryKeys.preferences, (p) =>
-        p ? { ...p, whisper_model: modelId } : p,
-      );
-      return { prevModels, prevPrefs };
-    },
-    onError: (_err, _id, ctx) => {
-      if (ctx?.prevModels) queryClient.setQueryData(queryKeys.models, ctx.prevModels);
-      if (ctx?.prevPrefs) queryClient.setQueryData(queryKeys.preferences, ctx.prevPrefs);
-    },
-    onSuccess: (prefs) => queryClient.setQueryData(queryKeys.preferences, prefs),
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.models }),
   });
 }

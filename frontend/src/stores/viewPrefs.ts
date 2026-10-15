@@ -14,6 +14,10 @@
  *
  * `silenceDetector` is the silence-detection mode last chosen in the silence panel.
  *
+ * `surahView` shows the surah band and tints the recognised surahs on the waveform; it turns on
+ * when a match finishes. `showFatihah` includes Al-Fatihah in the band, tints and list; it is
+ * visual only and never changes what the surah actions act on.
+ *
  * `theme` is the colour theme (`system` follows the OS; see `src/theme/theme.ts`), `landing`
  * whether the app opens under the dome, and `libraryView` the library's layout. `hydrated` turns
  * true once the stored values have loaded (or failed to), for choices that must not flash a default.
@@ -44,6 +48,10 @@ interface ViewPrefsState {
   setLanding: (v: boolean) => void;
   libraryView: LibraryView;
   setLibraryView: (v: LibraryView) => void;
+  surahView: boolean;
+  setSurahView: (v: boolean) => void;
+  showFatihah: boolean;
+  setShowFatihah: (v: boolean) => void;
 }
 
 const THEMES: readonly ThemePreference[] = ["system", "day", "night"];
@@ -97,6 +105,16 @@ export const useViewPrefs = create<ViewPrefsState>()((set, get) => ({
     set({ libraryView });
     save({ library_view: libraryView });
   },
+  surahView: true,
+  setSurahView: (surahView) => {
+    set({ surahView });
+    save({ surah_view: surahView });
+  },
+  showFatihah: true,
+  setShowFatihah: (showFatihah) => {
+    set({ showFatihah });
+    save({ show_fatihah: showFatihah });
+  },
 }));
 
 function hydrate(prefs: AppPreferences) {
@@ -115,6 +133,8 @@ function hydrate(prefs: AppPreferences) {
   if (!touched.has("library_view") && LIBRARY_VIEWS.includes(prefs.library_view)) {
     next.libraryView = prefs.library_view;
   }
+  if (!touched.has("surah_view")) next.surahView = prefs.surah_view;
+  if (!touched.has("show_fatihah")) next.showFatihah = prefs.show_fatihah;
   useViewPrefs.setState(next);
 }
 
