@@ -10,6 +10,8 @@
  * every animation frame while playing we read the source time, skip any cut span, map it through
  * the `TimeMap`, and push the edited time into the cursor and the playback store. In the
  * identity (show-deleted) map this is a no-op transform, so one code path serves both views.
+ * Browsers pause animation frames in a hidden or minimised window, so a timer set for the next
+ * cut's start performs the same skip there; frames still draw the cursor.
  *
  * Everything outside this module addresses playback in *source* time via the returned
  * `controller`; the source<->edited mapping lives here and in `timeMap.ts` alone.
@@ -128,7 +130,7 @@ interface UseWaveformEngineArgs {
   render: RenderPeaks | undefined;
   /** Source <-> edited mapping matching `render`. */
   timeMap: TimeMap;
-  /** All cut spans (silence + manual), in source time — playback skips these. */
+  /** The merged cut ranges, in source time — playback skips these. */
   cutSpans: Span[];
 }
 
@@ -151,6 +153,7 @@ export function useWaveformEngine({
   const wsRef = useRef<WaveSurfer | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const rafRef = useRef<number>(0);
+  const skipTimerRef = useRef<number>(0);
   const lastLoadedRef = useRef<RenderPeaks | null>(null);
 
   // Latest map / cut spans, read by the rAF loop and controller without resubscribing.
@@ -187,17 +190,41 @@ export function useWaveformEngine({
     usePlaybackStore.getState().setPlayhead(edited, audio.currentTime);
   });
 
-  // Per-frame loop while playing: skip cut spans, then sync the cursor to the edited time.
-  const tick = useRef(() => {
+  // Jump past the cut span the playhead is in, if any. Seeking moves `currentTime` at once, so
+  // a second call (the frame loop and the timer both run it) finds nothing left to skip.
+  const skipCut = useRef(() => {
     const audio = audioRef.current;
-    const ws = wsRef.current;
-    if (!audio || !ws) return;
+    if (!audio) return;
     for (const [start, end] of cutSpansRef.current) {
       if (audio.currentTime >= start && audio.currentTime < end - EDGE_EPSILON) {
         audio.currentTime = end;
         break;
       }
     }
+  });
+
+  // While playing, set a timer for the start of the next cut span ahead so the skip happens even
+  // without animation frames. Re-armed on play, seek, rate change and a cut-spans change.
+  const armSkipTimer = useRef(() => {
+    clearTimeout(skipTimerRef.current);
+    const audio = audioRef.current;
+    if (!audio || audio.paused || audio.ended) return;
+    const t = audio.currentTime;
+    const next = cutSpansRef.current.find(([, end]) => t < end - EDGE_EPSILON);
+    if (!next) return;
+    const delayMs = (Math.max(0, next[0] - t) / (audio.playbackRate || 1)) * 1000;
+    skipTimerRef.current = window.setTimeout(() => {
+      skipCut.current();
+      armSkipTimer.current();
+    }, delayMs);
+  });
+
+  // Per-frame loop while playing: skip cut spans, then sync the cursor to the edited time.
+  const tick = useRef(() => {
+    const audio = audioRef.current;
+    const ws = wsRef.current;
+    if (!audio || !ws) return;
+    skipCut.current();
     syncCursor.current();
     if (!audio.paused && !audio.ended) rafRef.current = requestAnimationFrame(tick.current);
   });
@@ -214,8 +241,8 @@ export function useWaveformEngine({
   const unmountOverviewRef = useRef<(() => void) | null>(null);
 
   // --- playback element (owns the audio; source-time clock) ------------------
-  // One effect owns the `<audio>` and all its listeners: play/pause drive the store and the
-  // per-frame loop, seek re-syncs the cursor while paused.
+  // One effect owns the `<audio>` and all its listeners: play/pause drive the store, the
+  // per-frame loop and the skip timer; seek re-syncs the cursor while paused.
   useEffect(() => {
     const audio = new Audio();
     audio.preload = "auto";
@@ -227,9 +254,11 @@ export function useWaveformEngine({
     const startLoop = () => {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(tick.current);
+      armSkipTimer.current();
     };
     const stopLoop = () => {
       cancelAnimationFrame(rafRef.current);
+      clearTimeout(skipTimerRef.current);
       syncCursor.current();
     };
     const onPlay = () => {
@@ -242,7 +271,9 @@ export function useWaveformEngine({
     };
     const onSeeked = () => {
       if (audio.paused) syncCursor.current();
+      else armSkipTimer.current();
     };
+    const rearmSkip = () => armSkipTimer.current();
     // Without the MP4 copy (it failed to build or decode), stream the mp3 itself, keeping the
     // position and whether it was playing.
     const onError = () => {
@@ -263,14 +294,19 @@ export function useWaveformEngine({
     audio.addEventListener("pause", onPause);
     audio.addEventListener("ended", onPause);
     audio.addEventListener("seeked", onSeeked);
+    audio.addEventListener("playing", rearmSkip);
+    audio.addEventListener("ratechange", rearmSkip);
     audio.addEventListener("error", onError);
 
     return () => {
       cancelAnimationFrame(rafRef.current);
+      clearTimeout(skipTimerRef.current);
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener("ended", onPause);
       audio.removeEventListener("seeked", onSeeked);
+      audio.removeEventListener("playing", rearmSkip);
+      audio.removeEventListener("ratechange", rearmSkip);
       audio.removeEventListener("error", onError);
       audio.pause();
       audio.removeAttribute("src");
@@ -283,6 +319,12 @@ export function useWaveformEngine({
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = rate;
   }, [rate]);
+
+  // Re-arm the skip timer for the new cut spans after an edit.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: cutSpans (read via its ref) is the trigger
+  useEffect(() => {
+    armSkipTimer.current();
+  }, [cutSpans]);
 
   // --- renderer (wavesurfer, no media of its own) ----------------------------
   // Created when peaks first arrive and re-created only on a new project — never on an edit or a
