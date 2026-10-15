@@ -25,6 +25,8 @@ export interface EdlEditor {
   undo: () => void;
   /** Redo the last undone edit; no-op if the redo stack is empty. */
   redo: () => void;
+  /** The live ops, the latest edit included; empty before the project loads. */
+  liveOps: () => EditOperation[];
 }
 
 export function useEdlEditor(projectId: string): EdlEditor {
@@ -55,5 +57,6 @@ export function useEdlEditor(projectId: string): EdlEditor {
       const next = project && useEditStore.getState().redo(project.edl.operations);
       if (next) save(next);
     },
+    liveOps: () => live()?.edl.operations ?? [],
   };
 }

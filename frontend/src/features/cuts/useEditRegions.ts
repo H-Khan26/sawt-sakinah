@@ -1,45 +1,61 @@
 /**
- * Projects the silence list, the cut ranges, and the pending in/out selection onto the
- * waveform's Regions plugin, and wires region clicks back to selection + seek. The regions are
- * a view of app state, so this hook only reconciles — it holds no state of its own. It is the
- * single owner of the Regions plugin (it clears + rebuilds), so no other hook may draw onto it.
+ * Projects the kept silences, the cut ranges, and the pending in/out selection onto the
+ * waveform's Regions plugin, and wires waveform clicks and drags back to selection, seeking and
+ * edits. The regions are a view of app state, so this hook only reconciles — it holds no state
+ * of its own. It is the single owner of the Regions plugin (it clears + rebuilds), so no other
+ * hook may draw onto it.
  *
- * It also owns drag-to-select: dragging on empty waveform paints a new selection, and dragging
- * the selection region's body/edges fine-tunes it. Region coordinates are edited-time, so they
- * invert through the `TimeMap` back to the source-time selection the store holds.
+ * Silence and cut regions let the pointer through (see `regions.ts`), so a click on them reaches
+ * the waveform, which seeks; the click is then mapped back to what lies under it: a cut range
+ * (full view) is selected and the playhead moves to its start, a silence toggles its selection
+ * and the playhead moves to its start, and empty waveform deselects the cut range.
+ *
+ * It also owns the drags: dragging on the waveform paints a new selection, dragging the selection
+ * region's body/edges fine-tunes it, and dragging a selected cut range's edge commits one edit
+ * on release (`useCutCommands().resizeCut`). Region coordinates are edited-time, so they invert
+ * through the `TimeMap` back to the source time the store and the EDL hold.
  */
 import { activeSilences } from "@/features/silence/active";
 import { removedSilenceKeys } from "@/features/silence/edl";
+import { silenceKey } from "@/features/silence/regions";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
+import { WAVE_HEIGHT } from "@/features/waveform/layout";
 import { useThemeColors } from "@/lib/themeColors";
 import { useEditStore } from "@/stores/editStore";
 import type { EditOperation, SilenceSegment } from "@/types/api";
 import { useEffect, useMemo, useRef } from "react";
-import { manualCutSpans, mergeCutSpans } from "./cutEdl";
+import { CUT_KEY_PREFIX, cutKey, mergeCutSpans } from "./cutEdl";
 import { SELECTION_REGION_ID, reconcileEditRegions } from "./regions";
+import { useCutCommands } from "./useCutCommands";
 
-export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[]): void {
-  const { regions, controller, timeMap, isReady } = useWaveformContext();
+export function useEditRegions(
+  projectId: string,
+  silences: SilenceSegment[],
+  ops: EditOperation[],
+): void {
+  const { wavesurfer, regions, controller, timeMap, isReady } = useWaveformContext();
   const selectedIds = useEditStore((s) => s.selectedIds);
   const selectionStart = useEditStore((s) => s.selectionStart);
   const selectionEnd = useEditStore((s) => s.selectionEnd);
   const colors = useThemeColors();
+  const commands = useCutCommands(projectId);
 
-  // Draw only the silence that survives content cuts; a cut range that is exactly a removed
-  // silence is drawn as that silence, not again as a cut.
+  // Draw only the silence that survives content cuts and isn't removed; removed audio is drawn
+  // from the merged cut ranges alone, so no range is drawn twice.
   const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
   const cutSpans = useMemo(() => mergeCutSpans(ops), [ops]);
-  const removedIds = useMemo(() => removedSilenceKeys(active, cutSpans), [active, cutSpans]);
-  const cuts = useMemo(() => manualCutSpans(cutSpans, active), [cutSpans, active]);
+  const kept = useMemo(() => {
+    const removed = removedSilenceKeys(active, cutSpans);
+    return active.filter((seg) => !removed.has(silenceKey(seg)));
+  }, [active, cutSpans]);
 
   // Reconcile overlays whenever the inputs, the selection, the mapping or the theme's colours
   // change (once laid out).
   useEffect(() => {
     if (!regions || !isReady) return;
     reconcileEditRegions(regions, {
-      silences: active,
-      removedIds,
-      cutSpans: cuts,
+      silences: kept,
+      cutSpans,
       selectedIds,
       selectionStart,
       selectionEnd,
@@ -50,9 +66,8 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
   }, [
     regions,
     isReady,
-    active,
-    removedIds,
-    cuts,
+    kept,
+    cutSpans,
     selectedIds,
     selectionStart,
     selectionEnd,
@@ -60,19 +75,45 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
     colors,
   ]);
 
-  // Click a region -> select it (silence/cut) and seek there. Region coordinates are edited-time,
-  // so invert through the map to seek in source time. Read store actions via getState to avoid
-  // stale closures.
+  // Handlers read the latest state through refs so they subscribe once per instance; a fresh map
+  // or edit mid-gesture must not tear a drag down.
+  const latest = useRef({ timeMap, cutSpans, kept, commands });
+  latest.current = { timeMap, cutSpans, kept, commands };
+
+  // A click on the waveform (wavesurfer has already seeked to it): select what lies under it. The
+  // regions span the bars only, so a click on the time ruler beneath just seeks.
+  useEffect(() => {
+    if (!wavesurfer) return;
+    return wavesurfer.on("click", (relativeX, relativeY) => {
+      const { timeMap: map, cutSpans: spans, kept: segs } = latest.current;
+      const t = map.toSource(relativeX * wavesurfer.getDuration());
+      const onBars = relativeY * wavesurfer.getWrapper().clientHeight <= WAVE_HEIGHT;
+      const store = useEditStore.getState();
+      const cut = onBars && map.identity ? spans.find(([a, b]) => a <= t && t <= b) : undefined;
+      store.selectCut(cut ? cutKey(cut) : null);
+      if (cut) {
+        controller.setSourceTime(cut[0]);
+        return;
+      }
+      const seg = onBars ? segs.find((s) => s.start <= t && t <= s.end) : undefined;
+      if (seg) {
+        store.toggleSelected(silenceKey(seg));
+        controller.setSourceTime(seg.start);
+      }
+    });
+  }, [wavesurfer, controller]);
+
+  // A click on the selection region seeks to its start (a drag moves or resizes it instead). The
+  // only other regions that take clicks are a selected cut's grips: a click there leaves the
+  // range selected and the playhead where it is.
   useEffect(() => {
     if (!regions) return;
     return regions.on("region-clicked", (region, e) => {
       e.stopPropagation();
-      controller.setSourceTime(timeMap.toSource(region.start));
-      // The selection is an editable overlay — clicking it only seeks (drag moves/resizes it).
-      if (region.id === SELECTION_REGION_ID) return;
-      useEditStore.getState().toggleSelected(region.id);
+      if (region.id !== SELECTION_REGION_ID) return;
+      controller.setSourceTime(latest.current.timeMap.toSource(region.start));
     });
-  }, [regions, controller, timeMap]);
+  }, [regions, controller]);
 
   // Enable drag-to-select once per plugin instance (and again for a new theme's colour). Kept
   // separate from the reconcile/handler effects so an in-progress drag is never torn down by a
@@ -83,30 +124,35 @@ export function useEditRegions(silences: SilenceSegment[], ops: EditOperation[])
     return regions.enableDragSelection({ color: selectionFill });
   }, [regions, isReady, selectionFill]);
 
-  // Bridge Regions-plugin gestures back to the source-time selection store. `timeMap` is read
-  // through a ref so these subscribe once (a fresh map mid-drag must not resubscribe). Both
-  // `region-created` (a fresh drag) and `region-updated` (moving/resizing the selection) fire
-  // only for user gestures we care about; programmatic `addRegion` never emits `region-updated`,
-  // and drag-created regions carry an auto id (`region-…`) distinct from our known keys.
-  const timeMapRef = useRef(timeMap);
-  timeMapRef.current = timeMap;
+  // Bridge Regions-plugin gestures back to the store and the EDL. `region-created` fires for a
+  // fresh drag (an auto id, `region-…`, distinct from our keys) and for our own `addRegion`
+  // calls, which are ignored; `region-updated` fires only when a user drag or resize ends.
   useEffect(() => {
     if (!regions) return;
     const offCreated = regions.on("region-created", (region) => {
-      // Only a fresh drag-selection (auto id); ignore our own programmatic silence/cut/selection.
       if (!region.id.startsWith("region-")) return;
-      const map = timeMapRef.current;
+      const map = latest.current.timeMap;
       const a = map.toSource(region.start);
       const b = map.toSource(region.end);
       region.remove(); // reconcile redraws the canonical, editable `selection` region
-      useEditStore.getState().setSelectionRange(Math.min(a, b), Math.max(a, b));
+      const store = useEditStore.getState();
+      store.setSelectionRange(Math.min(a, b), Math.max(a, b));
+      store.selectCut(null);
     });
-    const offUpdated = regions.on("region-updated", (region) => {
-      if (region.id !== SELECTION_REGION_ID) return;
-      const map = timeMapRef.current;
+    const offUpdated = regions.on("region-updated", (region, side) => {
+      const map = latest.current.timeMap;
       const a = map.toSource(region.start);
       const b = map.toSource(region.end);
-      useEditStore.getState().setSelectionRange(Math.min(a, b), Math.max(a, b));
+      if (region.id === SELECTION_REGION_ID) {
+        useEditStore.getState().setSelectionRange(Math.min(a, b), Math.max(a, b));
+      } else if (region.id.startsWith(CUT_KEY_PREFIX)) {
+        // An edge drag of the selected cut range. When it commits nothing (a nudge shorter than
+        // a cut) no redraw follows, so put the region back on its range.
+        const time = side === "start" ? a : b;
+        if (side && latest.current.commands.resizeCut(region.id, side, time)) return;
+        const span = latest.current.cutSpans.find((s) => cutKey(s) === region.id);
+        if (span) region.setOptions({ start: map.toEdited(span[0]), end: map.toEdited(span[1]) });
+      }
     });
     return () => {
       offCreated();

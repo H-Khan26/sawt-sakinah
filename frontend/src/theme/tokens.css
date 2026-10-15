@@ -46,6 +46,7 @@
   --silence-fill-selected: rgba(42, 35, 32, 0.18);
   --cut-stripe: rgba(181, 67, 47, 0.42);
   --cut-stripe-selected: rgba(181, 67, 47, 0.62);
+  --cut-dim: rgba(250, 246, 236, 0.6);
   --selection-fill: rgba(184, 149, 79, 0.24);
   --marker-line: #2e4a3d;
 
@@ -147,6 +148,7 @@
   --silence-fill-selected: rgba(237, 227, 204, 0.18);
   --cut-stripe: rgba(217, 115, 79, 0.4);
   --cut-stripe-selected: rgba(217, 115, 79, 0.6);
+  --cut-dim: rgba(42, 30, 32, 0.62);
   --selection-fill: rgba(201, 170, 102, 0.2);
   --marker-line: #6e9a86;
 

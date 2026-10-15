@@ -195,7 +195,7 @@ function EditorBody({ project }: { project: ProjectView }) {
   useTransportHotkeys();
   // Single owner of the Regions plugin; cut hotkeys. Live playback-skip over cut spans lives in
   // the waveform engine (it owns the playback element), so no hook is mounted here for it.
-  useEditRegions(project.silences, project.edl.operations);
+  useEditRegions(project.id, project.silences, project.edl.operations);
   useEditHotkeys(project.id);
   return (
     <RuledPage className="grid grid-cols-[minmax(0,1fr)] content-start gap-y-4 px-8 pb-5 pt-6 group-[.is-fit]/page:grid-rows-[auto_auto_auto_auto_minmax(0,1fr)]">

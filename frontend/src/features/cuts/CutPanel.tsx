@@ -1,36 +1,30 @@
 /**
- * Cut editing: mark a range by playhead (I/O keys) or by typing timestamps, cut it (a union with
- * the removed audio) or keep only it, and list the removed ranges (restore = subtract the range).
- * Shares the EDL and the undo history with the silence tool via `useEdlEditor`; nothing is
- * rendered destructively until export, and the waveform engine skips cut ranges live during
- * playback.
+ * Cut editing: mark a range by playhead (I/O keys), by typing timestamps or by dragging on the
+ * waveform, then cut it (a union with the removed audio), restore the cut audio inside it (a
+ * subtraction), or keep only it. A cut range selected on the waveform (full view) can be restored
+ * whole too. Below, a one-line tally of the removed ranges steps the playhead between them.
+ * Shares the EDL and the undo history with the silence tool via `useEdlEditor`; the actions
+ * themselves live in `useCutCommands`, shared with the keyboard. Nothing is rendered
+ * destructively until export, and the waveform engine skips cut ranges live during playback.
  */
-import { Button } from "@/components/ui";
+import { Button, Tooltip } from "@/components/ui";
 import { FieldLabel } from "@/features/editor/FieldLabel";
 import { ExportModal } from "@/features/export/ExportModal";
-import { activeSilences } from "@/features/silence/active";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import type { TimeMap } from "@/features/waveform/timeMap";
-import { cn } from "@/lib/cn";
-import { formatClock, formatClockPrecise, parseClock } from "@/lib/time";
+import { formatClockPrecise, parseClock } from "@/lib/time";
 import { useEditStore } from "@/stores/editStore";
 import type { ProjectView } from "@/types/api";
-import { ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SplitModal } from "./SplitModal";
-import {
-  MIN_CUT_DURATION,
-  type Span,
-  cutKey,
-  cutRange,
-  durationLabel,
-  keepOnly,
-  manualCutSpans,
-  mergeCutSpans,
-  restoreRanges,
-} from "./cutEdl";
+import { MIN_CUT_DURATION, type Span, keepOnly, mergeCutSpans } from "./cutEdl";
+import { cutGain, pendingSpan, restoreTarget, selectedCutSpan } from "./selection";
+import { useCutCommands } from "./useCutCommands";
 import { isTypingTarget } from "./useEditHotkeys";
 import { useEdlEditor } from "./useEdlEditor";
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 const INPUT_CLASS =
   "h-9 w-28 rounded border border-border bg-surface px-2.5 text-sm tabular-nums text-text " +
@@ -109,6 +103,7 @@ function KeyHints() {
     ["I", "start"],
     ["O", "end"],
     ["Del", "cut"],
+    ["R", "restore"],
     ["K", "keep only"],
     ["E", "export"],
     ["N", "new recording"],
@@ -120,17 +115,75 @@ function KeyHints() {
           <Key k={k} /> {label}
         </span>
       ))}
+      <span className="inline-flex items-center gap-1.5">
+        <Key k="," /> <Key k="." /> previous / next cut
+      </span>
     </p>
+  );
+}
+
+/**
+ * The removed audio in one line — how many merged ranges and how long, silence removals
+ * included — with buttons that step the playhead to the previous / next cut.
+ */
+function CutSummary({
+  cutSpans,
+  disabled,
+  onStep,
+}: {
+  cutSpans: Span[];
+  disabled: boolean;
+  onStep: (direction: -1 | 1) => void;
+}) {
+  const removed = cutSpans.reduce((sum, [a, b]) => sum + (b - a), 0);
+  const none = cutSpans.length === 0;
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-dotted border-border pt-4 text-sm text-text-secondary">
+      <p className="tabular-nums">
+        {none ? (
+          "Nothing cut yet."
+        ) : (
+          <>
+            <span className="text-text">{plural(cutSpans.length, "cut", "cuts")}</span> ·{" "}
+            {formatClockPrecise(removed)} removed
+          </>
+        )}
+      </p>
+      <div className="flex items-center gap-1">
+        <Tooltip content="Previous cut (,)">
+          <Button
+            size="icon"
+            variant="ghost"
+            disabled={disabled || none}
+            onClick={() => onStep(-1)}
+            aria-label="Previous cut"
+          >
+            <ChevronLeft size={18} />
+          </Button>
+        </Tooltip>
+        <Tooltip content="Next cut (.)">
+          <Button
+            size="icon"
+            variant="ghost"
+            disabled={disabled || none}
+            onClick={() => onStep(1)}
+            aria-label="Next cut"
+          >
+            <ChevronRight size={18} />
+          </Button>
+        </Tooltip>
+      </div>
+    </div>
   );
 }
 
 export function CutPanel({ project }: { project: ProjectView }) {
   const projectId = project.id;
   const ops = project.edl.operations;
-  const silences = project.silences;
 
   const { controller, timeMap, isReady } = useWaveformContext();
   const editor = useEdlEditor(projectId);
+  const commands = useCutCommands(projectId);
 
   const selectionStart = useEditStore((s) => s.selectionStart);
   const selectionEnd = useEditStore((s) => s.selectionEnd);
@@ -138,54 +191,45 @@ export function CutPanel({ project }: { project: ProjectView }) {
   const setSelectionEnd = useEditStore((s) => s.setSelectionEnd);
   const clearSelectionRange = useEditStore((s) => s.clearSelectionRange);
   const selectedIds = useEditStore((s) => s.selectedIds);
-  const toggleSelected = useEditStore((s) => s.toggleSelected);
 
-  const [cutsOpen, setCutsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
 
   const duration = project.audio_source.duration_sec;
+  const cutSpans = useMemo(() => mergeCutSpans(ops), [ops]);
 
-  // The listed ranges are the merged cut ranges that aren't exactly a (possibly clipped) silence
-  // removal — classified against the active silence set, as the waveform draws them.
-  const active = useMemo(() => activeSilences(silences, ops), [silences, ops]);
-  const cuts = useMemo(() => manualCutSpans(mergeCutSpans(ops), active), [ops, active]);
-  const selectedCuts = useMemo(
-    () => cuts.filter((span) => selectedIds.has(cutKey(span))),
-    [cuts, selectedIds],
+  // Normalized source-time selection, or null when no valid range is marked.
+  const pending = pendingSpan(selectionStart, selectionEnd);
+  const rangeReady = pending != null;
+  const range = pending ? { start: pending[0], end: pending[1] } : null;
+
+  // A selection over a seam (collapsed) or over hatched audio (full view) covers cut audio:
+  // Cut removes only what isn't cut yet, and Restore brings the cut part back.
+  const gain = pending ? cutGain(cutSpans, pending) : 0;
+  const canCut = gain >= MIN_CUT_DURATION;
+  const partlyCut = pending != null && pending[1] - pending[0] - gain >= MIN_CUT_DURATION;
+  const restore = restoreTarget(
+    cutSpans,
+    pending,
+    timeMap.identity ? selectedCutSpan(cutSpans, selectedIds) : null,
   );
 
-  const rangeReady =
-    selectionStart != null &&
-    selectionEnd != null &&
-    Math.abs(selectionEnd - selectionStart) >= MIN_CUT_DURATION;
+  const cutTitle =
+    pending && !canCut
+      ? "The selection is already cut"
+      : partlyCut
+        ? `Cut the ${gain.toFixed(1)} s not cut yet (Delete)`
+        : "Cut the range (Delete)";
+  const restoreTitle = !restore
+    ? "Select cut audio to restore it (R)"
+    : restore.pending
+      ? "Restore the cut audio in the selection (R)"
+      : "Restore the selected cut (R)";
 
-  // Normalized source-time selection (min/max), or null when no valid range is marked.
-  const range =
-    rangeReady && selectionStart != null && selectionEnd != null
-      ? {
-          start: Math.min(selectionStart, selectionEnd),
-          end: Math.max(selectionStart, selectionEnd),
-        }
-      : null;
-
-  const cutSelection = () => {
-    if (!range) return;
-    editor.apply(
-      (o) => cutRange(o, range.start, range.end),
-      durationLabel("Cut", range.end - range.start),
-    );
-    clearSelectionRange();
-  };
   const keepOnlyRange = () => {
     if (!range) return;
     editor.apply((o) => keepOnly(o, range.start, range.end, duration), "Keep only");
     clearSelectionRange();
-  };
-  const restoreSelected = () => {
-    if (selectedCuts.length === 0) return;
-    const seconds = selectedCuts.reduce((sum, [a, b]) => sum + (b - a), 0);
-    editor.apply((o) => restoreRanges(o, selectedCuts), durationLabel("Restore", seconds));
   };
 
   // Selection-action shortcuts (E export, N new recording, K keep-only), co-located here since the
@@ -272,8 +316,17 @@ export function CutPanel({ project }: { project: ProjectView }) {
 
       {/* Selection actions: operate on the marked range. Enabled only when it's valid. */}
       <div className="flex flex-wrap items-center gap-2 border-t border-dotted border-border pt-4">
-        <Button onClick={cutSelection} disabled={!rangeReady} title="Cut the range (Delete)">
+        <Button onClick={commands.cut} disabled={!canCut} title={cutTitle}>
           Cut range
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={commands.restore}
+          disabled={!restore}
+          title={restoreTitle}
+          className="tabular-nums"
+        >
+          {restore ? `Restore ${restore.seconds.toFixed(1)} s` : "Restore"}
         </Button>
         <Button
           variant="secondary"
@@ -303,43 +356,7 @@ export function CutPanel({ project }: { project: ProjectView }) {
 
       <KeyHints />
 
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3 text-sm text-text-secondary">
-          <button
-            type="button"
-            className="flex items-center gap-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
-            onClick={() => setCutsOpen((v) => !v)}
-            aria-expanded={cutsOpen}
-          >
-            <ChevronRight
-              size={16}
-              className={cn("transition-transform duration-fast", cutsOpen && "rotate-90")}
-              aria-hidden
-            />
-            Manual cuts <span className="tabular-nums text-text">{cuts.length}</span>
-          </button>
-          {cutsOpen && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={restoreSelected}
-              disabled={selectedCuts.length === 0}
-            >
-              Restore selected
-            </Button>
-          )}
-        </div>
-
-        {cutsOpen && (
-          <CutList
-            cuts={cuts}
-            timeMap={timeMap}
-            selectedIds={selectedIds}
-            onToggle={toggleSelected}
-            onSeek={(t) => controller.setSourceTime(t)}
-          />
-        )}
-      </div>
+      <CutSummary cutSpans={cutSpans} disabled={!isReady} onStep={commands.stepCut} />
 
       {exportOpen && range && (
         <ExportModal project={project} range={range} onClose={() => setExportOpen(false)} />
@@ -348,63 +365,5 @@ export function CutPanel({ project }: { project: ProjectView }) {
         <SplitModal project={project} range={range} onClose={() => setSplitOpen(false)} />
       )}
     </div>
-  );
-}
-
-function CutList({
-  cuts,
-  timeMap,
-  selectedIds,
-  onToggle,
-  onSeek,
-}: {
-  cuts: Span[];
-  timeMap: TimeMap;
-  selectedIds: Set<string>;
-  onToggle: (id: string) => void;
-  onSeek: (t: number) => void;
-}) {
-  if (cuts.length === 0) {
-    return (
-      <p className="py-2 text-sm text-text-tertiary">
-        No manual cuts yet. Mark a range with I / O and press Delete to cut.
-      </p>
-    );
-  }
-  return (
-    <ul className="max-h-48 divide-y divide-border overflow-y-auto border-y border-border">
-      {cuts.map((span, i) => {
-        const [start, end] = span;
-        const key = cutKey(span);
-        const selected = selectedIds.has(key);
-        return (
-          <li key={key} className="flex items-center gap-3 py-1.5 text-sm">
-            <input
-              type="checkbox"
-              className="accent-accent h-4 w-4 cursor-pointer"
-              checked={selected}
-              onChange={() => onToggle(key)}
-              aria-label={`Select cut ${i + 1}`}
-            />
-            <button
-              type="button"
-              className="flex flex-1 items-center justify-between gap-4 text-left"
-              onClick={() => {
-                if (!selected) onToggle(key);
-                onSeek(start);
-              }}
-            >
-              <span className="w-6 tabular-nums text-text-tertiary">{i + 1}</span>
-              <span className="flex-1 tabular-nums text-text-secondary">
-                {formatClock(timeMap.toEdited(start))}
-              </span>
-              <span className="tabular-nums text-text-tertiary">
-                −{(end - start).toFixed(1)}s removed
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
   );
 }

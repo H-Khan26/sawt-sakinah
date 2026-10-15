@@ -14,8 +14,10 @@
  *
  * `selectedIds` holds both silence keys (`start:end`, see `silenceKey`) and cut-range keys
  * (`cut:start:end`, see `cutKey`); the two never collide, so a single set drives selection for
- * both the silence list and the cut list.
+ * the silence list and the waveform. Silences select many at a time; at most one cut range is
+ * selected (`selectCut`), the one whose edges the waveform offers to drag.
  */
+import { CUT_KEY_PREFIX } from "@/features/cuts/cutEdl";
 import type { EditOperation } from "@/types/api";
 import { create } from "zustand";
 
@@ -40,6 +42,8 @@ interface EditState {
   toggleSelected: (id: string) => void;
   setSelected: (ids: string[]) => void;
   clearSelection: () => void;
+  /** Select the cut range `key` in place of any selected one; null deselects it. */
+  selectCut: (key: string | null) => void;
 
   setSelectionStart: (t: number | null) => void;
   setSelectionEnd: (t: number | null) => void;
@@ -73,6 +77,15 @@ export const useEditStore = create<EditState>((set, get) => ({
     }),
   setSelected: (ids) => set({ selectedIds: new Set(ids) }),
   clearSelection: () => set({ selectedIds: new Set<string>() }),
+  selectCut: (key) =>
+    set((s) => {
+      const current = [...s.selectedIds].find((id) => id.startsWith(CUT_KEY_PREFIX)) ?? null;
+      if (current === key) return s;
+      const next = new Set(s.selectedIds);
+      if (current) next.delete(current);
+      if (key) next.add(key);
+      return { selectedIds: next };
+    }),
 
   setSelectionStart: (t) => set({ selectionStart: t }),
   setSelectionEnd: (t) => set({ selectionEnd: t }),

@@ -10,7 +10,7 @@
  * (keep/fade/marker, and any open-ended cut) pass through untouched after the cuts. The server
  * stores the same normal form (`normalize_cuts` in `models/edl.py`).
  */
-import type { EditOperation, SilenceSegment } from "@/types/api";
+import type { EditOperation } from "@/types/api";
 
 /** A source-time range `[start, end]` in seconds. */
 export type Span = [number, number];
@@ -21,8 +21,14 @@ export const MIN_CUT_DURATION = 0.02;
 /** Ranges closer than this (seconds) count as touching: they merge, and coverage tolerates it. */
 export const TOUCH_EPSILON = 1e-6;
 
-/** Selection key of a cut range in the cut list and on the waveform (`cut:start:end`). */
-export const cutKey = ([start, end]: Span): string => `cut:${start}:${end}`;
+/** Prefix of a cut range's selection key; silence keys (`start:end`) never start with it. */
+export const CUT_KEY_PREFIX = "cut:";
+
+/**
+ * Selection key of a merged cut range on the waveform (`cut:start:end`). It names the range's
+ * exact bounds, so an edit that moves either bound gives the range a new key.
+ */
+export const cutKey = ([start, end]: Span): string => `${CUT_KEY_PREFIX}${start}:${end}`;
 
 /** Undo label for an edit over `seconds` of audio, e.g. `Cut 4.2 s`. */
 export const durationLabel = (verb: string, seconds: number): string =>
@@ -65,6 +71,13 @@ export function subtractSpans(spans: Span[], remove: Span[], minPiece = 0): Span
     result.push(...(untouched ? pieces : pieces.filter(([c, d]) => d - c >= minPiece)));
   }
   return result;
+}
+
+/** Seconds of `[start, end]` that the sorted, disjoint `ranges` cover. */
+export function coveredDuration(ranges: Span[], start: number, end: number): number {
+  let total = 0;
+  for (const [a, b] of ranges) total += Math.max(0, Math.min(b, end) - Math.max(a, start));
+  return total;
 }
 
 /** Whether `[start, end]` lies entirely within one of the sorted, disjoint `ranges`. */
@@ -137,15 +150,6 @@ export function keepOnly(
 ): EditOperation[] {
   const [a, b] = ordered(start, end);
   return cutRange(cutRange(ops, 0, Math.max(0, a)), Math.min(duration, b), duration);
-}
-
-/** The merged `cutSpans` that aren't exactly one of `silences` — the ranges the cut list shows. */
-export function manualCutSpans(cutSpans: Span[], silences: SilenceSegment[]): Span[] {
-  const isSilence = ([a, b]: Span) =>
-    silences.some(
-      (s) => Math.abs(s.start - a) <= TOUCH_EPSILON && Math.abs(s.end - b) <= TOUCH_EPSILON,
-    );
-  return cutSpans.filter((span) => !isSilence(span));
 }
 
 /** Structural equality for op arrays. */
