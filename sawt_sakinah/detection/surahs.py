@@ -67,7 +67,7 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from ..config import CONFIG
 from ..models import SurahPassage
@@ -157,7 +157,8 @@ class _Matcher:
 
     # -- word comparison -------------------------------------------------------------
 
-    def _sim(self, a: str, b: str) -> bool:
+    def similar(self, a: str, b: str) -> bool:
+        """Whether ``a`` and ``b`` match: equal, or RapidFuzz ratio at least ``word_match``."""
         return a == b or self._ratio(a, b, score_cutoff=self.p.word_match) > 0
 
     def _match(
@@ -168,16 +169,16 @@ class _Matcher:
         if not (t_lo <= ti < t_hi and q_lo <= qi < q_hi):
             return None
         t, w = self.T[ti], self.Q[qi]
-        if self._sim(t, w):
+        if self.similar(t, w):
             return 1, 1
         q2, t2 = qi + d, ti + d
         if q_lo <= q2 < q_hi:
             pair = w + self.Q[q2] if d > 0 else self.Q[q2] + w
-            if self._sim(t, pair):
+            if self.similar(t, pair):
                 return 1, 2
         if t_lo <= t2 < t_hi:
             pair = t + self.T[t2] if d > 0 else self.T[t2] + t
-            if self._sim(pair, w):
+            if self.similar(pair, w):
                 return 2, 1
         return None
 
@@ -211,8 +212,13 @@ class _Matcher:
                     continue
                 at, aq = nt + d * m1[0], nq + d * m1[1]
                 # Continue only where the following words agree too, unless the landing
-                # word is the surah's last (nothing after it to confirm with).
-                if not (q_lo <= aq < q_hi) or self._match(at, aq, d, t_lo, t_hi, q_lo, q_hi):
+                # word is the last of the surah or of the transcript run (nothing after it
+                # to confirm with).
+                if (
+                    not (q_lo <= aq < q_hi)
+                    or not (t_lo <= at < t_hi)
+                    or self._match(at, aq, d, t_lo, t_hi, q_lo, q_hi)
+                ):
                     ti, qi = nt, nq
                     break
             else:
@@ -263,14 +269,17 @@ class _Matcher:
         return max(0.0, 1.0 - other / best.matched)
 
 
-def _classify(p: _Params, w: _Walk, whole: bool, margin: float, continues: bool) -> int:
+def _classify(
+    p: _Params, w: _Walk, whole: bool, margin: Callable[[], float], continues: bool
+) -> int:
     """0 reject, 1 unsure, 2 accept. ``whole``: the walk runs from the first word of its
-    surah to the last."""
+    surah to the last. ``margin`` is computed only once the accept word and ratio bars
+    hold, since it walks every placement in another surah."""
     ratio = w.ratio
     if (
         (w.matched >= p.accept_min_words or (whole and w.matched >= p.unsure_min_words))
         and ratio >= p.accept_min_ratio
-        and margin >= p.accept_min_margin
+        and margin() >= p.accept_min_margin
     ):
         level = 2
     elif w.matched >= p.unsure_min_words and ratio >= p.unsure_min_ratio:
@@ -283,7 +292,7 @@ def _classify(p: _Params, w: _Walk, whole: bool, margin: float, continues: bool)
 
 
 def _join_basmala(
-    tokens: list[str], times: list[tuple[float, float]], t0: int, t_lo: int, p: _Params
+    m: _Matcher, times: list[tuple[float, float]], t0: int, t_lo: int
 ) -> Optional[int]:
     """Index of a basmala's first word ending right before token ``t0``, or ``None``.
 
@@ -291,16 +300,12 @@ def _join_basmala(
     most ``basmala_max_gap`` seconds before ``t0`` starts. Three to five words are tried,
     since the model may split or join its words.
     """
-    from rapidfuzz import fuzz
-
-    if t0 - 1 < t_lo or times[t0][0] - times[t0 - 1][1] > p.basmala_max_gap:
+    if t0 - 1 < t_lo or times[t0][0] - times[t0 - 1][1] > m.p.basmala_max_gap:
         return None
     target = " ".join(quran.BASMALA)
     for k in (4, 3, 5):
         i = t0 - k
-        if i < t_lo:
-            continue
-        if fuzz.ratio(" ".join(tokens[i:t0]), target, score_cutoff=p.word_match) > 0:
+        if i >= t_lo and m.similar(" ".join(m.T[i:t0]), target):
             return i
     return None
 
@@ -366,11 +371,10 @@ def _snap_edges(
                 floor = spans[k][1] if k >= 0 else 0.0
                 a = max(a - pad, floor)
             k = bisect_right(starts, b) - 1
+            ceil = spans[k + 1][0] if k + 1 < len(spans) else hi
             if k >= 0 and spans[k][1] >= b:
-                ceil = spans[k + 1][0] if k + 1 < len(spans) else hi
                 b = min(spans[k][1] + pad, ceil)
             else:
-                ceil = spans[k + 1][0] if k + 1 < len(spans) else hi
                 b = min(b + pad, ceil)
         else:
             a, b = a - pad, b + pad
@@ -481,10 +485,10 @@ def match_surahs(
         if best.matched >= min(p.promote_min_words, p.unsure_min_words):
             first = q.surah_end[best.surah - 1] if best.surah > 1 else 0
             whole = best.q0 == first and best.q1 == q.surah_end[best.surah] - 1
-            level = _classify(p, best, whole, m.margin(best), continues(best))
+            level = _classify(p, best, whole, lambda: m.margin(best), continues(best))
         basmala = None
         if level and (q.ayah[best.q0] != 1 or best.surah != 1):
-            basmala = _join_basmala(tokens, times, best.t0, t_lo, p)
+            basmala = _join_basmala(m, times, best.t0, t_lo)
         if level and not continues(best):
             lead = basmala if basmala is not None else best.t0
             since = times[lead][0] - p.context_window

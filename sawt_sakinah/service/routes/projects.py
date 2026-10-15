@@ -149,8 +149,16 @@ def split_project(
     ``POST /projects``: returns the new project + job id, and ``project.json`` is written by
     the job once the segment has been rendered and imported."""
     validate_id(project_id, "project_id")
-    if not store.exists(project_id):
+    project = store.load(project_id)
+    if project is None:
         raise HTTPException(status_code=404, detail="recording not found")
+    # Ranges ending past the recording are clamped by the render; one starting there has
+    # nothing to keep.
+    duration = project.audio_source.duration_sec
+    if any(start >= duration for start, _ in req.ranges):
+        raise HTTPException(
+            status_code=422, detail="every range must start before the end of the recording"
+        )
     jobs.ensure_capacity()
     new_id = uuid4().hex
     store.prepare(new_id)

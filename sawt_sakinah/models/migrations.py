@@ -50,9 +50,15 @@ def _v0_to_v1(raw: dict) -> dict:
 
 
 def _v1_to_v2(raw: dict) -> dict:
-    """Drop the phrase markers and the prayer outline, which the surah map replaced."""
+    """Drop the phrase markers and the prayer outline, which the surah map replaced.
+
+    ``status.analyzed`` stays set only when silence detection results remain.
+    """
     raw.pop("markers", None)
     raw.pop("structure", None)
+    status = raw.get("status")
+    if isinstance(status, dict):
+        raw["status"] = {**status, "analyzed": bool(raw.get("silences"))}
     return raw
 
 

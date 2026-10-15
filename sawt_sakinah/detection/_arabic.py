@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import re
 
-# Combining harakat / tanwin / sukun / shadda (U+064B..U+0652) and the superscript
-# alef (U+0670), plus the tatweel elongation (U+0640) carry no lexical content here.
+# Combining harakat / tanwin / sukun / shadda (U+064B..U+0652), the combining madda,
+# hamza and other marks (U+0653..U+065F), the superscript alef (U+0670) and the tatweel
+# elongation (U+0640) carry no lexical content here. Stripping a combining hamza leaves
+# its bare carrier, as the letter-form folds below do for the precomposed forms.
 _HARAKAT = dict.fromkeys(
-    [*range(0x064B, 0x0653), 0x0670, 0x0640],
+    [*range(0x064B, 0x0660), 0x0670, 0x0640],
     None,
 )
 
