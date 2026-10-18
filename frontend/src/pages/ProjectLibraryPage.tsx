@@ -4,6 +4,7 @@ import { Alert, Button, Input, SegmentedControl, WaveformLoader } from "@/compon
 import { DeleteDialog } from "@/features/projects/DeleteDialog";
 import { FihristList } from "@/features/projects/FihristList";
 import { ImportAnywhere } from "@/features/projects/ImportAnywhere";
+import { NewRecordingNiche } from "@/features/projects/NewRecordingNiche";
 import { NewRecordingSheet } from "@/features/projects/NewRecordingSheet";
 import { NicheCard } from "@/features/projects/NicheCard";
 import { RenameDialog } from "@/features/projects/RenameDialog";
@@ -18,6 +19,20 @@ type Dialog = { kind: "rename" | "delete"; project: ProjectSummary } | null;
 /** The search field joins the heading row from this many recordings on. */
 const SEARCH_FROM = 12;
 
+const ARCADE_FILL = "grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] gap-x-4 gap-y-[22px]";
+const ARCADE_CENTRED = `${ARCADE_FILL} sm:flex sm:flex-wrap sm:justify-center`;
+
+/**
+ * Arcade layout by library size (recordings plus the New recording niche), so a search never
+ * resizes the niches: from `sm` up, up to three tiles get large niches and up to five medium
+ * ones, centred on the wall with wrapped tiles centred too; otherwise they fill the row.
+ */
+function arcadeLayout(tiles: number): { list: string; item?: string } {
+  if (tiles <= 3) return { list: ARCADE_CENTRED, item: "sm:w-[240px]" };
+  if (tiles <= 5) return { list: ARCADE_CENTRED, item: "sm:w-[188px]" };
+  return { list: ARCADE_FILL };
+}
+
 const VIEW_OPTIONS = [
   { value: "icons", label: <ArchToggleIcon />, ariaLabel: "Icon view" },
   { value: "list", label: <ListIcon />, ariaLabel: "List view" },
@@ -26,8 +41,8 @@ const VIEW_OPTIONS = [
 /**
  * The library, set on the qibla wall (the shell draws the wall's light and lattice): a
  * heading row (title and count, search from 12 recordings, view toggle, New recording) and the
- * recordings, most recently edited first (server-sorted), as an arcade of niches or a fihrist
- * list. Files dropped and YouTube links pasted anywhere on the page import straight away. With
+ * recordings, most recently edited first (server-sorted), as an arcade of niches closed by a New
+ * recording niche, or a fihrist list. Files dropped and YouTube links pasted anywhere on the page import straight away. With
  * `newSheet` (the `/new` route) the New recording sheet is open over it and closes to `/`.
  */
 export function ProjectLibraryPage({ newSheet = false }: { newSheet?: boolean }) {
@@ -48,6 +63,7 @@ export function ProjectLibraryPage({ newSheet = false }: { newSheet?: boolean })
   const numbers = useMemo(() => new Map(all.map((p, i) => [p.id, i + 1])), [all]);
   const currentId = all.find((p) => !p.unreadable)?.id;
   const hasRecordings = all.length > 0;
+  const arcade = arcadeLayout(all.length + 1);
 
   const openNew = () => navigate("/new");
   const rename = (project: ProjectSummary) => setDialog({ kind: "rename", project });
@@ -140,9 +156,9 @@ export function ProjectLibraryPage({ newSheet = false }: { newSheet?: boolean })
               onDelete={remove}
             />
           ) : (
-            <ul className="grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] gap-x-4 gap-y-[22px]">
+            <ul className={arcade.list}>
               {shown.map((project) => (
-                <li key={project.id}>
+                <li key={project.id} className={arcade.item}>
                   <NicheCard
                     project={project}
                     current={project.id === currentId}
@@ -151,6 +167,11 @@ export function ProjectLibraryPage({ newSheet = false }: { newSheet?: boolean })
                   />
                 </li>
               ))}
+              {!needle && (
+                <li className={arcade.item}>
+                  <NewRecordingNiche onClick={openNew} />
+                </li>
+              )}
             </ul>
           ))}
       </div>

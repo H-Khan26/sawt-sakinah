@@ -44,7 +44,10 @@ Background `--color-background`; pages and panels on `--color-surface`.
   icon/list view toggle (`SegmentedControl`), and a New recording button.
 - Recordings, most recently edited first, as an arcade of mihrab niches (`NicheCard`) or
   a fihrist list (`FihristList`). Each shows title, length and date; the ⋯ menu
-  (`ProjectMenu`) holds Rename and Delete.
+  (`ProjectMenu`) holds Rename and Delete. The arcade closes with a New recording niche
+  (`NewRecordingNiche`, hidden while searching). From `sm` up, up to three tiles get large
+  niches and up to five medium ones, centred; from six on, and on narrow screens, they fill
+  the row.
 - Dropping a file or pasting a YouTube link anywhere on the page imports straight away
   (`ImportAnywhere`).
 - The New recording sheet (`NewRecordingSheet`): a YouTube link field (Enter starts the

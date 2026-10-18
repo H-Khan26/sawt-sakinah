@@ -13,6 +13,16 @@ export interface NicheCardProps {
   onDelete: () => void;
 }
 
+/** Arcade niche parts, shared with `NewRecordingNiche`; the text grows with the niche's width. */
+export const NICHE_TILE =
+  "group relative aspect-[3/4] rounded-t-[50%] [container-type:inline-size]";
+export const NICHE_FOOT =
+  "absolute inset-x-[7%] bottom-[6%] flex flex-col items-center gap-[3px] text-center";
+export const NICHE_RULE = "mb-[5px] block h-px w-4";
+export const NICHE_TITLE =
+  "flex min-h-[2.4em] w-full items-end justify-center font-display text-[length:clamp(15px,8cqw,19px)] leading-[1.2]";
+export const NICHE_META = "font-sans text-[length:clamp(11px,5.6cqw,13px)]";
+
 /**
  * One recording in the library's arcade: a 3:4 mihrab niche with a decorative waveform seeded
  * from the id, and a short gold rule, the title (two lines reserved, set on the bottom one) and
@@ -42,7 +52,8 @@ export function NicheCard({ project, current = false, onRename, onDelete }: Nich
         }
       }}
       className={cn(
-        "group relative aspect-[3/4] rounded-t-[50%] transition-transform duration-fast",
+        NICHE_TILE,
+        "transition-transform duration-fast",
         current ? "text-[var(--niche-current-ink)]" : "text-text",
         !unreadable &&
           "cursor-pointer hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-border-focus",
@@ -54,30 +65,28 @@ export function NicheCard({ project, current = false, onRename, onDelete }: Nich
         className="absolute inset-0"
       />
 
-      <div className="absolute inset-x-[7%] bottom-[6%] flex flex-col items-center gap-[3px] text-center">
+      <div className={NICHE_FOOT}>
         <span
           aria-hidden="true"
           className={cn(
-            "mb-[5px] block h-px w-4",
+            NICHE_RULE,
             current ? "bg-[var(--niche-current-line)]" : "bg-[var(--niche-inner)]",
           )}
         />
-        <div className="flex min-h-[2.4em] w-full items-end justify-center font-display text-[15px] leading-[1.2]">
+        <div className={NICHE_TITLE}>
           <span className="line-clamp-2 break-words" title={project.name}>
             {project.name}
           </span>
         </div>
         {unreadable ? (
-          <small
-            className="line-clamp-2 font-sans text-[11px] text-text-tertiary"
-            title={unreadable}
-          >
+          <small className={cn(NICHE_META, "line-clamp-2 text-text-tertiary")} title={unreadable}>
             {unreadable}
           </small>
         ) : (
           <small
             className={cn(
-              "font-sans text-[11px] tabular-nums",
+              NICHE_META,
+              "tabular-nums",
               current ? "text-[var(--niche-current-ink-2)]" : "text-text-tertiary",
             )}
           >
