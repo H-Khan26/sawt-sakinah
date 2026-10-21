@@ -1,8 +1,9 @@
-# Lint, type-check and build on every push and pull request.
+# Lint, type-check and build on pushes to main and on every pull request.
 name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
