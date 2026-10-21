@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-horizontal-gold.svg">
-    <img src="docs/assets/logo-horizontal-oxblood.svg" alt="Sawt Sakinah" width="520">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-gold.svg">
+    <img src="docs/assets/logo-oxblood.svg" alt="Sawt Sakinah" width="400">
   </picture>
 </p>
 

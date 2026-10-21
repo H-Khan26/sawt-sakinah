@@ -23,12 +23,12 @@ export interface SanctuaryProps {
 
 /**
  * The library's frame: one scroll container holding a sticky stage and the wall below it. The
- * stage is the dome band (the rosette, the stacked and horizontal logos and, on the landing, the
- * name and an Enter button), the lamp ring over it, and the corner buttons. Scrolling lowers the
- * band from the full window to the header (see {@link useDescent}); the wall then carries the
- * light from the lamps and the star lattice fading in below it. The stage passes pointer events
- * through, so dropping a file or pasting a link on the landing still imports. Until the
- * preferences decide whether the landing shows, the stage is plain dome ground.
+ * stage is the dome band (the rosette, the logo and, on the landing, the name and an Enter
+ * button), the lamp ring over it, and the corner buttons. Scrolling lowers the band from the
+ * full window to the header (see {@link useDescent}); the wall then carries the light from the
+ * lamps and the star lattice fading in below it. The stage passes pointer events through, so
+ * dropping a file or pasting a link on the landing still imports. Until the preferences decide
+ * whether the landing shows, the stage is plain dome ground.
  */
 export function Sanctuary({ corner, children }: SanctuaryProps) {
   const { opening, descend, refs } = useDescent();
@@ -53,11 +53,8 @@ export function Sanctuary({ corner, children }: SanctuaryProps) {
           {opening && (
             <>
               <DomeRosette ref={refs.dome} {...HIDDEN_DOME} />
-              <div ref={refs.stacked} className="sanct-logo" style={HIDDEN}>
-                <Logo lockup="stacked" tone="gold" className="h-auto w-full" />
-              </div>
-              <div ref={refs.horizontal} className="sanct-logo" style={HIDDEN} aria-hidden="true">
-                <Logo lockup="horizontal" tone="gold" className="h-auto w-full" />
+              <div ref={refs.logo} className="sanct-logo" style={HIDDEN}>
+                <Logo tone="gold" className="h-auto w-full" />
               </div>
               <div ref={refs.landing} className="sanct-landing">
                 <LatinName className="text-xs" />

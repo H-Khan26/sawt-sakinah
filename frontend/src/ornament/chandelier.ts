@@ -5,9 +5,8 @@ import { num } from "./num.ts";
 /** The outer of Çamlıca's three rings: radius 0.80·R with 32 lamps. */
 export const LAMP_RING = { f: 0.8, n: 32 } as const;
 
-/** Width-to-height ratios of the stacked and horizontal logo lockups. */
-export const LOGO_STACKED_RATIO = 1.424;
-export const LOGO_HORIZONTAL_RATIO = 4.37;
+/** Width-to-height ratio of the logo artwork. */
+export const LOGO_RATIO = 2.403;
 
 /** Angles (radians, from the top, clockwise) of `n` lamps, shifted by `offset` divisions. */
 export function lampAngles(n: number, offset = 0.5): number[] {
@@ -109,10 +108,7 @@ export interface DescentLayout {
   logo: {
     width: number;
     x: number;
-    stackedY: number;
-    horizontalY: number;
-    stackedOpacity: number;
-    horizontalOpacity: number;
+    y: number;
   };
   dome: {
     x: number;
@@ -125,25 +121,22 @@ export interface DescentLayout {
 }
 
 /**
- * Logo and dome at a point of the descent: the logo rises into the header and unfolds from the
- * stacked to the horizontal lockup, while the dome travels with it and dissolves from the rim inward.
+ * Logo and dome at a point of the descent: the logo rises into the header and shrinks to fit it,
+ * while the dome travels with it and dissolves from the rim inward.
  */
 export function descentLayout(input: DescentInput): DescentLayout {
   const { width, height, headerHeight, R0 } = input;
   const { p, e, bandY } = progressOf(input);
   const cy = lerp(height / 2, headerHeight / 2, e);
-  const lw0 = R0 * 0.43;
-  const lw = lerp(lw0, Math.min(headerHeight * 1.9, width * 0.62), e);
+  const lw0 = R0 * 0.5;
+  const lw = lerp(lw0, Math.min(headerHeight * 1.5, width * 0.62), e);
   return {
     bandHeight: bandY,
     landingOpacity: 1 - smooth(0, 0.2, p),
     logo: {
       width: lw,
       x: width / 2 - lw / 2,
-      stackedY: cy - lw / LOGO_STACKED_RATIO / 2,
-      horizontalY: cy - lw / LOGO_HORIZONTAL_RATIO / 2,
-      stackedOpacity: 1 - smooth(0.28, 0.5, e),
-      horizontalOpacity: smooth(0.44, 0.68, e),
+      y: cy - lw / LOGO_RATIO / 2,
     },
     dome: {
       x: width / 2,

@@ -4,7 +4,7 @@
  * header and the lamp ring on its edge.
  *
  * Everything per frame is imperative: a scroll listener batched to animation frames writes the
- * band's height and the landing's opacity as custom properties, the logos' transforms as inline
+ * band's height and the landing's opacity as custom properties, the logo's transform as inline
  * styles, and the dome and lamp ring through their handles. Nothing re-renders while scrolling.
  * CSS scroll-driven animations would do this declaratively, but not every WebView pywebview uses
  * supports them.
@@ -59,8 +59,7 @@ export function useDescent() {
   const header = useRef<HTMLElement>(null);
   const dome = useRef<DomeRosetteHandle>(null);
   const lamps = useRef<LampRingHandle>(null);
-  const stacked = useRef<HTMLDivElement>(null);
-  const horizontal = useRef<HTMLDivElement>(null);
+  const logo = useRef<HTMLDivElement>(null);
   const landing = useRef<HTMLDivElement>(null);
   const stage = useRef<Stage | null>(null);
   const tween = useRef(0);
@@ -102,16 +101,12 @@ export function useDescent() {
     if (landing.current) {
       landing.current.style.visibility = layout.landingOpacity < 0.01 ? "hidden" : "";
     }
-    const { logo } = layout;
-    for (const [ref, y, opacity] of [
-      [stacked, logo.stackedY, logo.stackedOpacity],
-      [horizontal, logo.horizontalY, logo.horizontalOpacity],
-    ] as const) {
-      const style = ref.current?.style;
-      if (!style) continue;
-      style.width = `${num(logo.width, 2)}px`;
-      style.transform = `translate(${num(logo.x, 2)}px, ${num(y, 2)}px)`;
-      style.opacity = num(opacity);
+    const logoStyle = logo.current?.style;
+    if (logoStyle) {
+      const { width, x, y } = layout.logo;
+      logoStyle.width = `${num(width, 2)}px`;
+      logoStyle.transform = `translate(${num(x, 2)}px, ${num(y, 2)}px)`;
+      logoStyle.opacity = "1";
     }
     dome.current?.update({
       transform: { x: layout.dome.x, y: layout.dome.y, scale: layout.dome.scale },
@@ -254,6 +249,6 @@ export function useDescent() {
     /** How this mount opens, or null while the preferences load. */
     opening: decided,
     descend,
-    refs: { scroller, header, dome, lamps, stacked, horizontal, landing },
+    refs: { scroller, header, dome, lamps, logo, landing },
   };
 }
