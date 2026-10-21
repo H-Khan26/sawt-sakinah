@@ -1,6 +1,6 @@
 """Ingest a user-uploaded media file as an :class:`AudioSource`.
 
-The upload counterpart of :mod:`extractor`: instead of downloading from YouTube, it takes
+The upload counterpart of :mod:`extractor`: instead of downloading from a link, it takes
 a local file the user provided, validates that ffmpeg can decode it and that it carries an
 audio stream, transcodes it to the canonical mp3 artifact, and hands off to the shared
 :func:`finalize_source` tail. Detection/editing/the API stay oblivious to the difference --

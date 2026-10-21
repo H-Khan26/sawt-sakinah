@@ -241,7 +241,7 @@ class PatchProjectRequest(BaseModel):
 
 class AudioSourceView(BaseModel):
     id: str
-    source_kind: str                    # "youtube" | "upload"
+    source_kind: str                    # a platform id ("youtube", "instagram", ...) or "upload"
     source_url: Optional[str] = None    # None for uploads
     original_filename: Optional[str] = None  # set for uploads
     title: str

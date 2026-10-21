@@ -6,8 +6,8 @@ Two ways to run the tool locally, mirroring its two usage shapes:
   to: extract -> detect -> edit via EDL -> export). Requires the ``service`` extra.
 * ``sawt desktop``  -- the same app in a native window (``--self-test`` runs the headless
   end-to-end check instead). Requires the ``service`` and ``desktop`` extras.
-* ``sawt extract``  -- one-shot, no server: a YouTube URL straight to a silence-trimmed
-  file via :func:`sawt_sakinah.pipeline.youtube_to_clean_audio`. Exits with
+* ``sawt extract``  -- one-shot, no server: a link to a post straight to a silence-trimmed
+  file via :func:`sawt_sakinah.pipeline.link_to_clean_audio`. Exits with
   ``EXIT_BOT_CHECK`` (3) when YouTube refuses the download with its bot check.
 
 Also reachable as ``python -m sawt_sakinah`` (see ``__main__.py``), which is how the
@@ -64,10 +64,10 @@ def _desktop(args: argparse.Namespace) -> int:
 def _extract(args: argparse.Namespace) -> int:
     """One-shot extract + silence-trim; prints the path of the cleaned file."""
     from .models import YouTubeBotCheckError
-    from .pipeline import youtube_to_clean_audio
+    from .pipeline import link_to_clean_audio
 
     try:
-        out = youtube_to_clean_audio(
+        out = link_to_clean_audio(
             args.url,
             output_dir=args.output_dir,
             threshold_db=args.threshold_db,
@@ -97,7 +97,9 @@ def build_parser() -> argparse.ArgumentParser:
     desktop.set_defaults(func=_desktop)
 
     extract = sub.add_parser("extract", help="one-shot URL -> silence-trimmed file (no server)")
-    extract.add_argument("url", help="YouTube video URL or bare 11-char id")
+    extract.add_argument(
+        "url", help="link to a YouTube, Instagram, X or Facebook post (or a YouTube video id)"
+    )
     extract.add_argument("-o", "--output-dir", default=".", help="output directory")
     extract.add_argument("--threshold-db", type=float, default=CONFIG.silence.threshold_db)
     extract.add_argument(

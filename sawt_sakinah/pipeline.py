@@ -1,4 +1,4 @@
-"""End-to-end: YouTube URL -> extracted MP3 -> silence removed."""
+"""End-to-end: link to a post -> extracted MP3 -> silence removed."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from .extraction import extract_audio
 from .editing import remove_silence
 
 
-def youtube_to_clean_audio(
+def link_to_clean_audio(
     url: str,
     output_dir: str | os.PathLike = ".",
     filename: str | None = None,
@@ -25,7 +25,7 @@ def youtube_to_clean_audio(
     """Extract audio from ``url`` and remove silent segments in one call.
 
     Args:
-        url: YouTube video URL.
+        url: Link to one post on a supported platform (YouTube, Instagram, X, Facebook).
         output_dir: Directory for output files.
         filename: Output stem (no extension). Defaults to ``source``.
         audio_format: Audio codec/extension for extraction (default ``mp3``).

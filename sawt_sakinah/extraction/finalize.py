@@ -8,7 +8,8 @@ it to the cache. Keeping the tail in one place means the two front-ends share id
 metadata, working-copy, and cache semantics and never drift apart.
 
 Side-effecting (filesystem): probes, may write a working copy and a speech map, may write
-a cache sidecar.
+a cache sidecar. For link imports it also measures the peak level, so a silent download
+(a reel whose music was removed) can be flagged.
 """
 
 from __future__ import annotations
@@ -19,11 +20,12 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from ..config import CONFIG
+from ..models.errors import NoAudioStreamError
 from ..models.sources import AudioSource, SourceKind
 from . import cache as _cache
 from .hashing import content_hash
 from .normalize import make_working_copy
-from .probe import probe
+from .probe import peak_dbfs, probe
 from .segment import write_speech_map
 
 
@@ -44,6 +46,7 @@ def finalize_source(
     create_working_copy: bool = CONFIG.extraction.create_working_copy,
     create_speech_map: bool = CONFIG.extraction.create_speech_map,
     normalize_loudness: bool = CONFIG.extraction.normalize_loudness,
+    measure_peak: bool = False,
     use_cache: bool = CONFIG.extraction.use_cache,
     cache_dir: str | os.PathLike | None = None,
     ffmpeg_bin: str = CONFIG.ffmpeg.bin,
@@ -56,14 +59,16 @@ def finalize_source(
         result_path: The produced user-facing audio artifact (the transcoded mp3).
         source_id: Deterministic short id (acquisition key + format + quality).
         title: Display title (video title, or the uploaded file's stem).
-        source_kind: Provenance discriminator (``"youtube"`` or ``"upload"``).
-        source_url: Canonical URL for downloads; ``None`` for uploads.
+        source_kind: Provenance discriminator (a platform id, or ``"upload"``).
+        source_url: Canonical URL for links; ``None`` for uploads.
         original_filename: The uploaded file's name; ``None`` for downloads.
         create_working_copy: Also emit the 16 kHz mono WAV detection feeds on.
         create_speech_map: Also compute the Silero speech-probability sidecar from the
             working copy (requires it, and the ``vad`` extra; skipped with a
             ``"segment"``/``"skipped"`` progress event when onnxruntime is missing).
         normalize_loudness: Apply EBU R128 loudnorm to the working copy.
+        measure_peak: Record the peak level on ``AudioSource.peak_dbfs`` (one
+            ``volumedetect`` pass, on the working copy unless loudnorm changed its level).
         use_cache: Persist the resulting source as a cache sidecar.
         cache_dir: Cache root (resolved to the default when ``None``).
         ffmpeg_bin: Name/path of the ffmpeg executable.
@@ -73,7 +78,8 @@ def finalize_source(
 
     Raises:
         FileNotFoundError: If ``result_path`` (or ffmpeg/ffprobe) is missing.
-        RuntimeError: If ffprobe finds no audio stream or ffmpeg fails.
+        NoAudioStreamError: If ffprobe finds no audio stream.
+        RuntimeError: If ffprobe or ffmpeg fails.
     """
     result = Path(result_path)
     if not result.exists():
@@ -82,7 +88,12 @@ def finalize_source(
         )
 
     emit(progress_callback, stage="probe", status="start")
-    meta = probe(result, ffprobe_bin=ffprobe_bin)
+    try:
+        meta = probe(result, ffprobe_bin=ffprobe_bin)
+    except RuntimeError as err:
+        if "no audio stream" in str(err).lower():
+            raise NoAudioStreamError("There's no audio to import in this file.") from err
+        raise
 
     working_copy = None
     if create_working_copy:
@@ -102,6 +113,12 @@ def finalize_source(
         except ImportError as err:
             emit(progress_callback, stage="segment", status="skipped", reason=str(err))
 
+    # loudnorm lifts near-silence, so a normalized working copy can't be measured.
+    peak = None
+    if measure_peak:
+        unchanged = working_copy is not None and not normalize_loudness
+        peak = peak_dbfs(working_copy if unchanged else result, ffmpeg_bin=ffmpeg_bin)
+
     emit(progress_callback, stage="save", status="start")
     source = AudioSource(
         local_path=result,
@@ -118,6 +135,7 @@ def finalize_source(
         original_filename=original_filename,
         working_copy=working_copy,
         speech_map=speech_map,
+        peak_dbfs=peak,
     )
 
     if use_cache:

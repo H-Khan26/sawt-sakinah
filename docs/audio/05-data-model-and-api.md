@@ -15,7 +15,7 @@ thing to change later.
 ```
 AudioSource
   id                 str
-  source_kind        str        # "youtube" | "upload"
+  source_kind        str        # platform id ("youtube", "instagram", "x", "facebook") | "upload"
   source_url         str?       # None for uploads
   original_filename  str?       # set for uploads
   local_path         path       # the mp3
@@ -29,6 +29,7 @@ AudioSource
   working_copy       path?      # 16 kHz mono WAV for detection
   speech_map         path?      # Silero speech-probability sidecar (.npz)
   transcript         path?      # Whisper word transcript sidecar (audio/transcript.json)
+  peak_dbfs          float?     # peak level of a link import; <= -70 dBFS is flagged silent
 
 SilenceSegment
   start         float      # seconds

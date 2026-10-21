@@ -105,7 +105,7 @@ class ProjectSummary(BaseModel):
 
     id: str
     name: str
-    source_kind: str = "youtube"        # provenance; "upload" for imported files
+    source_kind: str = "youtube"        # provenance: a platform id, or "upload" for imported files
     source_url: Optional[str] = None    # None for uploads (and pre-source_kind sidecars)
     duration_sec: float
     created_at: datetime

@@ -1,13 +1,15 @@
-"""Read authoritative audio metadata from a file using ffprobe (ships with FFmpeg)."""
+"""Read authoritative audio metadata from a file using ffprobe (ships with FFmpeg), and
+measure its peak level with ffmpeg."""
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from ..config import CONFIG
 from ..ffmpeg import run_ffmpeg
-from ..proc import INPUT_PROTOCOLS
+from ..proc import INPUT_PROTOCOLS, ffmpeg_input
 
 
 def probe(input_path: str | Path, ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin) -> dict:
@@ -59,3 +61,28 @@ def probe(input_path: str | Path, ffprobe_bin: str = CONFIG.ffmpeg.ffprobe_bin) 
         "channels": int(stream["channels"]) if stream.get("channels") else 0,
         "codec": stream.get("codec_name", ""),
     }
+
+
+_MAX_VOL_RE = re.compile(r"max_volume:\s*(-?(?:\d+(?:\.\d+)?|inf))\s*dB")
+
+#: Floor for a peak reading; digital silence reads ``-inf`` dB, which JSON can't hold.
+PEAK_FLOOR_DBFS = -120.0
+
+
+def peak_dbfs(input_path: str | Path, ffmpeg_bin: str = CONFIG.ffmpeg.bin) -> float | None:
+    """The loudest sample of ``input_path`` in dBFS (ffmpeg's ``volumedetect``).
+
+    Returns at least :data:`PEAK_FLOOR_DBFS`, or ``None`` when ffmpeg is missing, fails,
+    times out or reports no level: the reading only feeds a warning. Read-only.
+    """
+    cmd = [ffmpeg_bin, *ffmpeg_input(input_path), "-af", "volumedetect", "-f", "null", "-"]
+    try:
+        proc = run_ffmpeg(cmd)
+    except (FileNotFoundError, RuntimeError):
+        return None
+    if proc.returncode != 0:
+        return None
+    match = _MAX_VOL_RE.search(proc.stderr)
+    if match is None:
+        return None
+    return max(float(match.group(1)), PEAK_FLOOR_DBFS)
