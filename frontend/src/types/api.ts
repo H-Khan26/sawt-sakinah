@@ -341,6 +341,8 @@ export interface AppPreferences {
   surah_view: boolean;
   /** Include Al-Fatihah in the surah band and list (visual only). */
   show_fatihah: boolean;
+  /** Latch clicks and drags on the waveform on to nearby surah and cut edges. */
+  snap_edges: boolean;
 }
 
 /** The stored theme choice. */

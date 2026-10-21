@@ -48,6 +48,7 @@
   --cut-stripe-selected: rgba(181, 67, 47, 0.62);
   --cut-dim: rgba(250, 246, 236, 0.6);
   --selection-fill: rgba(184, 149, 79, 0.24);
+  --snap-guide: #2e4a3d;
 
   /* Surah tones: a wash over the bars and an ink for the band's tab. Neighbouring surahs
      alternate a and b, Al-Fatihah takes the quiet f, the selected surah the accent. */
@@ -160,6 +161,7 @@
   --cut-stripe-selected: rgba(217, 115, 79, 0.6);
   --cut-dim: rgba(42, 30, 32, 0.62);
   --selection-fill: rgba(201, 170, 102, 0.2);
+  --snap-guide: #8fb8a4;
 
   /* Surah tones */
   --surah-wash-a: rgba(201, 170, 102, 0.13);

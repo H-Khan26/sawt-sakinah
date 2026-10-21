@@ -18,6 +18,8 @@
  * when a match finishes. `showFatihah` includes Al-Fatihah in the band, tints and list; it is
  * visual only and never changes what the surah actions act on.
  *
+ * `snapEdges` latches clicks and drags on the waveform on to nearby edges (see `useSnapping`).
+ *
  * `theme` is the colour theme (`system` follows the OS; see `src/theme/theme.ts`), `landing`
  * whether the app opens under the dome, and `libraryView` the library's layout. `hydrated` turns
  * true once the stored values have loaded (or failed to), for choices that must not flash a default.
@@ -52,6 +54,9 @@ interface ViewPrefsState {
   setSurahView: (v: boolean) => void;
   showFatihah: boolean;
   setShowFatihah: (v: boolean) => void;
+  snapEdges: boolean;
+  setSnapEdges: (v: boolean) => void;
+  toggleSnapEdges: () => void;
 }
 
 const THEMES: readonly ThemePreference[] = ["system", "day", "night"];
@@ -115,6 +120,12 @@ export const useViewPrefs = create<ViewPrefsState>()((set, get) => ({
     set({ showFatihah });
     save({ show_fatihah: showFatihah });
   },
+  snapEdges: true,
+  setSnapEdges: (snapEdges) => {
+    set({ snapEdges });
+    save({ snap_edges: snapEdges });
+  },
+  toggleSnapEdges: () => get().setSnapEdges(!get().snapEdges),
 }));
 
 function hydrate(prefs: AppPreferences) {
@@ -135,6 +146,7 @@ function hydrate(prefs: AppPreferences) {
   }
   if (!touched.has("surah_view")) next.surahView = prefs.surah_view;
   if (!touched.has("show_fatihah")) next.showFatihah = prefs.show_fatihah;
+  if (!touched.has("snap_edges")) next.snapEdges = prefs.snap_edges;
   useViewPrefs.setState(next);
 }
 

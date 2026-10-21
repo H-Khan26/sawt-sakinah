@@ -1,7 +1,7 @@
 /**
  * Transport row: back 5 s, play/pause (a round accent button inside a gold ring), forward 5 s,
- * the clock, and the playback speed beside it; undo/redo, the copy-timestamp button and the
- * show-deleted toggle sit at the right. Zoom belongs to the overview.
+ * the clock, and the playback speed beside it; undo/redo, the copy-timestamp button, the
+ * snapping toggle and the show-deleted toggle sit at the right. Zoom belongs to the overview.
  *
  * Each control subscribes to the *narrowest* `playbackStore` slice it needs. In particular
  * `Clock` subscribes only to `currentTime`/`duration`, so the per-frame time updates re-render
@@ -14,7 +14,17 @@ import { formatClockPrecise, formatHms } from "@/lib/time";
 import { PLAYBACK_RATES, usePlaybackStore } from "@/stores/playbackStore";
 import { useViewPrefs } from "@/stores/viewPrefs";
 import type { ProjectView } from "@/types/api";
-import { Check, ChevronsLeft, ChevronsRight, Copy, Eye, EyeOff, Pause, Play } from "lucide-react";
+import {
+  Check,
+  ChevronsLeft,
+  ChevronsRight,
+  Copy,
+  Eye,
+  EyeOff,
+  Magnet,
+  Pause,
+  Play,
+} from "lucide-react";
 import { useState } from "react";
 import { SEEK_STEP_SEC, seekBy, togglePlay } from "./transportControls";
 
@@ -121,6 +131,30 @@ function ViewToggle() {
   );
 }
 
+/** The Alt key's name on this platform: Option on a Mac. */
+const ALT_KEY = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "Option" : "Alt";
+
+/** Toggle whether clicks and drags on the waveform latch on to nearby surah and cut edges. */
+function SnapToggle() {
+  const snapEdges = useViewPrefs((s) => s.snapEdges);
+  const toggle = useViewPrefs((s) => s.toggleSnapEdges);
+  const label = snapEdges ? "Stop snapping to edges" : "Snap to surah and cut edges";
+  return (
+    <Tooltip content={snapEdges ? `${label} (hold ${ALT_KEY} to place freely)` : label}>
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={toggle}
+        aria-label={label}
+        aria-pressed={snapEdges}
+        className={snapEdges ? undefined : "text-text-tertiary"}
+      >
+        <Magnet size={18} />
+      </Button>
+    </Tooltip>
+  );
+}
+
 function RateSelect() {
   const { isReady } = useWaveformContext();
   const rate = usePlaybackStore((s) => s.rate);
@@ -157,6 +191,7 @@ export function TransportBar({ project }: { project: ProjectView }) {
       <div className="ml-auto flex items-center gap-1">
         <UndoRedoControls projectId={project.id} />
         <CopyTimeButton />
+        <SnapToggle />
         <ViewToggle />
       </div>
     </div>

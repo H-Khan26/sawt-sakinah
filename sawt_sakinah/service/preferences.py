@@ -83,6 +83,7 @@ class Preferences(BaseModel):
     export_dir: Optional[str] = None  # None saves exports to Downloads
     surah_view: bool = True  # tint the recognised surahs on the waveform
     show_fatihah: bool = True  # include Al-Fatihah in the surah band and list
+    snap_edges: bool = True  # latch waveform clicks and drags on to nearby edges
 
     @field_validator("cookies_browser")
     @classmethod
@@ -148,6 +149,7 @@ class PreferencesPatch(BaseModel):
     export_dir: Optional[str] = None
     surah_view: Optional[bool] = None
     show_fatihah: Optional[bool] = None
+    snap_edges: Optional[bool] = None
 
     @field_validator("cookies_browser")
     @classmethod
