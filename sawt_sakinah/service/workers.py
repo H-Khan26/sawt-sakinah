@@ -59,6 +59,7 @@ from .schemas import (
     SurahRequest,
 )
 from .settings import ServiceSettings
+from .timing import StageTimer
 
 if TYPE_CHECKING:  # pragma: no cover - typing only; segmentation needs numpy/onnxruntime
     from ..detection.segmentation import SpeechMap
@@ -246,6 +247,7 @@ def extract_worker(
     req: CreateProjectRequest,
 ) -> TaskFn:
     def run(progress):
+        timer = StageTimer(progress)
         # Read at run time, so a cookies change in Settings applies to the next try.
         prefs = load_preferences()
         source = extract_audio(
@@ -256,11 +258,14 @@ def extract_worker(
             cache_dir=settings.cache_dir,
             ffmpeg_bin=settings.ffmpeg_bin,
             ffprobe_bin=settings.ffprobe_bin,
-            progress_callback=progress,
+            progress_callback=timer,
             cookies_from_browser=prefs.cookies_browser,
             cookies_file=prefs.cookies_file,
         )
-        return _persist_source(store, project_id, source)
+        timer.mark("persist")
+        result = _persist_source(store, project_id, source)
+        result["timings"] = timer.finish("download", source.duration_sec)
+        return result
 
     return run
 
@@ -280,6 +285,7 @@ def import_worker(
     """
 
     def run(progress):
+        timer = StageTimer(progress)
         try:
             source = import_file(
                 upload_path,
@@ -288,9 +294,12 @@ def import_worker(
                 ffmpeg_bin=settings.ffmpeg_bin,
                 ffprobe_bin=settings.ffprobe_bin,
                 cache_dir=settings.cache_dir,
-                progress_callback=progress,
+                progress_callback=timer,
             )
-            return _persist_source(store, project_id, source)
+            timer.mark("persist")
+            result = _persist_source(store, project_id, source)
+            result["timings"] = timer.finish("upload", source.duration_sec)
+            return result
         finally:
             try:
                 Path(upload_path).unlink(missing_ok=True)

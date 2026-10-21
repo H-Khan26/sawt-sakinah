@@ -81,7 +81,8 @@ _NETWORK_HINTS = (
 
 
 def _make_download_hook(callback: Callable[[dict], None]) -> Callable[[dict], None]:
-    """Adapt yt-dlp's raw progress dict to a normalized ``{stage, percent, eta}``."""
+    """Adapt yt-dlp's raw progress dict to a normalized
+    ``{stage, percent, downloaded_bytes, total_bytes, eta}``."""
 
     def hook(d: dict) -> None:
         total = d.get("total_bytes") or d.get("total_bytes_estimate")
@@ -92,6 +93,8 @@ def _make_download_hook(callback: Callable[[dict], None]) -> Callable[[dict], No
             stage="download",
             status=d.get("status"),
             percent=percent,
+            downloaded_bytes=downloaded,
+            total_bytes=total,
             eta=d.get("eta"),
         )
 
@@ -328,8 +331,10 @@ def extract_audio(
             like ``"192K"``.
         quiet: Suppress yt-dlp console output.
         progress_callback: Optional callable invoked during work with a normalized
-            payload ``{stage, ...}`` where ``stage`` is one of ``"download"``,
-            ``"probe"``, ``"normalize"``, ``"done"``. Framework-agnostic by design.
+            payload ``{stage, ...}`` where ``stage`` is one of ``"cache"``,
+            ``"metadata"``, ``"download"``, ``"transcode"``, ``"probe"``,
+            ``"normalize"``, ``"segment"``, ``"save"``, ``"done"``. Framework-agnostic
+            by design.
         create_working_copy: When true, also produce a 16 kHz mono WAV working copy
             and record it on ``AudioSource.working_copy`` for the detection layer.
         normalize_loudness: Apply EBU R128 ``loudnorm`` to the working copy (see
@@ -419,6 +424,7 @@ def extract_audio(
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            _emit(progress_callback, stage="metadata", status="start")
             info = ydl.extract_info(source_url, download=False)
             _check_limits(info, max_download_mb, max_duration_sec)
             info = ydl.process_ie_result(info, download=True)

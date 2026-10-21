@@ -69,7 +69,7 @@ def finalize_source(
         ffmpeg_bin: Name/path of the ffmpeg executable.
         ffprobe_bin: Name/path of the ffprobe executable.
         progress_callback: Normalized ``{stage, ...}`` progress sink; stages are
-            ``"probe"``, ``"normalize"``, ``"segment"``, ``"done"``.
+            ``"probe"``, ``"normalize"``, ``"segment"``, ``"save"``, ``"done"``.
 
     Raises:
         FileNotFoundError: If ``result_path`` (or ffmpeg/ffprobe) is missing.
@@ -102,6 +102,7 @@ def finalize_source(
         except ImportError as err:
             emit(progress_callback, stage="segment", status="skipped", reason=str(err))
 
+    emit(progress_callback, stage="save", status="start")
     source = AudioSource(
         local_path=result,
         title=title,
