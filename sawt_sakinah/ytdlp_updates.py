@@ -18,10 +18,16 @@ of the bundled copy on ``sys.path`` and imports it. If verification, the import 
 version check fails, it drops the set (and remembers the version as bad), logs why and
 leaves the bundled copy in place. With the preference off it removes downloaded sets, so
 turning the option off returns to the bundled copy at the next launch.
+
+curl_cffi (browser impersonation) is never downloaded; the app's own copy stays in use. yt-dlp
+drops impersonation when that copy is outside the range its ``curl-cffi`` extra declares, so
+each downloaded set's metadata is compared with it. A mismatch never blocks the update
+(YouTube fixes matter more); it is logged and reported as ``curl_cffi_conflict``.
 """
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import importlib
 import importlib.machinery
@@ -133,6 +139,48 @@ def _read_module_attr(package: str, module: str, attr: str) -> Optional[str]:
     except Exception:  # noqa: BLE001 - a version we can't read is reported as unknown
         _log.exception("could not read %s.%s", package, module)
         return None
+
+
+@functools.cache
+def curl_cffi_version() -> Optional[str]:
+    """The app's curl_cffi version, from its metadata; ``None`` when it isn't installed."""
+    try:
+        return importlib.metadata.version("curl_cffi")
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _curl_cffi_conflict(set_dir: Path, version: str) -> Optional[str]:
+    """Why yt-dlp ``version``, unpacked in ``set_dir``, can't impersonate with the app's
+    curl_cffi (the range its ``curl-cffi`` extra declares for this platform leaves that
+    copy out), else ``None``. Only the wheel's METADATA is read; nothing in the set runs."""
+    from packaging.requirements import InvalidRequirement, Requirement
+    from packaging.utils import canonicalize_name
+
+    have = curl_cffi_version()
+    if have is None:
+        return None  # nothing to impersonate with, whichever yt-dlp runs
+    try:
+        dist = importlib.metadata.PathDistribution(set_dir / f"yt_dlp-{version}.dist-info")
+        for line in dist.requires or []:
+            try:
+                req = Requirement(line)
+            except InvalidRequirement:
+                continue
+            if canonicalize_name(req.name) != "curl-cffi":
+                continue
+            if req.marker is not None and not req.marker.evaluate({"extra": "curl-cffi"}):
+                continue  # another extra (the exact pin), or another platform's range
+            if req.specifier.contains(have, prereleases=True):
+                return None
+            return (
+                f"yt-dlp {version} dropped support for this app's browser-impersonation "
+                f"library (curl_cffi {have}; it accepts {req.specifier}), so Instagram may "
+                "ask for sign-in more often until an app update."
+            )
+    except Exception:  # noqa: BLE001 - metadata we can't read means nothing to compare
+        _log.exception("could not read the curl_cffi range of yt-dlp %s", version)
+    return None
 
 
 # -- files ------------------------------------------------------------------------------
@@ -305,6 +353,7 @@ def _activate(prune: bool) -> dict:
         "bundled_version": bundled,
         "bundled_ejs_version": bundled_ejs,
         "fallback": None,
+        "curl_cffi_conflict": None,
     }
     if any(pkg in sys.modules for pkg in PACKAGES):
         info["fallback"] = "yt-dlp was imported before the update check could run"
@@ -352,8 +401,11 @@ def _activate(prune: bool) -> dict:
             version=manifest["yt_dlp"],
             ejs_version=manifest["yt_dlp_ejs"],
             path=str(set_dir),
+            curl_cffi_conflict=_curl_cffi_conflict(set_dir, manifest["yt_dlp"]),
         )
         _log.info("using the downloaded yt-dlp %s (bundled: %s)", manifest["yt_dlp"], bundled)
+        if info["curl_cffi_conflict"]:
+            _log.warning("yt-dlp update: %s", info["curl_cffi_conflict"])
     if failed:
         using = info["version"] if info["source"] == "updated" else f"the bundled {bundled}"
         info["fallback"] = f"{failed[0]}. Using {using}."
@@ -368,8 +420,9 @@ def activate(prune: bool = False) -> dict:
     ``yt_dlp`` is imported. With ``prune`` (the desktop app once it holds the single-instance
     lock) it also removes superseded, failed and switched-off downloads; other callers only
     choose. Returns the active copy: ``source`` (``bundled`` or ``updated``), ``version``,
-    ``ejs_version``, ``path``, the bundled versions, and ``fallback`` (why a downloaded
-    copy was not used, else ``None``).
+    ``ejs_version``, ``path``, the bundled versions, ``fallback`` (why a downloaded copy was
+    not used, else ``None``) and ``curl_cffi_conflict`` (why the active copy can't
+    impersonate a browser with the app's curl_cffi, else ``None``).
     """
     global _active
     with _ACTIVATE_LOCK:
@@ -643,6 +696,7 @@ def _install_latest(root: Path, progress: Optional[ProgressFn]) -> dict:
                 "files": files,
             },
         )
+        conflict = _curl_cffi_conflict(tree, version)
         target = root / version
         if target.exists():
             _remove(target)
@@ -654,11 +708,14 @@ def _install_latest(root: Path, progress: Optional[ProgressFn]) -> dict:
     _log.info(
         "downloaded yt-dlp %s with yt-dlp-ejs %s; used from the next launch", version, ejs_version
     )
+    if conflict:
+        _log.warning("yt-dlp update: %s", conflict)
     return {
         "status": "installed",
         "latest": version,
         "ejs_version": ejs_version,
         "channel": channel,
+        "curl_cffi_conflict": conflict,
     }
 
 
@@ -695,17 +752,22 @@ def status() -> dict:
     state = _state(root)
     sets = _installed_sets(root)
     active_key = version_key(active.get("version"))
-    pending = next((d.name for key, d in sets if active_key is None or key > active_key), None)
+    pending = next((d for key, d in sets if active_key is None or key > active_key), None)
+    enabled = _enabled()
+    conflict = active.get("curl_cffi_conflict")
+    # With updates off, a waiting set is removed at the next launch instead of used.
+    if conflict is None and pending is not None and enabled:
+        conflict = _curl_cffi_conflict(pending, pending.name)
     checked = state.get("checked_at")
     return {
-        "enabled": _enabled(),
+        "enabled": enabled,
         "channel": CONFIG.app.ytdlp_channel,
         "source": active.get("source"),
         "version": active.get("version"),
         "ejs_version": active.get("ejs_version"),
         "bundled_version": active.get("bundled_version"),
         "fallback": active.get("fallback"),
-        "pending_version": pending,
+        "pending_version": pending.name if pending is not None else None,
         "latest": state.get("latest") if isinstance(state.get("latest"), str) else None,
         "checked_at": (
             datetime.fromtimestamp(float(checked), timezone.utc).isoformat()
@@ -713,6 +775,8 @@ def status() -> dict:
             else None
         ),
         "error": state.get("error") if isinstance(state.get("error"), str) else None,
+        # The active copy's curl_cffi mismatch, else the one waiting for a restart.
+        "curl_cffi_conflict": conflict,
     }
 
 
@@ -722,6 +786,7 @@ __all__ = [
     "import_yt_dlp",
     "check_and_install",
     "check_due",
+    "curl_cffi_version",
     "plugins_dir",
     "status",
     "version_key",

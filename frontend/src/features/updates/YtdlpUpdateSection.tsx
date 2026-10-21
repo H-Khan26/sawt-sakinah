@@ -93,6 +93,9 @@ export function YtdlpUpdateSection({ id }: { id?: string }) {
         </p>
       )}
       {info?.fallback && <p className="text-sm text-danger">{info.fallback}</p>}
+      {info?.curl_cffi_conflict && (
+        <p className="text-sm text-warning">{info.curl_cffi_conflict}</p>
+      )}
       {enabled && (
         <div className="flex flex-wrap items-center gap-3">
           <Button

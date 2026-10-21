@@ -11,7 +11,9 @@ way the window does:
    backend pywebview uses on this OS (WebView2 through pythonnet on Windows, WKWebView
    through PyObjC on macOS) is bundled; no window is opened. The yt-dlp in use (the
    bundled copy, or an opted-in update; see ``ytdlp_updates``) is reported under
-   ``ytdlp``, and the bundle must carry the yt-dlp-ejs solver scripts;
+   ``ytdlp``, and the bundle must carry the yt-dlp-ejs solver scripts. Each import
+   platform's status is reported under ``platforms``; when frozen, yt-dlp must be able to
+   impersonate a browser (curl_cffi), YouTube must be available and Instagram not limited;
 3. ``/health`` answers with the token;
 4. a 12 s test clip (4 s tone, 4 s silence, 4 s tone) is generated with ffmpeg, uploaded
    (``POST /projects/upload``) and imported;
@@ -358,6 +360,44 @@ def _check_ytdlp(run: _Run) -> None:
             raise SelfTestError("yt-dlp-ejs (the YouTube challenge solver) is missing")
 
 
+def _check_platforms(run: _Run) -> None:
+    from . import ytdlp_updates
+    from .extraction import compat
+    from .extraction.platforms import PLATFORMS
+
+    with run.step("platforms") as detail:
+        have = compat.capabilities()
+        statuses = {p.id: compat.platform_status(p) for p in PLATFORMS}
+        active = ytdlp_updates.activate()
+        detail.update(
+            capabilities=sorted(have),
+            curl_cffi=ytdlp_updates.curl_cffi_version(),
+            curl_cffi_conflict=active.get("curl_cffi_conflict"),
+            platforms={
+                pid: {"available": s.available, "limited": s.limited, "reason": s.reason}
+                for pid, s in statuses.items()
+            },
+        )
+        run.report["platforms"] = dict(detail)
+        if not runtime.FROZEN:
+            return
+        problems = []
+        # Without impersonation under an opted-in yt-dlp update, the update's curl_cffi
+        # range is the cause, not the bundle: that is reported above, not failed.
+        updated = active.get("source") == "updated"
+        if "impersonate" not in have and not updated:
+            problems.append("browser impersonation (curl_cffi) is unavailable")
+        if not statuses["youtube"].available:
+            problems.append(f"YouTube is unavailable: {statuses['youtube'].reason}")
+        # Only a limited Instagram points at the bundle; an extractor yt-dlp marks broken
+        # is reported above and left to the import canary.
+        instagram = statuses["instagram"]
+        if instagram.limited and not updated:
+            problems.append(f"Instagram is limited: {instagram.reason}")
+        if problems:
+            raise SelfTestError("; ".join(problems))
+
+
 def _make_clip(path: Path) -> None:
     from .proc import run as run_proc
 
@@ -487,6 +527,7 @@ def run_self_test(host: str = "127.0.0.1", report_path: Optional[str] = None) ->
         _check_bundle(run)
         _check_gui(run)
         _check_ytdlp(run)
+        _check_platforms(run)
 
         with run.step("service") as detail:
             from .service.settings import ServiceSettings

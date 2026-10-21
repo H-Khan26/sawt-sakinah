@@ -18,7 +18,7 @@ from typing import Optional
 
 from .. import runtime
 from ..models.errors import Action, PlatformUnavailableError
-from ..ytdlp_updates import import_yt_dlp, version_key
+from ..ytdlp_updates import activate, curl_cffi_version, import_yt_dlp, version_key
 from .platforms import Capability, Platform
 
 _log = logging.getLogger(__name__)
@@ -134,6 +134,26 @@ def _needs(platform: Platform) -> frozenset[Capability]:
     return platform.needs - {"js_runtime"}
 
 
+def _update_dropped_curl_cffi() -> bool:
+    """Whether a downloaded yt-dlp is active while curl_cffi is installed: the bundled copy
+    impersonates with it (the bundle's self-test checks that), so a missing impersonation
+    then comes from the update's curl_cffi range."""
+    return activate().get("source") == "updated" and curl_cffi_version() is not None
+
+
+def _how_to_add(capability: Capability) -> str:
+    """How to get a missing capability back: an app release brings the bundle's helpers,
+    while a source checkout installs them itself."""
+    if runtime.FROZEN:
+        return "Reinstall or update the app"
+    if capability == "impersonate":
+        return (
+            "Run pip install -e . to get a curl_cffi version yt-dlp supports, then restart "
+            "the app"
+        )
+    return "Install Deno and restart the app"
+
+
 def _status(platform: Platform) -> PlatformStatus:
     version = ytdlp_version()
 
@@ -164,11 +184,11 @@ def _status(platform: Platform) -> PlatformStatus:
     have = capabilities()
     missing = sorted(_needs(platform) - have)
     if missing:
-        return unavailable(
+        reason = (
             f"{label} imports need {_CAPABILITY_NAMES[missing[0]]}, which this install is "
-            "missing. Reinstall or update the app.",
-            "update_app",
+            f"missing. {_how_to_add(missing[0])}."
         )
+        return unavailable(reason, "update_app")
     if "js_runtime" in platform.needs - have:
         # A source checkout without Deno on PATH: yt-dlp still gets some formats.
         return PlatformStatus(
@@ -182,16 +202,24 @@ def _status(platform: Platform) -> PlatformStatus:
         )
     missing = sorted(platform.prefers - have)
     if missing:
-        return PlatformStatus(
-            platform.id,
-            True,
-            True,
-            f"{label} often asks for sign-in without {_CAPABILITY_NAMES[missing[0]]}, "
-            "which this install is missing. Turn on sign-in cookies in Settings, or update "
-            "the app.",
-            "cookies",
-            version,
-        )
+        if missing[0] == "impersonate" and _update_dropped_curl_cffi():
+            fix = (
+                "so an app update is needed. Until then, turn on sign-in cookies in Settings."
+                if runtime.FROZEN
+                else "so install a curl_cffi version it supports, or turn on sign-in cookies "
+                "in Settings."
+            )
+            reason = (
+                f"{label} often asks for sign-in because the downloader update ({version}) "
+                f"dropped support for this install's browser-impersonation library, {fix}"
+            )
+        else:
+            reason = (
+                f"{label} often asks for sign-in without {_CAPABILITY_NAMES[missing[0]]}, "
+                f"which this install is missing. {_how_to_add(missing[0])}, or turn on "
+                "sign-in cookies in Settings."
+            )
+        return PlatformStatus(platform.id, True, True, reason, "cookies", version)
     return PlatformStatus(platform.id, True, False, None, None, version)
 
 

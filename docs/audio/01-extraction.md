@@ -19,8 +19,9 @@ It runs in stages: `links.py` parses the link, finds the platform in the registr
 (`platforms.py`), follows a share link (`instagram.com/share/…`, `fb.watch`, `t.co`) and
 matches the link to one of the platform's single-post yt-dlp extractors (their own
 `suitable()`); `compat.py` checks the platform against the active yt-dlp (extractor present
-and working, version floor, Deno for YouTube, impersonation for Instagram; a source checkout
-without Deno on `PATH` leaves YouTube available but limited); then come the
+and working, version floor, Deno for YouTube, impersonation for Instagram through the
+bundled `curl_cffi`; a source checkout without Deno on `PATH` leaves YouTube available but
+limited, and a missing or unsupported `curl_cffi` does the same to Instagram); then come the
 metadata (restricted to the platform's extractors), one media item picked from a
 multi-media post, the limits, the download, and `finalize_source`. `check_link(text)` runs
 the offline stages alone; `POST /projects` calls it, so link errors answer before a job

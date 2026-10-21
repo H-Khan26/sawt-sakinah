@@ -45,6 +45,8 @@ class YtdlpStatus(BaseModel):
     latest: Optional[str] = None
     checked_at: Optional[str] = None
     error: Optional[str] = None  # the last check's failure
+    # Why the active (or waiting) yt-dlp can't impersonate with the app's curl_cffi.
+    curl_cffi_conflict: Optional[str] = None
     check_job_id: Optional[str] = None  # the check pending or running now
     check_state: Optional[str] = None
 
