@@ -1,6 +1,6 @@
 /**
  * App settings: the appearance (theme and the dome landing), where desktop exports are saved,
- * the Quran recognition model (download or remove it, with the Quran text's credit), the YouTube
+ * the Quran recognition model (download or remove it, with the Quran text's credit), the sign-in
  * cookies source, the update checks (app and yt-dlp), a shortcut to the logs folder, and what the
  * app talks to over the network. Everything here is backend state (`/models`,
  * `/app/*`); the parent mounts this only while open. A download keeps running server-side
@@ -14,8 +14,10 @@ import {
   useOpenLogs,
   usePatchPreferences,
   usePickExportFolder,
+  usePlatforms,
   usePreferences,
   useUpdateStatus,
+  useYtdlpStatus,
 } from "@/api/hooks";
 import {
   Badge,
@@ -32,15 +34,24 @@ import { useModelDownload } from "@/features/models/useModelDownload";
 import { CheckForUpdatesLink } from "@/features/updates/UpdateBanner";
 import { YtdlpUpdateSection } from "@/features/updates/YtdlpUpdateSection";
 import { formatMegabytes } from "@/lib/format";
+import { listLabels } from "@/lib/links";
 import { useViewPrefs } from "@/stores/viewPrefs";
 import { useTheme } from "@/theme/theme";
 import type { CookieBrowser, SpeechModel, ThemePreference } from "@/types/api";
 import { FolderOpen } from "lucide-react";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** A part of Settings that other screens can open it at (see `SettingsModal`'s `section`). */
+export type SettingsSection = "cookies" | "downloader";
+
+const SECTION_IDS: Record<SettingsSection, string> = {
+  cookies: "settings-cookies",
+  downloader: "settings-downloader",
+};
+
+function Section({ title, id, children }: { title: string; id?: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3">
+    <section id={id} className="flex flex-col gap-3">
       <h3 className="text-xs font-medium uppercase tracking-[0.16em] text-text-tertiary">
         {title}
       </h3>
@@ -247,13 +258,14 @@ const SELECT_CLASS =
   "h-10 rounded border border-border bg-background px-3 text-base text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50";
 
 /**
- * Where YouTube imports read sign-in cookies from: nowhere, a browser profile, or a
+ * Where link imports read sign-in cookies from: nowhere, a browser profile, or a
  * cookies.txt file. Radio and browser choices save at once; the file choice stays local until
  * a path is saved, so the stored setting only changes to a file the backend accepted.
  */
 function CookiesSection() {
   const prefs = usePreferences();
   const info = useAppInfo();
+  const platforms = usePlatforms();
   const patch = usePatchPreferences();
   const saveFile = usePatchPreferences();
 
@@ -266,6 +278,13 @@ function CookiesSection() {
   // The typed path; until the user edits it the field shows the saved one.
   const [draftPath, setDraftPath] = useState<string | null>(null);
   const path = draftPath ?? savedFile ?? "";
+
+  const sites = platforms.data
+    ? listLabels(platforms.data.map((p) => p.label))
+    : "the supported sites";
+  const signinOften = listLabels(
+    (platforms.data ?? []).filter((p) => p.signin_often_needed).map((p) => p.label),
+  );
 
   const offered = info.data?.cookie_browsers ?? [];
   const browsers =
@@ -294,11 +313,13 @@ function CookiesSection() {
   };
 
   return (
-    <Section title="YouTube cookies">
+    <Section title="Sign-in cookies" id={SECTION_IDS.cookies}>
       <p className="text-sm text-text-secondary">
-        YouTube sometimes asks to confirm you're not a bot. Signing in through your browser's
-        cookies usually gets past that. Cookies are only used for YouTube imports and stay on this
-        computer: the app reads them on each import and never copies or uploads them anywhere else.
+        Private and age-restricted posts need you to be signed in
+        {signinOften && <>, and {signinOften} often ask for it</>}. YouTube sometimes asks to
+        confirm you're not a bot. Signing in through your browser's cookies usually gets past that.
+        Cookies are only used for imports from {sites} and stay on this computer: the app reads them
+        on each import and never copies or uploads them anywhere else.
       </p>
       <fieldset className="flex min-w-0 flex-col gap-2" disabled={!prefs.data}>
         <legend className="sr-only">Use cookies</legend>
@@ -353,8 +374,8 @@ function CookiesSection() {
             </select>
           </label>
           <p id="cookies-browser-hint" className="text-sm text-text-tertiary">
-            Sign in to YouTube in that browser first. On Windows, Chrome and Edge may need to be
-            closed while importing; Firefox works most reliably.
+            Sign in to the sites you import from in that browser first. On Windows, Chrome and Edge
+            may need to be closed while importing; Firefox works most reliably.
           </p>
         </div>
       )}
@@ -433,7 +454,7 @@ function UpdatesSection() {
           </>
         )}
       </p>
-      <YtdlpUpdateSection />
+      <YtdlpUpdateSection id={SECTION_IDS.downloader} />
     </Section>
   );
 }
@@ -462,7 +483,28 @@ function TroubleshootingSection() {
   );
 }
 
-export function SettingsModal({ onClose }: { onClose: () => void }) {
+/** `section` opens Settings scrolled to that part (from an import error's fix, say). */
+export function SettingsModal({
+  onClose,
+  section,
+}: {
+  onClose: () => void;
+  section?: SettingsSection;
+}) {
+  // Scrolls again once the sections above have loaded and taken their height. The first run
+  // comes after the modal focuses its first control, so the scroll wins.
+  const loading = [
+    usePreferences(),
+    useAppInfo(),
+    useModels(),
+    usePlatforms(),
+    useYtdlpStatus(),
+  ].some((q) => q.isPending);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loading is the re-scroll trigger
+  useEffect(() => {
+    if (section) document.getElementById(SECTION_IDS[section])?.scrollIntoView({ block: "start" });
+  }, [section, loading]);
+
   return (
     <Modal open onClose={onClose} ariaLabel="Settings" className="max-w-xl">
       <ModalTitle>Settings</ModalTitle>
@@ -475,8 +517,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         <UpdatesSection />
         <TroubleshootingSection />
         <p className="border-t border-border pt-4 text-xs text-text-tertiary">
-          Sawt Sakinah only goes online to import from YouTube, download speech models from Hugging
-          Face and check GitHub for updates (and PyPI, when it keeps the YouTube downloader up to
+          Sawt Sakinah only goes online to import the links you paste, download speech models from
+          Hugging Face and check GitHub for updates (and PyPI, when it keeps the downloader up to
           date). It sends no telemetry.
         </p>
       </div>

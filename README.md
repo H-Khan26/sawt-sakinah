@@ -7,7 +7,7 @@
 
 <p align="center">
   Save the recitations you love, and nothing else.<br>
-  Paste a YouTube link or drop in a recording, find the surahs, trim the rest, export.
+  Paste a link or drop in a recording, find the surahs, trim the rest, export.
 </p>
 
 <p align="center">
@@ -26,7 +26,8 @@ So instead, I over-engineered an audio editor for exactly this one problem.
 
 ## What it does
 
-- **Grabs the audio** from a YouTube link or a file you already have (mp3, m4a, wav, flac, opus, or an mp4/mov video).
+- **Grabs the audio** from a link to a single video or post on YouTube, Instagram, X or
+  Facebook, or from a file you already have (mp3, m4a, wav, flac, opus, or an mp4/mov video).
 - **Finds the silences**: the ruku', the sujood, the long pauses. It tells real
   recitation apart from quiet dhikr and room noise.
 - **Finds the surahs.** It transcribes the recitation, matches it against the Quran text
@@ -111,7 +112,7 @@ macOS may ask a couple more things the first time:
 
 - **"SawtSakinah would like to access files in your Downloads folder"**: click **Allow**.
   That's where exports go by default.
-- A **Keychain** prompt: this only comes up if you turn on YouTube cookies from a
+- A **Keychain** prompt: this only comes up if you turn on sign-in cookies from a
   browser in the settings, so the app can read that browser's cookies. Click
   **Allow**, or don't use the cookies option.
 
@@ -123,15 +124,15 @@ The speech model used to find surahs isn't in the zip. The app downloads it (abo
 80 MB) the first time you click **Find surahs**, then keeps it. Recognition runs on the
 CPU and takes a few minutes per hour of audio. Importing and trimming are quick.
 
-Please only download recordings you're allowed to: check
-[YouTube's Terms of Service](https://www.youtube.com/t/terms) and the wishes of whoever
-streamed it.
+Please only download recordings you're allowed to: check the terms of the site you import
+from (for example [YouTube's Terms of Service](https://www.youtube.com/t/terms)) and the
+wishes of whoever streamed or posted it.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    A[YouTube link<br>or file] -->|yt-dlp + FFmpeg| B[MP3 + 16 kHz<br>working copy]
+    A[Link or file] -->|yt-dlp + FFmpeg| B[MP3 + 16 kHz<br>working copy]
     B -->|Silero VAD| C[Speech map]
     C --> D[Silences<br>gaps of 3 s+]
     C -->|speech clips only| E[Whisper Quran model<br>words + timestamps]
@@ -141,8 +142,9 @@ flowchart LR
     G -->|FFmpeg render| H[MP3 / M4A / WAV<br>+ surah chapters]
 ```
 
-1. **Extract.** [yt-dlp](https://github.com/yt-dlp/yt-dlp) pulls the audio from YouTube
-   (with [Deno](https://deno.com/) for YouTube's JS challenges), or you import a file.
+1. **Extract.** [yt-dlp](https://github.com/yt-dlp/yt-dlp) pulls the audio from a
+   YouTube, Instagram, X or Facebook link (with [Deno](https://deno.com/) for YouTube's JS
+   challenges; share links are followed to the post first), or you import a file.
    [FFmpeg](https://ffmpeg.org/) turns it into an MP3 plus a 16 kHz mono working copy
    for analysis.
 2. **Map the speech.** [Silero VAD](https://github.com/snakers4/silero-vad) (ONNX) runs
@@ -175,8 +177,9 @@ The deep dive (architecture, thresholds, data model) is in [docs/](docs/README.m
 
 ## Run from source
 
-You need Python 3.10+, [FFmpeg](https://ffmpeg.org/) and [Deno](https://deno.com/) on
-`PATH`, [Node.js](https://nodejs.org/), and GNU make.
+You need Python 3.10+ and [FFmpeg](https://ffmpeg.org/) on `PATH`,
+[Node.js](https://nodejs.org/), and GNU make. [Deno](https://deno.com/) on `PATH` is
+recommended: without it YouTube imports may fail.
 
 ```sh
 make requirements   # install the Python package and its extras

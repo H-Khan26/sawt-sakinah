@@ -20,14 +20,15 @@ function checkMessage(result: Record<string, unknown> | null | undefined): strin
   if (result.status === "installed") {
     return `Downloaded yt-dlp ${String(result.latest)}. Restart the app to use it.`;
   }
-  if (result.status === "up_to_date") return "The YouTube downloader is up to date.";
+  if (result.status === "up_to_date") return "The downloader is up to date.";
   if (result.status === "skipped") {
     return `yt-dlp ${String(result.latest)} failed to load on this computer last time, so it is skipped.`;
   }
   return null;
 }
 
-export function YtdlpUpdateSection() {
+/** `id` marks the section, so Settings can open scrolled to it. */
+export function YtdlpUpdateSection({ id }: { id?: string }) {
   const queryClient = useQueryClient();
   const prefs = usePreferences();
   const patch = usePatchPreferences();
@@ -59,7 +60,7 @@ export function YtdlpUpdateSection() {
         : null;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div id={id} className="flex flex-col gap-2">
       <label className="flex items-center gap-2 text-sm text-text-secondary">
         <input
           type="checkbox"
@@ -73,13 +74,14 @@ export function YtdlpUpdateSection() {
             )
           }
         />
-        Keep the YouTube downloader up to date
+        Keep the downloader up to date
       </label>
       <p className="text-sm text-text-secondary">
-        YouTube changes often break the downloader (yt-dlp) before a new app release is out. With
-        this on, the app checks PyPI when it starts (at most once a day) and downloads the newest
-        yt-dlp into its data folder, verified against the SHA-256 PyPI publishes. A new version is
-        used from the next launch. Turn it off to go back to the copy that came with the app.
+        Changes on the sites you import from often break the downloader (yt-dlp) before a new app
+        release is out. With this on, the app checks PyPI when it starts (at most once a day) and
+        downloads the newest yt-dlp into its data folder, verified against the SHA-256 PyPI
+        publishes. A new version is used from the next launch. Turn it off to go back to the copy
+        that came with the app.
       </p>
       {info && (
         <p className="text-sm text-text-secondary">

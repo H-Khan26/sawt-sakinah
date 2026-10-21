@@ -42,7 +42,7 @@ const VIEW_OPTIONS = [
  * The library, set on the qibla wall (the shell draws the wall's light and lattice): a
  * heading row (title and count, search from 12 recordings, view toggle, New recording) and the
  * recordings, most recently edited first (server-sorted), as an arcade of niches closed by a New
- * recording niche, or a fihrist list. Files dropped and YouTube links pasted anywhere on the page import straight away. With
+ * recording niche, or a fihrist list. Files dropped and links pasted anywhere on the page import straight away. With
  * `newSheet` (the `/new` route) the New recording sheet is open over it and closes to `/`.
  */
 export function ProjectLibraryPage({ newSheet = false }: { newSheet?: boolean }) {
@@ -129,7 +129,7 @@ export function ProjectLibraryPage({ newSheet = false }: { newSheet?: boolean })
                 <span aria-hidden="true" className="block h-px w-4 bg-[var(--niche-inner)]" />
                 <p className="font-display text-lg leading-tight text-text">No recordings yet</p>
                 <p className="font-sans text-xs text-text-tertiary">
-                  Paste a YouTube link or drop a file anywhere
+                  Paste a link or drop a file anywhere
                 </p>
               </div>
             </div>

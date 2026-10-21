@@ -36,6 +36,7 @@ import {
   exportAudio,
   getAppInfo,
   getJob,
+  getPlatforms,
   getPreferences,
   getProject,
   getUpdateStatus,
@@ -496,6 +497,18 @@ export function useAppInfo() {
   return useQuery({
     queryKey: queryKeys.appInfo,
     queryFn: ({ signal }) => getAppInfo(signal),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/**
+ * The sites links import from and their status. The backend works it out once per launch, so
+ * it is fetched once; a failure leaves link checks to the backend.
+ */
+export function usePlatforms() {
+  return useQuery({
+    queryKey: queryKeys.platforms,
+    queryFn: ({ signal }) => getPlatforms(signal),
     staleTime: Number.POSITIVE_INFINITY,
   });
 }

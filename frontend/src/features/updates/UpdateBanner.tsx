@@ -51,7 +51,7 @@ export function UpdateBanner({ className }: { className?: string }) {
   );
 }
 
-/** "Check for updates" link for failures a newer release may fix (e.g. YouTube changes). */
+/** "Check for updates" link for failures a newer release may fix (e.g. a site changed). */
 export function CheckForUpdatesLink() {
   const { data } = useUpdateStatus();
   return (
