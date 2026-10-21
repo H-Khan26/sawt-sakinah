@@ -1,15 +1,15 @@
 """Per-user app preferences, stored as JSON in the user config directory.
 
 The desktop window's origin changes with its port, so preferences the UI used to keep in
-``localStorage`` live here instead, next to the app-level choices (update check, YouTube
+``localStorage`` live here instead, next to the app-level choices (update check, sign-in
 cookies). Reads tolerate a missing or corrupt file, and fall back to the
 default for any single value that is no longer valid, and ignore keys they don't know;
 writes are atomic.
 
-YouTube cookies are either a browser to read them from (``cookies_browser``, one of
+Sign-in cookies are either a browser to read them from (``cookies_browser``, one of
 ``schemas.COOKIE_BROWSERS``) or a cookies.txt file (``cookies_file``, an absolute path that
 must exist when it is set); at most one is set. Only the choice is stored here: the
-cookies stay where they are and are read on each YouTube import.
+cookies stay where they are and are read on each link import.
 
 ``export_dir`` is the folder desktop exports are saved to; ``None`` means the Downloads
 folder (see ``export_folder.py``). A stored folder that went missing stays set, and the

@@ -11,6 +11,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 
 from ...config import CONFIG
+from ...extraction.links import check_link
 from ..deps import get_jobs, get_settings, get_store
 from ..jobs import JobKind, JobQueueFullError
 from ..schemas import (
@@ -71,7 +72,13 @@ def create_project(
 ) -> CreateProjectResponse:
     """Create a project directory and kick off extraction; ``project.json`` is written
     by the extract job once the ``AudioSource`` exists (``GET /projects/{id}`` 404s until
-    then)."""
+    then).
+
+    The link is checked offline first, so an invalid link, an unsupported site, a link
+    that isn't a single post (400) or a site this install can't import from (409) fails
+    here, before any job starts. A share link is resolved by the job.
+    """
+    check_link(req.url)
     jobs.ensure_capacity()
     project_id = uuid4().hex
     store.prepare(project_id)

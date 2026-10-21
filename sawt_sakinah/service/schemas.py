@@ -48,7 +48,7 @@ SILENCE_DETECTORS = frozenset({"vad", "ffmpeg"})
 # ffmpeg bitrate ("192k") and VBR quality ("0".."9") forms.
 _BITRATE = re.compile(r"[0-9]{2,3}[kK]")
 _VBR_QUALITY = re.compile(r"[0-9]")
-# Browsers yt-dlp can read YouTube cookies from, in display order; Safari only on macOS.
+# Browsers yt-dlp can read sign-in cookies from, in display order; Safari only on macOS.
 _COOKIE_BROWSER_ORDER = (
     "chrome", "edge", "firefox", "brave", "chromium", "vivaldi", "opera", "safari",
 )
@@ -61,7 +61,7 @@ _MAX_SPLIT_RANGES = 500
 
 
 def cookie_browsers() -> list[str]:
-    """The browsers offered for YouTube cookies on this OS, in display order."""
+    """The browsers offered for sign-in cookies on this OS, in display order."""
     return [b for b in _COOKIE_BROWSER_ORDER if b in COOKIE_BROWSERS]
 
 
@@ -254,6 +254,8 @@ class AudioSourceView(BaseModel):
     audio_url: str
     has_speech_map: bool  # speech-aware controls (VAD silence, snapping) are available
     has_transcript: bool  # surahs can be matched again without transcribing
+    peak_dbfs: Optional[float] = None  # loudest sample of a link import; None when not measured
+    is_silent: bool = False  # the import's audio is silent (e.g. its music was removed)
 
 
 class ExportArtifactView(BaseModel):
@@ -317,6 +319,8 @@ def to_project_view(project: Project) -> ProjectView:
         audio_url=f"/projects/{project.id}/audio",
         has_speech_map=s.speech_map is not None,
         has_transcript=s.transcript is not None,
+        peak_dbfs=s.peak_dbfs,
+        is_silent=s.is_silent,
     )
     exports = [
         ExportArtifactView(

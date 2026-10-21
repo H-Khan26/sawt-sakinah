@@ -6,15 +6,17 @@ Run with::
 
 The store and job registry are created in the lifespan and attached to ``app.state``
 (read via ``deps.py``). Startup sweeps what an interrupted run left in the projects folder
-and removes downloaded speech models that are no longer in the catalog;
-shutdown closes media streams and stops running jobs within ``service.shutdown_grace_sec``.
-The extraction error hierarchy is mapped to HTTP status codes for the rare synchronous
-failure; async failures surface in ``JobRecord.error``/``error_type``.
+and removes downloaded speech models that are no longer in the catalog, then checks the
+platforms against yt-dlp in the background; shutdown closes media streams and stops running jobs within ``service.shutdown_grace_sec``.
+The extraction error hierarchy is mapped to HTTP status codes for synchronous failures (a
+link the create route refuses); async failures surface in ``JobRecord.error``/``error_type``.
+Both carry the error's ``error_action`` and ``platform``.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import Optional
@@ -31,20 +33,32 @@ from ..detection.whisper_models import (
     cancel_downloads,
     sweep_retired,
 )
+from ..extraction import compat
+from ..extraction.platforms import PLATFORMS
 from ..models import (
     AgeRestrictedError,
+    CookiesError,
+    DrmProtectedError,
     ExtractionError,
+    ExtractorOutdatedError,
     FileTooLargeError,
     InvalidInputError,
     LiveStreamError,
+    LoginRequiredError,
+    NetworkError,
     NoAudioStreamError,
+    PlatformUnavailableError,
     PrivateVideoError,
     ProjectInUseError,
     ProjectTooNewError,
     ProjectUnreadableError,
+    RateLimitedError,
     RegionLockedError,
+    UnsupportedLinkError,
     UnsupportedMediaError,
+    UnsupportedPlatformError,
     VideoUnavailableError,
+    YouTubeBotCheckError,
 )
 from .export_folder import ExportFolderError
 from .jobs import JobQueueFullError, JobRegistry
@@ -57,15 +71,25 @@ _log = logging.getLogger(__name__)
 
 # Most specific first; Starlette resolves by the closest match in the exception's MRO.
 _ERROR_STATUS: list[tuple[type[Exception], int]] = [
+    (UnsupportedPlatformError, 400),
+    (UnsupportedLinkError, 400),
     (InvalidInputError, 400),
     (PrivateVideoError, 403),
     (AgeRestrictedError, 403),
+    (LoginRequiredError, 403),
+    (YouTubeBotCheckError, 403),
+    (CookiesError, 409),  # the cookies chosen in Settings can't be read
     (RegionLockedError, 451),
     (LiveStreamError, 422),
     (VideoUnavailableError, 404),
     (UnsupportedMediaError, 415),
     (NoAudioStreamError, 422),
+    (DrmProtectedError, 422),
     (FileTooLargeError, 413),
+    (PlatformUnavailableError, 409),  # this install's yt-dlp can't import from the site
+    (RateLimitedError, 429),
+    (ExtractorOutdatedError, 502),
+    (NetworkError, 502),
     (ExtractionError, 502),
     (JobQueueFullError, 429),
     (UnknownModelError, 404),
@@ -77,6 +101,16 @@ _ERROR_STATUS: list[tuple[type[Exception], int]] = [
 ]
 
 
+def _warm_platform_status() -> None:
+    """Import yt-dlp and work out each platform's status, so the first ``/app/platforms`` or
+    create request doesn't wait for it."""
+    try:
+        for platform in PLATFORMS:
+            compat.platform_status(platform)
+    except Exception:  # noqa: BLE001 - the requests that need it retry and report it
+        _log.exception("could not check the platforms against yt-dlp")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings: ServiceSettings = app.state.settings
@@ -86,6 +120,7 @@ async def lifespan(app: FastAPI):
         _log.info("removed the retired speech model %s", path)
     app.state.store = store
     app.state.jobs = JobRegistry(settings.max_workers, settings.transcription_workers)
+    threading.Thread(target=_warm_platform_status, name="sawt-platforms", daemon=True).start()
     try:
         yield
     finally:
@@ -96,10 +131,11 @@ async def lifespan(app: FastAPI):
 
 def _make_handler(status: int):
     async def handler(request: Request, exc: Exception) -> JSONResponse:
-        return JSONResponse(
-            status_code=status,
-            content={"error": type(exc).__name__, "detail": str(exc)},
-        )
+        content = {"error": type(exc).__name__, "detail": str(exc)}
+        if isinstance(exc, ExtractionError):
+            # The same fields a failed job records next to its error_type.
+            content.update(exc.error_fields())
+        return JSONResponse(status_code=status, content=content)
 
     return handler
 

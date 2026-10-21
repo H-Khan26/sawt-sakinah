@@ -140,10 +140,12 @@ def _with_www(url: str) -> Optional[str]:
     Some extractors only accept the desktop host (Instagram's regex allows ``www.`` only).
     """
     parts = urlsplit(url)
-    host = parts.hostname or ""
+    host = parts.hostname or ""  # lowercased by urlsplit
     for prefix in ("m.", "mobile."):
-        if host.lower().startswith(prefix):
-            netloc = parts.netloc.replace(host, "www." + host[len(prefix):], 1)
+        if host.startswith(prefix):
+            netloc = "www." + host[len(prefix):]
+            if parts.port is not None:
+                netloc += f":{parts.port}"
             return urlunsplit(parts._replace(netloc=netloc))
     return None
 

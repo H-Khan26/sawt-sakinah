@@ -19,10 +19,12 @@ It runs in stages: `links.py` parses the link, finds the platform in the registr
 (`platforms.py`), follows a share link (`instagram.com/share/…`, `fb.watch`, `t.co`) and
 matches the link to one of the platform's single-post yt-dlp extractors (their own
 `suitable()`); `compat.py` checks the platform against the active yt-dlp (extractor present
-and working, version floor, Deno for YouTube, impersonation for Instagram); then come the
+and working, version floor, Deno for YouTube, impersonation for Instagram; a source checkout
+without Deno on `PATH` leaves YouTube available but limited); then come the
 metadata (restricted to the platform's extractors), one media item picked from a
 multi-media post, the limits, the download, and `finalize_source`. `check_link(text)` runs
-the offline stages alone, for a check before a job starts.
+the offline stages alone; `POST /projects` calls it, so link errors answer before a job
+starts, and `GET /app/platforms` reports each platform's status.
 `extraction/importer.py::import_file(path, ...)` is the upload counterpart: it validates
 that ffmpeg can decode the file and that it carries an audio stream, then transcodes it to
 the same MP3 artifact. Both converge on `extraction/finalize.py::finalize_source`, which

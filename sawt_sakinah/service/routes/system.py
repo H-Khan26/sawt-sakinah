@@ -1,5 +1,6 @@
-"""App-level endpoints under ``/app``: version info, preferences, the update check, the
-logs folder, the export folder, and bringing the desktop window to the front."""
+"""App-level endpoints under ``/app``: version info, the sites links import from,
+preferences, the update check, the logs folder, the export folder, and bringing the desktop
+window to the front."""
 
 from __future__ import annotations
 
@@ -12,6 +13,9 @@ from pydantic import BaseModel, ValidationError
 from ... import __version__, runtime
 from ...applog import open_folder
 from ...detection import quran
+from ...extraction import compat
+from ...extraction.platforms import PLATFORMS
+from ...models import Action
 from .. import export_folder
 from ..preferences import Preferences, PreferencesPatch, load_preferences, update_preferences
 from ..schemas import check_export_dir, cookie_browsers
@@ -24,7 +28,7 @@ router = APIRouter(prefix="/app", tags=["app"])
 class AppInfo(BaseModel):
     version: str
     frozen: bool
-    cookie_browsers: list[str]  # browsers offered for YouTube cookies on this OS
+    cookie_browsers: list[str]  # browsers offered for sign-in cookies on this OS
     export_to_folder: bool  # exports are saved to a folder (desktop) instead of downloaded
     default_export_dir: Optional[str] = None  # the Downloads folder, when saving to a folder
     quran_text_credit: str = quran.CREDIT  # attribution the Tanzil terms ask for
@@ -40,6 +44,46 @@ def app_info(request: Request) -> AppInfo:
         export_to_folder=to_folder,
         default_export_dir=str(export_folder.default_export_dir()) if to_folder else None,
     )
+
+
+class PlatformView(BaseModel):
+    """One site links can be imported from, with its status against the active yt-dlp."""
+
+    id: str  # also the source_kind of its imports
+    label: str
+    item: str  # what one link points at, for messages: "video" or "post"
+    hosts: list[str]  # registrable domains; a link's host is one of them or a subdomain
+    share_patterns: list[str]  # share links (regexes valid in JS too), resolved by the job
+    signin_often_needed: bool
+    available: bool
+    limited: bool  # available, but imports fail more often (a helper is missing)
+    reason: Optional[str] = None  # why it is unavailable or limited
+    action: Optional[Action] = None  # what fixes that
+    ytdlp_version: str
+
+
+@router.get("/platforms", response_model=list[PlatformView])
+def app_platforms() -> list[PlatformView]:
+    """The supported sites in display order, each with its live status."""
+    views = []
+    for p in PLATFORMS:
+        status = compat.platform_status(p)
+        views.append(
+            PlatformView(
+                id=p.id,
+                label=p.label,
+                item=p.item,
+                hosts=list(p.hosts),
+                share_patterns=list(p.share_patterns),
+                signin_often_needed=p.signin_often_needed,
+                available=status.available,
+                limited=status.limited,
+                reason=status.reason,
+                action=status.action,
+                ytdlp_version=status.ytdlp_version,
+            )
+        )
+    return views
 
 
 def _save(changes: dict) -> Preferences:

@@ -3,7 +3,7 @@
 A platform is available when its extractors exist in the active yt-dlp and report
 ``working()``, the yt-dlp version is at least the platform's ``min_ytdlp``, and its
 required capabilities (``needs``) are present. A missing preferred capability
-(``prefers``) leaves it available but limited. yt-dlp is chosen once per process (a
+(``prefers``) leaves it available but limited, as does a missing Deno in a source checkout. yt-dlp is chosen once per process (a
 downloaded update or the bundled copy, see :mod:`sawt_sakinah.ytdlp_updates`), so every
 result here is computed once and kept.
 """
@@ -126,6 +126,14 @@ def capabilities() -> frozenset[Capability]:
         return _capabilities
 
 
+def _needs(platform: Platform) -> frozenset[Capability]:
+    """The capabilities the platform can't do without here: Deno is bundled with the app,
+    while a source checkout takes it from PATH and treats it as a preference."""
+    if runtime.FROZEN:
+        return platform.needs
+    return platform.needs - {"js_runtime"}
+
+
 def _status(platform: Platform) -> PlatformStatus:
     version = ytdlp_version()
 
@@ -154,12 +162,23 @@ def _status(platform: Platform) -> PlatformStatus:
                 "update_downloader",
             )
     have = capabilities()
-    missing = sorted(platform.needs - have)
+    missing = sorted(_needs(platform) - have)
     if missing:
         return unavailable(
             f"{label} imports need {_CAPABILITY_NAMES[missing[0]]}, which this install is "
             "missing. Reinstall or update the app.",
             "update_app",
+        )
+    if "js_runtime" in platform.needs - have:
+        # A source checkout without Deno on PATH: yt-dlp still gets some formats.
+        return PlatformStatus(
+            platform.id,
+            True,
+            True,
+            f"Deno isn't on PATH, so {label} imports may fail or miss formats. Install "
+            "Deno and restart the app.",
+            None,
+            version,
         )
     missing = sorted(platform.prefers - have)
     if missing:

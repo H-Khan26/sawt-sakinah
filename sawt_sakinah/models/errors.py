@@ -39,6 +39,10 @@ class ExtractionError(Exception):
         if action is not _CLASS_DEFAULT:
             self.action = action  # type: ignore[assignment]
 
+    def error_fields(self) -> dict[str, Optional[str]]:
+        """The fields a failed job and an API error body carry next to the error type."""
+        return {"error_action": self.action, "platform": self.platform}
+
 
 class InvalidInputError(ExtractionError):
     """The supplied text is not a usable link (empty, no http(s) scheme, no dotted host)."""
