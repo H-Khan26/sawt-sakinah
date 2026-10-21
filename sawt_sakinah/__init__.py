@@ -8,7 +8,7 @@ Layers (see docs/audio/):
   link_to_clean_audio  -- convenience pipeline chaining the above
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .extraction import extract_audio
 from .detection import detect_silence
