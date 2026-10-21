@@ -1,0 +1,164 @@
+# Daily link canary: import each platform's public canary post (Platform.canary_url) from
+# source with packaging/link_canary.py, once with the locked yt-dlp and once with the newest
+# nightly (the channel the in-app updater offers), and report a platform x yt-dlp matrix.
+# An outdated or failed import with the locked yt-dlp fails the run and opens (or updates)
+# a tracking issue, which closes once the canary passes again. A failure with the nightly
+# only is reported: it is yt-dlp's to fix and reaches users only through the opt-in updater.
+# A blocked import (bot check, sign-in wall or rate limit, common from datacenter IPs) was
+# not exercised and fails nothing. No bundle is built: the weekly rebuild does that.
+# Windows, like the weekly rebuild, to use the Windows lock and the bundle's ffmpeg and Deno.
+name: Link canary
+
+on:
+  schedule:
+    - cron: "37 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: link-canary
+  cancel-in-progress: true
+
+jobs:
+  canary:
+    name: Import each platform's canary post
+    runs-on: windows-2025
+    # Each import may take up to 3 minutes (link_canary.py --timeout), and a failed one is
+    # tried once more.
+    timeout-minutes: 75
+    outputs:
+      blocked: ${{ steps.report.outputs.blocked }}
+    env:
+      SAWT_VENDOR_DIR: ${{ github.workspace }}/packaging/build/vendor
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: packaging/requirements-windows.txt
+
+      - name: Fetch ffmpeg, ffprobe and Deno
+        run: python packaging/fetch_binaries.py windows-x64 $env:SAWT_VENDOR_DIR
+
+      - name: Install the lock
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r packaging/requirements-build.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip install --require-hashes --no-build-isolation -r packaging/requirements-windows.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip show yt-dlp yt-dlp-ejs curl_cffi | Select-String '^(Name|Version):'
+
+      # The bundled helper programs go on PATH, which is where a source checkout looks for
+      # them. Each import gets a scratch SAWT_DATA_DIR from the script.
+      - name: Canary with the locked yt-dlp
+        timeout-minutes: 30
+        run: |
+          $env:PATH = "$env:SAWT_VENDOR_DIR\bin;$env:PATH"
+          python packaging/link_canary.py run --label locked --out (Join-Path $env:RUNNER_TEMP 'canary-locked.json')
+
+      # Into its own folder, ahead of the lock on sys.path, as the app's updater does; the
+      # lock's curl_cffi stays in use. Advisory, so a PyPI hiccup fails nothing.
+      - name: Install the newest yt-dlp nightly
+        id: nightly
+        continue-on-error: true
+        run: python packaging/link_canary.py install-nightly (Join-Path $env:RUNNER_TEMP 'ytdlp-nightly')
+
+      - name: Canary with the newest yt-dlp nightly
+        if: steps.nightly.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 30
+        run: |
+          $env:PATH = "$env:SAWT_VENDOR_DIR\bin;$env:PATH"
+          python packaging/link_canary.py run --label nightly --advisory --ytdlp-dir (Join-Path $env:RUNNER_TEMP 'ytdlp-nightly') --out (Join-Path $env:RUNNER_TEMP 'canary-nightly.json')
+
+      - name: Report
+        id: report
+        if: always()
+        run: |
+          $locked = Join-Path $env:RUNNER_TEMP 'canary-locked.json'
+          $nightly = Join-Path $env:RUNNER_TEMP 'canary-nightly.json'
+          $md = Join-Path $env:RUNNER_TEMP 'canary.md'
+          if (-not (Test-Path $locked)) {
+            Write-Host '::error::the canary with the locked yt-dlp wrote no result'
+            "**Link canary:** the run with the locked yt-dlp wrote no result; see the job log." | Out-File -FilePath $md -Encoding utf8
+            Get-Content $md -Raw >> $env:GITHUB_STEP_SUMMARY
+            exit 1
+          }
+          $results = @($locked)
+          if (Test-Path $nightly) { $results += $nightly } else { Write-Host '::warning::the nightly yt-dlp was not checked' }
+          python packaging/link_canary.py report @results --markdown $md
+          $code = $LASTEXITCODE
+          Get-Content $md -Raw >> $env:GITHUB_STEP_SUMMARY
+          exit $code
+
+      # The report job reads the Markdown for the tracking issue.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: link-canary
+          path: |
+            ${{ runner.temp }}/canary.md
+            ${{ runner.temp }}/canary-*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  report:
+    name: Open, update or close the tracking issue
+    needs: canary
+    if: always() && github.event_name == 'schedule' && (needs.canary.result == 'success' || needs.canary.result == 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write # open, edit or close the tracking issue
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RESULT: ${{ needs.canary.result }}
+      BLOCKED: ${{ needs.canary.outputs.blocked }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          name: link-canary
+
+      - name: Open, update or close the tracking issue
+        run: |
+          title="Link canary: imports fail with the locked yt-dlp"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          # A pass with blocked imports did not re-check every platform: the issue stays open
+          # with the latest matrix.
+          if [ "$RESULT" = "success" ] && [ "$BLOCKED" != "true" ]; then
+            if [ -n "$number" ]; then
+              gh issue close "$number" --comment "The canary passes again: $RUN_URL"
+            fi
+            exit 0
+          fi
+          if [ "$RESULT" = "success" ] && [ -z "$number" ]; then
+            exit 0
+          fi
+          {
+            if [ "$RESULT" = "success" ]; then
+              echo "The daily link canary passes with the yt-dlp version in the lock, but some imports were blocked, so it stays open until every platform passes or a maintainer closes it."
+            else
+              echo "The daily link canary failed with the yt-dlp version in the lock."
+            fi
+            echo
+            if [ -f canary.md ]; then cat canary.md; else echo "The run wrote no report; see the job log."; fi
+            echo
+            echo "Last run: $RUN_URL"
+          } > body.md
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file body.md
+          else
+            gh issue create --title "$title" --body-file body.md
+          fi
