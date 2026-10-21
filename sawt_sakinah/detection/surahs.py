@@ -12,24 +12,28 @@ Matching, step by step:
 1. **Normalise.** Transcript and Quran both go through ``_arabic.arabic_words`` (tashkeel
    and tatweel stripped, alef/hamza forms folded, ى -> ي, ة -> ه, marks and punctuation
    dropped). The Quran side is built once by ``quran.py``, without the basmala the text
-   puts at the head of each surah.
+   puts at the head of each surah. A word timed across ``word_gap`` or more of silence
+   (the alignment smeared it over a neighbouring clip) is first trimmed to the side of
+   that pause holding more of its speech.
 2. **Anchor.** Every three-word sequence of the transcript is looked up in the Quran's
    three-word index; each exact hit is a candidate placement (a seed). A sequence that
    occurs more than ``anchor_max_hits`` times seeds nothing (the walk from a neighbouring,
-   rarer sequence covers it).
+   rarer sequence covers it), nor does one starting on a wall (below).
 3. **Follow.** From a seed the matcher walks forward through transcript and mushaf word
    by word, and backward from the word before the seed, within the seed's surah. A word
    matches when RapidFuzz's ratio clears ``word_match``; a transcript word may also match
    two Quran words written together, or two transcript words one Quran word. At a
    mismatch the walk tries stepping over up to ``max_skip`` transcript words (extra
    speech, a misheard word) and/or Quran words (words the model missed), cheapest first,
-   and continues only where the next two words match again. Otherwise the walk ends at
-   its last match: speech stopped matching (a takbir, Amin, the adhkar) or the surah ended.
-   A walk never crosses a pause longer than ``max_pause`` between transcript words, so
-   the rak'ahs of a surah read across a prayer become separate passages.
+   and continues only where the next two words match again; only the surah's own edge is
+   taken unconfirmed. Pauses are silence measured on the speech map (the plain time
+   between words without one): a walk never crosses more than ``max_pause`` of silence,
+   whether between neighbouring words or inside a skip, so the rak'ahs of a surah read
+   across a prayer become separate passages. The takbir, tasmi' and tahmid (``_WALLS``)
+   are walls a walk never includes or crosses.
 4. **Resolve repeats.** A seed with several placements (a refrain, a phrase shared
    between surahs) walks each one. Among the walks within 80 % of the longest, one that
-   continues the last accepted passage of its surah wins, then the longest, then the
+   resumes the last accepted passage of its surah wins, then the longest, then the
    earliest in the mushaf.
 5. **Score.** A walk counts its matched transcript words and its match ratio (matched over
    all transcript words it spans). Its margin is how far it beats the best walk placed in
@@ -39,25 +43,32 @@ Matching, step by step:
    ``accept_min_margin``; ``unsure`` needs ``unsure_min_words`` and ``unsure_min_ratio``;
    anything below is rejected and left unlabelled. A short surah heard whole, from its
    first word to its last, needs only ``unsure_min_words`` to be accepted (Al-Kawthar is
-   ten words); the ratio and margin bars still apply. A walk that picks up where the
-   last accepted passage of the same surah stopped (its first ayah within one of that
-   passage's last) is promoted one level, if it has at least ``promote_min_words``
-   matched words at the unsure ratio. A walk with more than ``context_max_words`` other
-   transcript words in the ``context_window`` seconds before it (or before a basmala
-   recited right before it, which isn't counted) is Quran quoted inside
-   other speech -- a du'a such as the end of Al-Baqarah -- and is rejected unless it
-   continues an accepted passage: recitation in salah follows a takbir and a pause, not
-   a stream of words. Accepted and unsure walks become passages and the matcher
-   continues after them; after a rejected seed it moves on one word.
-7. **Emit passages.** Consecutive passages of one surah that follow on in the mushaf
-   (the next starts at most one ayah past the ayah after the last one's end) with no
-   pause longer than ``max_pause`` between them merge into one, at the higher of their
-   levels: a walk broken where the model missed a few words. A passage starts at its
-   first matched ayah word; a basmala recited before it is left outside it, like the
-   takbir and Amin. Each edge then snaps to the edge of the speech-map span it falls in
-   and pads outward by ``edge_pad`` into the pause, never past the neighbouring span, so
-   a cut never clips a word; edges are generous by design. Neighbouring passages never
-   overlap.
+   ten words); the ratio and margin bars still apply. A walk that resumes the last
+   accepted passage of the same surah (``_resumes``: its first Quran word at most
+   ``resume_max_words`` past where that passage stopped, or back to the start of the
+   ayah before) is promoted one level, if it has at least ``promote_min_words`` matched
+   words at the unsure ratio. A walk that doesn't resume one is rejected when more than
+   ``context_max_words`` other transcript words run on into it, at most ``context_gap``
+   of silence apart and within ``context_window`` seconds (a basmala right before it
+   not counted): that is Quran quoted inside other speech -- a du'a such as the end of
+   Al-Baqarah -- since recitation in salah follows a takbir and a pause, not a stream of
+   words. A walk of another surah than the last passage needs ``surah_min_pause`` of
+   silence after that passage, since a surah starts after the Amin, a takbir or a
+   basmala; words of the next surah running straight on are its alignment spilling over.
+   Accepted and unsure walks become passages and the matcher continues after them; after
+   a rejected seed it moves on one word.
+7. **Emit passages.** A first or last group of at most ``edge_trim_words`` matched words
+   standing ``edge_trim_pause`` of silence apart from the rest of its walk while its ayah
+   runs on across that pause is dropped: a takbir or Amin misheard as those words, or
+   their times smeared onto one. Consecutive passages of one surah where the next
+   resumes the last (``_resumes``) across at most ``merge_max_pause`` of silence merge
+   into one, at the higher of their levels: a walk broken where the model missed a few
+   words. A passage starts at its first matched ayah word; a basmala recited before it is
+   left outside it, like the takbir and Amin. Each edge then snaps to the edge of the
+   speech-map span it falls in (a start in a pause to the next span's start, an end in a
+   pause to the previous span's end) and pads outward by ``edge_pad`` into the pause,
+   never past the neighbouring span, so a cut lands in a pause; edges are generous by
+   design. Neighbouring passages that would overlap meet halfway between their words.
 
 Cost: about 77,800 Quran words are indexed once (a fraction of a second); a walk costs a
 few fuzzy comparisons per word, and the transcript of an hour of recitation (a few
@@ -73,11 +84,20 @@ from typing import Callable, Optional, Sequence
 from ..config import CONFIG
 from ..models import SurahPassage
 from . import quran
-from ._spans import Span
+from ._arabic import arabic_words
+from ._spans import Span, SpeechIndex
 from .transcribe import Word
 
 # Walks within this share of the longest at a seed are considered equally good placements.
 _NEAR_BEST = 0.8
+
+# Phrases of the prayer itself, as the matcher sees them: the takbir, the tasmi' and the
+# tahmid. A walk never includes or crosses them, so a takbir after a surah's last word
+# can't be taken for the next ayah's ``الله``.
+_WALLS = tuple(
+    tuple(arabic_words(text))
+    for text in ("الله اكبر", "سمع الله لمن حمده", "ربنا لك الحمد", "ربنا ولك الحمد")
+)
 
 
 @dataclass(frozen=True)
@@ -94,6 +114,13 @@ class _Params:
     anchor_max_hits: int
     context_window: float
     context_max_words: int
+    context_gap: float
+    resume_max_words: int
+    merge_max_pause: float
+    surah_min_pause: float
+    word_gap: float
+    edge_trim_pause: float
+    edge_trim_words: int
     edge_pad: float
 
 
@@ -107,7 +134,9 @@ class _Walk:
     q0: int
     q1: int
     matched: int
-    cells: frozenset[tuple[int, int]]
+    # Each match as ``(t, q, dt, dq)``: its first transcript token and Quran word, and
+    # how many of each it consumed.
+    cells: frozenset[tuple[int, int, int, int]]
 
     @property
     def ratio(self) -> float:
@@ -126,6 +155,42 @@ class _Found:
     end: float  # last word offset
 
 
+def _word_times(
+    words: Sequence[Word], speech: SpeechIndex, word_gap: float
+) -> list[tuple[float, float]]:
+    """Each word's ``(start, end)``, trimmed to the side of any pause of at least
+    ``word_gap`` seconds inside it that holds more of its speech. A word timed across a
+    long silence is the alignment smearing it over the neighbouring clip, not a long word:
+    a passage's first word then starts in the Amin or takbir before it, and its last word
+    ends in the takbir after it."""
+    out: list[tuple[float, float]] = []
+    for w in words:
+        a, b = w.start, w.end
+        for _ in range(3):
+            if not speech.spans or speech.silence(a, b) < word_gap:
+                break
+            lo = max(0, bisect_right(speech.starts, a) - 1)
+            hi = bisect_right(speech.starts, b)
+            pieces = [(max(a, s), min(b, e)) for s, e in speech.spans[lo:hi] if e > a]
+            if not pieces:
+                break
+            edges = [a] + [t for s, e in pieces for t in (s, e)] + [b]
+            pauses = [
+                (edges[i + 1] - edges[i], edges[i], edges[i + 1]) for i in range(0, len(edges), 2)
+            ]
+            length, lo, hi = max(pauses)
+            if length < word_gap:
+                break
+            left = sum(e - s for s, e in pieces if e <= lo)
+            right = sum(e - s for s, e in pieces if s >= hi)
+            if left >= right:
+                b = lo
+            else:
+                a = hi
+        out.append((a, b))
+    return out
+
+
 class _Matcher:
     def __init__(
         self,
@@ -133,27 +198,53 @@ class _Matcher:
         times: list[tuple[float, float]],
         q: quran.QuranIndex,
         p: _Params,
+        speech: SpeechIndex,
     ) -> None:
         from rapidfuzz import fuzz
 
         self.T = tokens
-        # Index one past the last token of each token's pause-free run: walks stay inside.
-        self.run_end = [len(tokens)] * len(tokens)
-        for k in range(len(tokens) - 2, -1, -1):
-            gap = times[k + 1][0] - times[k][1]
-            self.run_end[k] = k + 1 if gap > p.max_pause else self.run_end[k + 1]
-        self.run_start = [0] * len(tokens)
-        for k in range(1, len(tokens)):
-            gap = times[k][0] - times[k - 1][1]
-            self.run_start[k] = k if gap > p.max_pause else self.run_start[k - 1]
+        self.times = times
+        self.speech = speech
         self.q = q
         self.Q = q.words
         self.p = p
         self._ratio = fuzz.ratio
+        self.wall = self._walls()
+        # Index one past the last token of each token's run, and the run's first token:
+        # walks stay inside. A run ends at a pause longer than ``max_pause`` or at a wall.
+        n = len(tokens)
+        cut = [
+            self.pause(k, k + 1) > p.max_pause or self.wall[k] or self.wall[k + 1]
+            for k in range(n - 1)
+        ]
+        self.run_end = [n] * n
+        for k in range(n - 2, -1, -1):
+            self.run_end[k] = k + 1 if cut[k] else self.run_end[k + 1]
+        self.run_start = [0] * n
+        for k in range(1, n):
+            self.run_start[k] = k if cut[k - 1] else self.run_start[k - 1]
         self._jumps = sorted(
             ((dt, dq) for dt in range(p.max_skip + 1) for dq in range(p.max_skip + 1) if dt or dq),
             key=lambda j: (j[0] + j[1], abs(j[0] - j[1]), j),
         )
+
+    def _walls(self) -> list[bool]:
+        """Whether each token is part of a ``_WALLS`` phrase, each word matched fuzzily."""
+        wall = [False] * len(self.T)
+        for k in range(len(self.T)):
+            for phrase in _WALLS:
+                if k + len(phrase) <= len(self.T) and all(
+                    self.similar(self.T[k + i], w) for i, w in enumerate(phrase)
+                ):
+                    wall[k : k + len(phrase)] = [True] * len(phrase)
+        return wall
+
+    def pause(self, i: int, j: int) -> float:
+        """Silence between tokens ``i`` and ``j`` (either order): the non-speech seconds
+        from the earlier one's end to the later one's start."""
+        if i > j:
+            i, j = j, i
+        return self.speech.silence(self.times[i][1], self.times[j][0])
 
     # -- word comparison -------------------------------------------------------------
 
@@ -186,39 +277,45 @@ class _Matcher:
 
     def _walk_dir(
         self, ti: int, qi: int, d: int, t_lo: int, t_hi: int, q_lo: int, q_hi: int
-    ) -> tuple[int, Optional[int], Optional[int], list[tuple[int, int]]]:
+    ) -> tuple[int, Optional[int], Optional[int], list[tuple[int, int, int, int]]]:
         """Follow the mushaf from ``(ti, qi)`` in direction ``d``.
 
         Returns ``(matched, last_t, last_q, cells)``: matched transcript words, the
         outermost matched transcript and Quran indexes (``None`` when nothing matched),
-        and the cells where each match began.
+        and the matches as ``_Walk.cells`` entries.
         """
         matched = 0
         last_t = last_q = None
-        cells: list[tuple[int, int]] = []
+        cells: list[tuple[int, int, int, int]] = []
         while True:
             m = self._match(ti, qi, d, t_lo, t_hi, q_lo, q_hi)
             if m is not None:
                 dt, dq = m
                 matched += dt
-                cells.append((ti, qi))
                 last_t, last_q = ti + d * (dt - 1), qi + d * (dq - 1)
+                cells.append((min(ti, last_t), min(qi, last_q), dt, dq))
                 ti, qi = ti + d * dt, qi + d * dq
                 continue
+            prev = ti - d
             for jt, jq in self._jumps:
                 nt, nq = ti + d * jt, qi + d * jq
+                # Skipped transcript words hold misheard speech, not a long pause.
+                if (
+                    jt
+                    and 0 <= prev < len(self.T)
+                    and 0 <= nt < len(self.T)
+                    and self.pause(prev, nt) > self.p.max_pause
+                ):
+                    continue
                 m1 = self._match(nt, nq, d, t_lo, t_hi, q_lo, q_hi)
                 if m1 is None:
                     continue
                 at, aq = nt + d * m1[0], nq + d * m1[1]
-                # Continue only where the following words agree too, unless the landing
-                # word is the last of the surah or of the transcript run (nothing after it
-                # to confirm with).
-                if (
-                    not (q_lo <= aq < q_hi)
-                    or not (t_lo <= at < t_hi)
-                    or self._match(at, aq, d, t_lo, t_hi, q_lo, q_hi)
-                ):
+                # Continue only where the following words agree too; only the surah's
+                # last word is taken unconfirmed (nothing after it to confirm with). A
+                # stray word at the run's edge, a takbir or a scrap of one, would
+                # otherwise pull the walk out to it.
+                if not (q_lo <= aq < q_hi) or self._match(at, aq, d, t_lo, t_hi, q_lo, q_hi):
                     ti, qi = nt, nq
                     break
             else:
@@ -247,7 +344,7 @@ class _Matcher:
         )
 
     def seeds(self, ti: int) -> list[int]:
-        if ti + 2 >= len(self.T):
+        if ti + 2 >= len(self.T) or self.wall[ti]:
             return []
         hits = self.q.positions((self.T[ti], self.T[ti + 1], self.T[ti + 2]))
         return hits if len(hits) <= self.p.anchor_max_hits else []
@@ -264,7 +361,7 @@ class _Matcher:
                 alt = self.walk(tj, qj, best.t0, best.t1 + 1)
                 if alt is None:
                     continue
-                seen.update(alt.cells)
+                seen.update((t, q) for t, q, _, _ in alt.cells)
                 other = max(other, alt.matched)
         return max(0.0, 1.0 - other / best.matched)
 
@@ -304,18 +401,82 @@ def _basmala_before(m: _Matcher, t0: int, t_lo: int) -> Optional[int]:
     return None
 
 
-def _merge_runs(found: list[_Found], q: quran.QuranIndex, max_pause: float) -> list[_Found]:
-    """Merge consecutive passages of one surah that follow on in the mushaf (the next
-    starts between the last one's final ayah, less one, and the ayah after next) with at
-    most ``max_pause`` seconds between them. The merged passage takes the higher level."""
+def _resumes(q: quran.QuranIndex, prev: _Walk, w: _Walk, max_words: int) -> bool:
+    """Whether walk ``w`` picks up where ``prev`` (same surah, earlier) stopped: its first
+    Quran word at most ``max_words`` past the word after ``prev``'s last (the model missed
+    or garbled a stretch), or anywhere back to the start of the ayah before ``prev``'s
+    last (the reciter went back an ayah to resume)."""
+    back = prev.q1
+    while back > 0 and q.surah[back - 1] == q.surah[back] and q.ayah[back - 1] >= q.ayah[prev.q1] - 1:
+        back -= 1
+    return back <= w.q0 <= prev.q1 + 1 + max_words
+
+
+def _trim_edges(m: _Matcher, w: _Walk, q: quran.QuranIndex, p: _Params) -> _Walk:
+    """``w`` without a first or last group of at most ``edge_trim_words`` matched tokens
+    that stands apart from the rest of the walk by ``edge_trim_pause`` seconds of silence
+    while its ayah runs on across that pause. Nobody pauses that long inside an ayah's
+    opening or closing words: the group is a takbir or Amin misheard as those words, or
+    their times smeared onto it. A group that ends its ayah (a lone ``الم``) stays."""
+    if p.edge_trim_words <= 0 or not w.cells:
+        return w
+    cells = sorted(w.cells)
+    t0, t1, q0, q1, matched = w.t0, w.t1, w.q0, w.q1, w.matched
+
+    def same_ayah(i: int, j: int) -> bool:
+        return 0 <= i < len(q.ayah) and 0 <= j < len(q.ayah) and (q.ayah[i], q.surah[i]) == (q.ayah[j], q.surah[j])
+
+    k = t0
+    while k < t1 and m.pause(k, k + 1) < p.edge_trim_pause:
+        k += 1
+    if k < t1 and k - t0 + 1 <= p.edge_trim_words:
+        # The group's last Quran word, and the first match after the pause.
+        before = [c for c in cells if c[0] <= k]
+        rest = [c for c in cells if c[0] > k]
+        last_q = before[-1][1] + before[-1][3] - 1
+        if rest and same_ayah(last_q, last_q + 1):
+            matched -= sum(c[2] for c in before)
+            cells = rest
+            t0, q0 = rest[0][0], rest[0][1]
+    k = t1
+    while k > t0 and m.pause(k - 1, k) < p.edge_trim_pause:
+        k -= 1
+    if k > t0 and t1 - k + 1 <= p.edge_trim_words:
+        # The group's first Quran word, and the last match before the pause.
+        after = [c for c in cells if c[0] + c[2] - 1 >= k]
+        rest = [c for c in cells if c[0] + c[2] - 1 < k]
+        first_q = after[0][1]
+        if rest and same_ayah(first_q - 1, first_q):
+            matched -= sum(c[2] for c in after)
+            cells = rest
+            t1, q1 = rest[-1][0] + rest[-1][2] - 1, rest[-1][1] + rest[-1][3] - 1
+    if (t0, t1) == (w.t0, w.t1):
+        return w
+    return _Walk(
+        surah=w.surah,
+        t0=t0,
+        t1=t1,
+        q0=q0,
+        q1=q1,
+        matched=max(1, matched),
+        cells=frozenset(cells),
+    )
+
+
+def _merge_runs(
+    found: list[_Found], q: quran.QuranIndex, max_words: int, max_pause: float, speech: SpeechIndex
+) -> list[_Found]:
+    """Merge consecutive passages of one surah where the next resumes the last
+    (``_resumes``) with at most ``max_pause`` seconds of silence between them. The merged
+    passage takes the higher level."""
     out: list[_Found] = []
     for f in found:
         prev = out[-1] if out else None
         if (
             prev is not None
             and prev.walk.surah == f.walk.surah
-            and prev.ayah_to - 1 <= f.ayah_from <= prev.ayah_to + 2
-            and f.start - prev.end <= max_pause
+            and _resumes(q, prev.walk, f.walk, max_words)
+            and speech.silence(prev.end, f.start) <= max_pause
         ):
             a, b = prev.walk, f.walk
             walk = _Walk(
@@ -346,10 +507,12 @@ def _snap_edges(
 ) -> list[tuple[float, float]]:
     """Passage edges snapped to speech-span edges and padded into the pauses.
 
-    Each start moves to the start of the speech span it falls in, then ``pad`` earlier,
-    but never before the end of the span before it; ends mirror this. Without spans the
-    word times are only padded. Edges are clamped to the file, and neighbouring passages
-    that would overlap meet halfway between their words.
+    Each start moves to the start of the speech span it falls in, or of the next span when
+    it falls in a pause (speech doesn't start in silence), then ``pad`` earlier, but never
+    before the end of the span before it; ends mirror this. Without spans the word times
+    are only padded. Edges are clamped to the file, and neighbouring passages that would
+    overlap meet halfway between their words. Edges that would cross (every word of the
+    passage timed into one pause) fall back to the padded word times.
     """
     hi = total if total is not None and total > 0 else float("inf")
     starts = [s for s, _ in spans] if spans else []
@@ -359,20 +522,19 @@ def _snap_edges(
         if spans:
             k = bisect_right(starts, a) - 1
             if k >= 0 and spans[k][1] >= a:
-                floor = spans[k - 1][1] if k >= 1 else 0.0
-                a = max(spans[k][0] - pad, floor)
+                edge, floor = spans[k][0], (spans[k - 1][1] if k >= 1 else 0.0)
             else:
+                edge = spans[k + 1][0] if k + 1 < len(spans) else a
                 floor = spans[k][1] if k >= 0 else 0.0
-                a = max(a - pad, floor)
+            a = max(edge - pad, floor)
             k = bisect_right(starts, b) - 1
             ceil = spans[k + 1][0] if k + 1 < len(spans) else hi
-            if k >= 0 and spans[k][1] >= b:
-                b = min(spans[k][1] + pad, ceil)
-            else:
-                b = min(b + pad, ceil)
+            b = min((spans[k][1] if k >= 0 else b) + pad, ceil)
         else:
             a, b = a - pad, b + pad
-        out.append((max(0.0, min(a, f.start)), min(hi, max(b, f.end))))
+        if a > b:
+            a, b = f.start - pad, f.end + pad
+        out.append((max(0.0, a), min(hi, b)))
     for i in range(len(out) - 1):
         (a, b), (c, d) = out[i], out[i + 1]
         if b > c:
@@ -399,6 +561,13 @@ def match_surahs(
     anchor_max_hits: int = CONFIG.surahs.anchor_max_hits,
     context_window: float = CONFIG.surahs.context_window,
     context_max_words: int = CONFIG.surahs.context_max_words,
+    context_gap: float = CONFIG.surahs.context_gap,
+    resume_max_words: int = CONFIG.surahs.resume_max_words,
+    merge_max_pause: float = CONFIG.surahs.merge_max_pause,
+    surah_min_pause: float = CONFIG.surahs.surah_min_pause,
+    word_gap: float = CONFIG.surahs.word_gap,
+    edge_trim_pause: float = CONFIG.surahs.edge_trim_pause,
+    edge_trim_words: int = CONFIG.surahs.edge_trim_words,
     edge_pad: float = CONFIG.surahs.edge_pad,
 ) -> list[SurahPassage]:
     """Find the surah passages recited in a transcript.
@@ -440,19 +609,27 @@ def match_surahs(
         anchor_max_hits=anchor_max_hits,
         context_window=context_window,
         context_max_words=context_max_words,
+        context_gap=context_gap,
+        resume_max_words=resume_max_words,
+        merge_max_pause=merge_max_pause,
+        surah_min_pause=surah_min_pause,
+        word_gap=word_gap,
+        edge_trim_pause=edge_trim_pause,
+        edge_trim_words=edge_trim_words,
         edge_pad=edge_pad,
     )
+    speech = SpeechIndex(speech_spans)
     tokens: list[str] = []
     times: list[tuple[float, float]] = []
-    for w in words:
+    for w, span in zip(words, _word_times(words, speech, word_gap)):
         for text in w.text.split():
             tokens.append(text)
-            times.append((w.start, w.end))
+            times.append(span)
     if not tokens:
         return []
 
     q = quran.load()
-    m = _Matcher(tokens, times, q, p)
+    m = _Matcher(tokens, times, q, p, speech)
     found: list[_Found] = []
     last_accepted: dict[int, _Found] = {}  # by surah
     t_lo = 0  # transcript tokens before this belong to an earlier passage
@@ -466,7 +643,7 @@ def match_surahs(
 
         def continues(w: _Walk) -> bool:
             prev = last_accepted.get(w.surah)
-            return prev is not None and prev.ayah_to - 1 <= q.ayah[w.q0] <= prev.ayah_to + 1
+            return prev is not None and _resumes(q, prev.walk, w, p.resume_max_words)
 
         longest = max(w.matched for w in walks)
         best = max(
@@ -478,17 +655,29 @@ def match_surahs(
             first = q.surah_end[best.surah - 1] if best.surah > 1 else 0
             whole = best.q0 == first and best.q1 == q.surah_end[best.surah] - 1
             level = _classify(p, best, whole, lambda: m.margin(best), continues(best))
+        if level:
+            best = _trim_edges(m, best, q, p)
         if level and not continues(best):
             basmala = _basmala_before(m, best.t0, t_lo)
             lead = basmala if basmala is not None else best.t0
             since = times[lead][0] - p.context_window
             other = 0
             for k in range(lead - 1, -1, -1):
-                if times[k][0] < since:
+                if times[k][0] < since or m.pause(k, k + 1) > p.context_gap:
                     break
                 other += not used[k]
             if other > p.context_max_words:
                 level = 0
+        # A surah starts after a pause (the Amin, a takbir, a basmala): words of another
+        # surah running straight on from the last passage are its alignment spilling
+        # over the end of that passage.
+        if (
+            level
+            and found
+            and found[-1].walk.surah != best.surah
+            and speech.silence(found[-1].end, times[best.t0][0]) < p.surah_min_pause
+        ):
+            level = 0
         if level == 0:
             i += 1
             continue
@@ -507,7 +696,7 @@ def match_surahs(
             last_accepted[best.surah] = f
         t_lo = i = best.t1 + 1
 
-    found = _merge_runs(found, q, p.max_pause)
+    found = _merge_runs(found, q, p.resume_max_words, p.merge_max_pause, speech)
     edges = _snap_edges(found, speech_spans, total_duration, p.edge_pad)
     return [
         SurahPassage(

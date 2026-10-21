@@ -109,10 +109,23 @@ def evict_model(model_path: str | os.PathLike) -> None:
 _ClipOffset = tuple[float, float, float]
 
 
-def _pack_clips(
-    input_path: Path, clips: list[Span], ffmpeg_bin: str
-) -> tuple[object, list[_ClipOffset]]:
-    """Decode ``input_path`` and concatenate the ``clips`` into one 16 kHz float32 stream.
+def _clip_groups(clips: list[Span], window_reset: float) -> list[list[Span]]:
+    """Split ``clips`` into the groups Whisper decodes as separate streams: a clip at
+    least ``window_reset`` seconds long (a recitation, not a takbir) opens a new group, so
+    it begins at the start of a window instead of partway through one that opened on
+    earlier clips. ``window_reset`` 0 keeps every clip in one group."""
+    groups: list[list[Span]] = []
+    for clip in clips:
+        if not groups or (window_reset and clip[1] - clip[0] >= window_reset):
+            groups.append([clip])
+        else:
+            groups[-1].append(clip)
+    return groups
+
+
+def _pack_clips(audio, clips: list[Span], gap: float = 0.0) -> tuple[object, list[_ClipOffset]]:
+    """Concatenate the ``clips`` of the decoded 16 kHz ``audio`` into one float32 stream,
+    with ``gap`` seconds of silence between them.
 
     Returns the packed audio plus the offset table needed to map packed-stream times
     back to source time. Clips are ordered and non-overlapping (see ``_clips_from_spans``)
@@ -120,15 +133,18 @@ def _pack_clips(
     """
     import numpy as np
 
-    audio = decode_pcm(input_path, ffmpeg_bin)
     pieces = []
     offsets: list[_ClipOffset] = []
     packed_start = 0.0
+    silence = np.zeros(int(round(gap * SAMPLE_RATE)), dtype=np.float32)
     for start, end in clips:
         a = min(len(audio), max(0, int(round(start * SAMPLE_RATE))))
         b = min(len(audio), max(a, int(round(end * SAMPLE_RATE))))
         if b <= a:
             continue
+        if pieces and len(silence):
+            pieces.append(silence)
+            packed_start += len(silence) / SAMPLE_RATE
         pieces.append(audio[a:b])
         offsets.append((packed_start, a / SAMPLE_RATE, b / SAMPLE_RATE))
         packed_start += (b - a) / SAMPLE_RATE
@@ -162,35 +178,24 @@ def _transcribe_words(
     vad_filter: bool,
     clips: list[Span] | None,
     ffmpeg_bin: str,
+    clip_gap: float = 0.0,
+    condition_on_previous_text: bool = True,
+    window_reset: float = 0.0,
     progress: Optional[ProgressFn] = None,
 ) -> list[Word]:
     """Return a flat word stream in source time.
 
-    With ``clips`` the clip audio is packed into one stream and Whisper's built-in VAD is
-    bypassed (the clips already are the speech); without them the whole file is handed
-    to Whisper with ``vad_filter`` as configured. ``progress`` receives
-    ``{"stage": "transcribing", "done_sec", "total_sec"}`` as each segment is decoded,
-    both in seconds of the audio handed to Whisper (the packed clips, or the file). A
-    Whisper word holding several normalized words is split into words sharing its times;
-    one with no Arabic letters left is dropped.
+    With ``clips`` the clip audio is packed into one stream per clip group (see
+    ``_clip_groups``) and Whisper's built-in VAD is bypassed (the clips already are the
+    speech); without them the whole file is handed to Whisper with ``vad_filter`` as
+    configured. ``progress`` receives ``{"stage": "transcribing", "done_sec",
+    "total_sec"}`` as each segment is decoded, both in seconds of the audio handed to
+    Whisper (the packed clips, or the file). A Whisper word holding several normalized
+    words is split into words sharing its times; one with no Arabic letters left is
+    dropped.
     """
-    offsets: list[_ClipOffset] | None = None
-    if clips is None:
-        audio = str(input_path)
-        run_vad = vad_filter
-    else:
-        audio, offsets = _pack_clips(input_path, clips, ffmpeg_bin)
-        run_vad = False
-        if not offsets:
-            return []
-    segments, info = model.transcribe(
-        audio,
-        language=language,
-        beam_size=beam_size,
-        word_timestamps=True,
-        vad_filter=run_vad,
-    )
-    total = float(len(audio) / SAMPLE_RATE if offsets is not None else info.duration)
+    words: list[Word] = []
+    total = 0.0
 
     def report(done: float) -> None:
         if progress is not None:
@@ -202,19 +207,44 @@ def _transcribe_words(
                 }
             )
 
-    report(0.0)
-    words: list[Word] = []
-    # The segment generator is lazy: each segment is decoded as it is consumed.
-    for seg in segments:
-        for w in seg.words or []:
-            raw = w.word.strip()
-            prob = float(getattr(w, "probability", None) or 0.0)
-            start, end = float(w.start), float(w.end)
-            if offsets is not None:
-                start, end = _to_source_time(offsets, start, end)
-            for text in arabic_words(raw):
-                words.append(Word(text, start, end, prob, raw))
-        report(float(seg.end))
+    def consume(segments, offsets: list[_ClipOffset] | None, base: float) -> None:
+        # The segment generator is lazy: each segment is decoded as it is consumed.
+        for seg in segments:
+            for w in seg.words or []:
+                raw = w.word.strip()
+                prob = float(getattr(w, "probability", None) or 0.0)
+                start, end = float(w.start), float(w.end)
+                if offsets is not None:
+                    start, end = _to_source_time(offsets, start, end)
+                for text in arabic_words(raw):
+                    words.append(Word(text, start, end, prob, raw))
+            report(base + float(seg.end))
+
+    options = dict(
+        language=language,
+        beam_size=beam_size,
+        word_timestamps=True,
+        condition_on_previous_text=condition_on_previous_text,
+    )
+    if clips is None:
+        segments, info = model.transcribe(str(input_path), vad_filter=vad_filter, **options)
+        total = float(info.duration)
+        report(0.0)
+        consume(segments, None, 0.0)
+    else:
+        audio = decode_pcm(input_path, ffmpeg_bin)
+        packed = [_pack_clips(audio, group, clip_gap) for group in _clip_groups(clips, window_reset)]
+        del audio
+        packed = [(stream, offsets) for stream, offsets in packed if offsets]
+        if not packed:
+            return []
+        total = sum(len(stream) for stream, _ in packed) / SAMPLE_RATE
+        report(0.0)
+        done = 0.0
+        for stream, offsets in packed:
+            segments, _ = model.transcribe(stream, vad_filter=False, **options)
+            consume(segments, offsets, done)
+            done += len(stream) / SAMPLE_RATE
     report(total)
     return words
 
@@ -246,6 +276,9 @@ def transcribe(
     speech_spans: list[Span] | None = None,
     clip_merge_gap: float = CONFIG.transcription.clip_merge_gap,
     clip_pad: float = CONFIG.transcription.clip_pad,
+    clip_gap: float = CONFIG.transcription.clip_gap,
+    condition_on_previous_text: bool = CONFIG.transcription.condition_on_previous_text,
+    window_reset: float = CONFIG.transcription.window_reset,
     total_duration: float | None = None,
     ffmpeg_bin: str = CONFIG.ffmpeg.bin,
     models_dir: str | os.PathLike | None = None,
@@ -271,6 +304,11 @@ def transcribe(
             transcribes the whole file.
         clip_merge_gap: Speech spans closer than this are merged into one clip.
         clip_pad: Seconds of context added around each clip.
+        clip_gap: Seconds of silence placed between the packed clips.
+        condition_on_previous_text: Whether Whisper sees the previous window's text while
+            decoding the next.
+        window_reset: A clip at least this long is decoded from the start of a fresh
+            window (``_clip_groups``); 0 packs every clip into one stream.
         total_duration: File duration used to clamp padded clips; when unknown only
             the lower bound is clamped.
         ffmpeg_bin: ffmpeg executable used to decode the clip audio.
@@ -313,6 +351,9 @@ def transcribe(
             vad_filter=vad_filter,
             clips=clips,
             ffmpeg_bin=ffmpeg_bin,
+            clip_gap=clip_gap,
+            condition_on_previous_text=condition_on_previous_text,
+            window_reset=window_reset,
             progress=progress,
         )
 

@@ -9,7 +9,37 @@ from importing each other.
 
 from __future__ import annotations
 
+from bisect import bisect_right
+from typing import Optional, Sequence
+
 Span = tuple[float, float]
+
+
+class SpeechIndex:
+    """Speech and silence seconds in any interval, from sorted non-overlapping speech
+    spans. Without spans every interval counts as silence."""
+
+    def __init__(self, spans: Optional[Sequence[Span]]) -> None:
+        self.spans: list[Span] = list(spans) if spans else []
+        self.starts = [a for a, _ in self.spans]
+        self.ends = [b for _, b in self.spans]
+        self.cum = [0.0]
+        for a, b in self.spans:
+            self.cum.append(self.cum[-1] + (b - a))
+
+    def _upto(self, t: float) -> float:
+        k = bisect_right(self.starts, t)
+        if k == 0:
+            return 0.0
+        return self.cum[k - 1] + min(t, self.ends[k - 1]) - self.starts[k - 1]
+
+    def speech(self, a: float, b: float) -> float:
+        """Speech seconds in ``[a, b]``."""
+        return self._upto(b) - self._upto(a) if b > a else 0.0
+
+    def silence(self, a: float, b: float) -> float:
+        """Non-speech seconds in ``[a, b]``."""
+        return (b - a) - self.speech(a, b) if b > a else 0.0
 
 
 def merge_within_gap(spans: list[Span], merge_gap: float) -> list[Span]:

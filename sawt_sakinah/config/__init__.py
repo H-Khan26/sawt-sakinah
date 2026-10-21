@@ -102,10 +102,14 @@ class TranscriptionConfig(_Section):
     vad_filter: bool
     clip_merge_gap: float
     clip_pad: float
+    clip_gap: float = Field(ge=0)
+    condition_on_previous_text: bool
+    window_reset: float = Field(ge=0)
 
 
 class SurahsConfig(_Section):
     model: str
+    bridge_gap: float = Field(ge=0)
     word_match: float = Field(ge=0, le=100)
     accept_min_words: int = Field(ge=1)
     accept_min_ratio: float = Field(ge=0, le=1)
@@ -118,6 +122,13 @@ class SurahsConfig(_Section):
     anchor_max_hits: int = Field(ge=1)
     context_window: float = Field(ge=0)
     context_max_words: int = Field(ge=0)
+    context_gap: float = Field(ge=0)
+    resume_max_words: int = Field(ge=0)
+    merge_max_pause: float = Field(ge=0)
+    surah_min_pause: float = Field(ge=0)
+    word_gap: float = Field(gt=0)
+    edge_trim_pause: float = Field(ge=0)
+    edge_trim_words: int = Field(ge=0)
     edge_pad: float = Field(ge=0)
     # Retired; a basmala before a passage stays outside it. Accepted and ignored.
     basmala_max_gap: Optional[float] = None

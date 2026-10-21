@@ -81,12 +81,17 @@ transcription:
   vad_filter: true             # apply Whisper's built-in VAD filter; only used when no speech map/spans are available
   clip_merge_gap: 1.0          # speech spans closer than this are merged into one Whisper clip (seconds)
   clip_pad: 0.3                # seconds of context added around each clip
+  clip_gap: 0.0                # seconds of silence placed between the packed clips
+  condition_on_previous_text: true  # Whisper sees the previous window's text while decoding the next
+  window_reset: 0.0            # a clip at least this long (seconds) is decoded from the start of a fresh window; 0 packs everything into one stream
 
 # Surah recognition: matching the transcript against the Quran text (detection/surahs.py).
 # A walk is a run of transcript words followed through the mushaf; it is labelled
 # "accept", "unsure" or left unlabelled by these thresholds.
 surahs:
   model: quran-base            # id under whisper_models
+  bridge_gap: 0.5              # speech runs closer than this (seconds) are one span for passage edges: wider than
+                               # segmentation.bridge_gap, so a held last word that dips mid-way stays one span
   word_match: 80               # per-word fuzzy ratio (0..100)
   accept_min_words: 12         # matched words a walk needs to be accepted
   accept_min_ratio: 0.70       # matched words / transcript words the walk spans
@@ -94,11 +99,18 @@ surahs:
   unsure_min_words: 8          # below the accept bar, still shown flagged as unsure
   unsure_min_ratio: 0.55
   promote_min_words: 4         # a walk continuing an accepted passage of its surah is promoted one level from this many matched words
-  max_skip: 3                  # transcript or Quran words a walk may step over at a mismatch
-  max_pause: 20.0              # a walk never spans a longer pause between words (seconds), e.g. ruku and sujud between rak'ahs
+  max_skip: 8                  # transcript or Quran words a walk may step over at a mismatch
+  max_pause: 5.0               # a walk never spans more silence than this between words (seconds), e.g. ruku and sujud between rak'ahs
   anchor_max_hits: 64          # three-word sequences found more often than this in the Quran don't seed walks
   context_window: 15.0         # seconds before a walk checked for other speech ...
   context_max_words: 10        # ... a walk with more other words there is Quran quoted in speech (a du'a) and is left unlabelled
+  context_gap: 2.0             # only words running on into the walk count, with no more silence than this between them (seconds)
+  resume_max_words: 25         # a walk resuming its surah this many Quran words past where the last passage stopped continues it
+  merge_max_pause: 20.0        # consecutive passages of one surah merge across at most this much silence (seconds)
+  surah_min_pause: 1.0         # a passage of another surah needs this much silence after the last passage (seconds)
+  word_gap: 1.0                # a word timed across this much silence is trimmed to the side holding its speech (seconds)
+  edge_trim_pause: 1.5         # a passage's first or last words standing this far (seconds of silence) from the rest ...
+  edge_trim_words: 1           # ... while their ayah runs on, up to this many words, are a misheard takbir or Amin and are dropped
   edge_pad: 1.0                # seconds kept past each edge, inside the pause
 
 # Whisper models the app can download and run (CTranslate2 conversions, CPU). Only these

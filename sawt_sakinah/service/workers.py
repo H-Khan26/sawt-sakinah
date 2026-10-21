@@ -404,7 +404,11 @@ def surahs_worker(
         # With a speech map only the speech clips are transcribed and passage edges snap
         # to span edges; without one the full file is transcribed with Whisper's own VAD.
         speech_map = _ensure_speech_map(store, project, settings.ffmpeg_bin)
-        spans = speech_map.spans() if speech_map is not None else None
+        spans = (
+            speech_map.spans(bridge_gap=CONFIG.surahs.bridge_gap)
+            if speech_map is not None
+            else None
+        )
         words = _saved_words(project, model_id) if request.reuse_transcript else None
         if words is None:
             words = transcribe(
