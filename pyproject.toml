@@ -17,6 +17,10 @@ requires-python = ">=3.10"
 # challenge-solver scripts Deno runs; keep it at the version yt-dlp's `default` extra pins.
 # requests/brotli/certifi are the networking companions from that extra; mutagen (GPL,
 # only used for embedding thumbnails) is left out so the bundle stays GPL-free.
+# curl_cffi lets yt-dlp impersonate a browser (Instagram's logged-out path needs it); yt-dlp
+# drops impersonation for versions outside 0.10.x-0.16.x, so keep this range inside the one
+# its `curl-cffi` extra accepts (its `pin-curl-cffi` extra pins the exact version).
+# packaging reads that range from a downloaded yt-dlp's metadata (see ytdlp_updates.py).
 # platformdirs places user data in the desktop bundle (see runtime.py).
 dependencies = [
     "yt-dlp>=2026.6.9",
@@ -24,6 +28,8 @@ dependencies = [
     "requests>=2.32.2",
     "brotli>=1.1",
     "certifi",
+    "curl-cffi>=0.10,<0.17",
+    "packaging>=22",
     "pydantic>=2",
     "PyYAML>=6",
     "platformdirs>=4",

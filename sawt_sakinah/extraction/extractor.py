@@ -1,15 +1,25 @@
-"""Extract audio from a YouTube URL as an MP3 and describe it as an AudioSource.
+"""Extract audio from a link to one post (YouTube, Instagram, X, Facebook) as an MP3 and
+describe it as an AudioSource.
 
 Side-effecting layer: network + filesystem. It downloads, transcodes, probes, and
 hands back an :class:`AudioSource`. It performs no analysis or editing.
 
-Optional YouTube cookies (for its bot check) come from a browser profile or a cookies.txt
-file. The file is read into memory and handed to yt-dlp as a stream, so yt-dlp's habit of
-writing the cookie jar back on exit never touches the user's file.
+The import runs in stages, each with its own errors: match the link (:mod:`.links`),
+resolve a share link, check the platform against the active yt-dlp (:mod:`.compat`),
+fetch the metadata, pick one media item and check the limits, download and convert,
+then probe and finish (:mod:`.finalize`). yt-dlp's failures are mapped to typed errors
+by :mod:`.classify`. Each download (not a cache hit) and each failure logs one line with
+the platform, extractor and active yt-dlp; a failure adds the error type, its action and
+yt-dlp's own message, so a bug report's log carries them.
+
+Optional sign-in cookies come from a browser profile or a cookies.txt file. The file is
+read into memory and handed to yt-dlp as a stream, so yt-dlp's habit of writing the cookie
+jar back on exit never touches the user's file.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import logging
@@ -20,63 +30,61 @@ from typing import Callable, Optional
 
 from .. import runtime
 from ..config import CONFIG
-from ..models.sources import AudioSource
 from ..models.errors import (
-    AgeRestrictedError,
     CookiesError,
     ExtractionError,
+    ExtractorOutdatedError,
     FileTooLargeError,
+    JobCancelledError,
     LiveStreamError,
-    PrivateVideoError,
-    RegionLockedError,
-    VideoUnavailableError,
-    YouTubeBotCheckError,
+    NoAudioStreamError,
+    UnsupportedLinkError,
 )
+from ..models.sources import AudioSource
 from ..ytdlp_updates import import_yt_dlp
 from . import cache as _cache
+from . import compat
+from .classify import (
+    classify,
+    is_ytdlp_failure,
+    no_audio_error,
+    root_message,
+    unavailable_error,
+)
 from .finalize import emit as _emit
 from .finalize import finalize_source
-from .validate import normalize_url
+from .links import (
+    ResolvedLink,
+    is_share_link,
+    match_link,
+    parse_link,
+    platform_for_url,
+    resolve_link,
+)
+from .platforms import Platform
 
 _log = logging.getLogger(__name__)
 
 #: Output stem for downloads. A fixed short name keeps paths under Windows' 260-character
-#: limit however long the video title is; the title itself lives on the AudioSource.
+#: limit however long the title is; the title itself lives on the AudioSource.
 DEFAULT_STEM = "source"
 
-#: Shown when yt-dlp fails in a way none of the specific mappings recognise, which in
-#: practice means YouTube changed something the bundled yt-dlp does not handle yet.
-GENERIC_FAILURE = "YouTube may have changed. Check for an app update."
-
-# YouTube's refusals of a client it suspects is automated (typically a datacenter IP):
-# "Sign in to confirm you're not a bot" and "This content isn't available, try again
-# later". Both are transient blocks, not a missing video. The age gate ("Sign in to
-# confirm your age") does not match.
-_BOT_CHECK = re.compile(r"not a bot|(?:isn['\u2019]t|is not) available,? try again later")
-
-#: Display names for the browsers cookies can come from (``schemas.COOKIE_BROWSERS``).
-BROWSER_LABELS = {
-    "chrome": "Chrome",
-    "edge": "Microsoft Edge",
-    "firefox": "Firefox",
-    "brave": "Brave",
-    "chromium": "Chromium",
-    "vivaldi": "Vivaldi",
-    "opera": "Opera",
-    "safari": "Safari",
-}
 # A cookies.txt larger than this is not one.
 _MAX_COOKIES_BYTES = 5 * 1024 * 1024
 
-_NETWORK_HINTS = (
-    "getaddrinfo",
-    "urlopen error",
-    "timed out",
-    "name resolution",
-    "network is unreachable",
-    "connection refused",
-    "connection reset",
-    "remote end closed connection",
+# How many redirects between extractors (a reel URL handing over to the video extractor)
+# the metadata stage follows.
+_MAX_HOPS = 3
+
+# Fields of a multi-media post that each picked item inherits, as yt-dlp's playlist
+# processing would hand them down.
+_PARENT_FIELDS = (
+    "extractor",
+    "extractor_key",
+    "webpage_url",
+    "webpage_url_basename",
+    "webpage_url_domain",
+    "original_url",
 )
 
 
@@ -126,100 +134,6 @@ class _YtdlpLogger:
         _log.error("%s", msg)
 
 
-def _is_cookie_failure(err: BaseException) -> bool:
-    """Whether yt-dlp failed while loading cookies (it wraps that in a DownloadError)."""
-    from yt_dlp.cookies import CookieLoadError  # yt-dlp is loaded by the time it has failed
-
-    seen: set[int] = set()
-    todo: list[Optional[BaseException]] = [err]
-    while todo:
-        exc = todo.pop()
-        if exc is None or id(exc) in seen:
-            continue
-        seen.add(id(exc))
-        if isinstance(exc, CookieLoadError):
-            return True
-        exc_info = getattr(exc, "exc_info", None)
-        if isinstance(exc_info, tuple) and len(exc_info) > 1:
-            todo.append(exc_info[1])
-        todo += [exc.__cause__, exc.__context__]
-    return False
-
-
-def _cookie_error(cookies: str, message: str) -> CookiesError:
-    """The user-facing error for cookies yt-dlp could not load (``message`` is its text)."""
-    if cookies == "file":
-        return CookiesError(
-            "Couldn't read the cookies.txt file chosen in Settings. Export it again from "
-            "your browser, or turn YouTube cookies off in Settings."
-        )
-    label = BROWSER_LABELS.get(cookies, cookies)
-    if "could not find" in message.lower():
-        return CookiesError(
-            f"Couldn't find {label} cookies on this computer. Check that {label} is "
-            "installed and signed in to YouTube, or choose another option in Settings."
-        )
-    return CookiesError(
-        f"Couldn't read your {label} cookies. Some browsers lock or encrypt them while "
-        f"they run: close {label} and try again, or choose another browser or a "
-        "cookies.txt file in Settings."
-    )
-
-
-def _map_download_error(
-    err: Exception, url: str, cookies: Optional[str] = None
-) -> ExtractionError:
-    """Translate a yt-dlp DownloadError/ExtractorError into a typed ExtractionError.
-
-    Recognised failures keep yt-dlp's message as the new error's text; network failures
-    and unrecognised ones get a plain user-facing message. ``cookies`` names the cookie
-    source in use (a browser id or ``"file"``) or is ``None``; it shapes the bot-check
-    advice. The original error is logged and chained.
-    """
-    msg = str(err)
-    low = msg.lower()
-    if cookies is not None and _is_cookie_failure(err):
-        _log.warning("yt-dlp could not load cookies for %s: %s", url, msg)
-        return _cookie_error(cookies, msg)
-    # Before the unavailable check: the "try again later" refusal starts "Video unavailable".
-    if _BOT_CHECK.search(low):
-        _log.warning("yt-dlp failed for %s: %s", url, msg)
-        if cookies is not None:
-            advice = (
-                "Make sure you are signed in to YouTube where the cookies come from (or "
-                "export them again), try again later, or check for an app update."
-            )
-        else:
-            advice = (
-                "Turn on YouTube cookies in Settings and try again, or check for an app "
-                "update."
-            )
-        if "not a bot" in low:
-            return YouTubeBotCheckError(
-                "YouTube asked to confirm this is not a bot and refused the download. "
-                + advice
-            )
-        return YouTubeBotCheckError(
-            "YouTube is refusing downloads from this network for now. " + advice
-        )
-    if "private video" in low:
-        return PrivateVideoError(msg)
-    if re.search(r"\bage\b|age[- ]restrict", low) and (
-        "confirm" in low or "restrict" in low or "sign in" in low
-    ):
-        return AgeRestrictedError(msg)
-    if "your country" in low or "region" in low or ("geo" in low and "block" in low):
-        return RegionLockedError(msg)
-    if "live event" in low or "is live" in low or "live stream" in low:
-        return LiveStreamError(msg)
-    if "unavailable" in low or "has been removed" in low or "been terminated" in low:
-        return VideoUnavailableError(msg)
-    _log.warning("yt-dlp failed for %s: %s", url, msg)
-    if any(hint in low for hint in _NETWORK_HINTS):
-        return ExtractionError("Could not reach YouTube. Check your internet connection.")
-    return ExtractionError(GENERIC_FAILURE)
-
-
 def _js_runtimes() -> Optional[dict]:
     """yt-dlp ``js_runtimes`` pointing at the bundled (or, from source, PATH) Deno.
 
@@ -247,7 +161,7 @@ def _read_cookies_file(path: str | os.PathLike) -> str:
     except FileNotFoundError as exc:
         raise CookiesError(
             f"The cookies file chosen in Settings no longer exists ({path}). Choose it "
-            "again in Settings, or turn YouTube cookies off."
+            "again in Settings, or turn sign-in cookies off."
         ) from exc
     except OSError as exc:
         raise CookiesError(
@@ -289,10 +203,149 @@ def _check_limits(info: dict, max_download_mb: int, max_duration_sec: float) -> 
         )
 
 
-def _source_id(source_url: str, audio_format: str, audio_quality: str) -> str:
+def _media_formats(entry: dict) -> list[dict]:
+    """A media item's formats; an item with a direct ``url`` is its own single format."""
+    return entry.get("formats") or ([entry] if entry.get("url") else [])
+
+
+def _has_video(formats: list[dict]) -> bool:
+    """Whether any of ``formats`` declares a video codec or a frame height."""
+    return any(fmt.get("vcodec") not in (None, "none") or fmt.get("height") for fmt in formats)
+
+
+def _check_has_audio(info: dict, platform: Platform) -> None:
+    """Reject media whose selected formats all declare no audio (``acodec == "none"``)."""
+    formats = info.get("requested_formats") or [info]
+    if all(fmt.get("acodec") == "none" for fmt in formats):
+        raise no_audio_error(platform, has_video=_has_video(formats))
+
+
+def _may_have_audio(entry: dict) -> Optional[bool]:
+    """Whether a post's media item can carry audio: ``False`` for a photo or a video that
+    declares none, ``None`` when it is only a link to resolve."""
+    if entry.get("_type") in ("url", "url_transparent"):
+        return None
+    formats = _media_formats(entry)
+    if not formats:
+        return False
+    return any(fmt.get("acodec") != "none" for fmt in formats)
+
+
+def pick_media(info: dict, link: ResolvedLink) -> dict:
+    """Reduce a post with several media items to the one to import.
+
+    A single item is returned as is. From a carousel or a multi-video post (a playlist
+    result), the first item that can carry audio is taken; its title gains
+    ``" (video 2 of 3)"`` (counting videos, not photos) and it inherits the post's
+    extractor and page fields. An X link ending ``/video/N`` already names one item.
+
+    Raises:
+        NoAudioStreamError: If no item can carry audio.
+    """
+    if info.get("_type") not in ("playlist", "multi_video"):
+        return info
+    entries = [e for e in info.get("entries") or [] if isinstance(e, dict)]
+    videos = [e for e in entries if _may_have_audio(e) is not False or e.get("formats")]
+    chosen = next((e for e in videos if _may_have_audio(e) is not False), None)
+    if chosen is None:
+        # Only videos that declare no audio, or only photos.
+        raise no_audio_error(link.platform, has_video=bool(videos))
+    title = chosen.get("title") or info.get("title") or link.post_id
+    if len(videos) > 1:
+        position = videos.index(chosen) + 1
+        # X already numbers its videos ("… #1"); the suffix below says the same.
+        title = re.sub(rf" #{position}$", "", title)
+        title = f"{title} (video {position} of {len(videos)})"
+    if _may_have_audio(chosen) is None:
+        # Resolved by its own extractor; transparent so the title still applies.
+        return {**chosen, "_type": "url_transparent", "title": title}
+    entry = dict(chosen)
+    for field in _PARENT_FIELDS:
+        if info.get(field) is not None:
+            entry.setdefault(field, info[field])
+    entry.setdefault("playlist", info.get("title") or info.get("id"))
+    entry.setdefault("playlist_id", info.get("id"))
+    entry["title"] = title
+    return entry
+
+
+def _fetch_metadata(ydl, link: ResolvedLink) -> dict:
+    """The post's unprocessed metadata, following hand-overs between extractors.
+
+    Processing is left to the caller so a post with several items can be reduced to one
+    first: processing them all fails on the first photo of a carousel.
+
+    Raises:
+        VideoUnavailableError: If the platform probes empty posts (``probe_empty_posts``)
+            and returned nothing for this one.
+        NoAudioStreamError: If such a platform returned a post without media.
+    """
+    platform = link.platform
+    if platform.probe_empty_posts:
+        # The extractor then returns the post's text and author instead of raising.
+        ydl.params["ignore_no_formats_error"] = True
+    try:
+        info = ydl.extract_info(link.url, download=False, process=False)
+    finally:
+        ydl.params.pop("ignore_no_formats_error", None)
+    if platform.probe_empty_posts and info and info.get("_type") in (None, "video"):
+        if not (info.get("formats") or info.get("url")):
+            if not any(info.get(k) for k in ("title", "uploader", "timestamp")):
+                raise unavailable_error(platform)
+            raise no_audio_error(platform)
+    for _ in range(_MAX_HOPS):
+        kind = info.get("_type") if info else None
+        if kind not in ("url", "url_transparent"):
+            break
+        inner = ydl.extract_info(
+            info["url"], download=False, process=False, ie_key=info.get("ie_key")
+        )
+        if kind == "url_transparent" and inner:
+            # As yt-dlp merges it: the outer result's fields win, except what names the media.
+            exempt = {"_type", "url", "ie_key", "id", "extractor", "extractor_key"}
+            outer = {k: v for k, v in info.items() if v is not None and k not in exempt}
+            inner = {**inner, **outer}
+        info = inner
+    if not info or info.get("_type") in ("url", "url_transparent"):
+        raise ExtractorOutdatedError(
+            f"{link.platform.label} didn't return this {link.platform.item}. "
+            "Check for an update.",
+            platform=link.platform.id,
+        )
+    return info
+
+
+def _source_id(source_key: str, audio_format: str, audio_quality: str) -> str:
     """Deterministic short id for an extraction request (for caching/reference)."""
-    key = f"{source_url}|{audio_format}|{audio_quality}"
+    key = f"{source_key}|{audio_format}|{audio_quality}"
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
+def _log_failure(
+    err: Exception, url: str, platform: Optional[Platform], link: Optional[ResolvedLink]
+) -> None:
+    """Log a failed import in one line: the error, where it happened, the active yt-dlp,
+    the action offered and yt-dlp's own message behind it."""
+    cause = err.__cause__ if isinstance(err, ExtractionError) else None
+    ytdlp = compat.ytdlp_label()
+    try:
+        cause_text = root_message(cause) if cause is not None else None
+    except Exception:  # noqa: BLE001 - yt-dlp itself may be what failed
+        cause_text = None
+    _log.warning(
+        "link import failed: %s platform=%s extractor=%s yt-dlp=%s action=%s url=%s "
+        "message=%r cause=%r",
+        type(err).__name__,
+        platform.id if platform else None,
+        link.extractor_key if link else None,
+        ytdlp,
+        getattr(err, "action", None),
+        link.url if link else url,
+        str(err),
+        cause_text,
+        # A failure outside the typed errors is a bug; keep its traceback.
+        exc_info=not isinstance(err, ExtractionError),
+    )
 
 
 def extract_audio(
@@ -314,18 +367,20 @@ def extract_audio(
     cookies_from_browser: Optional[str] = None,
     cookies_file: str | os.PathLike | None = None,
 ) -> AudioSource:
-    """Download the best audio stream for ``url`` and return an :class:`AudioSource`.
+    """Download the best audio stream for the post ``url`` links to and return an
+    :class:`AudioSource`.
 
-    Goes straight from a YouTube link to an audio file -- no separate video download
-    step -- then probes the result for authoritative metadata. The video's metadata is
-    fetched first so live streams, over-long videos and oversized streams are rejected
-    before anything is downloaded.
+    Goes straight from the link to an audio file -- no separate video download step --
+    then probes the result for authoritative metadata. The post's metadata is fetched
+    first so live streams, over-long videos, oversized streams and media without audio
+    are rejected before anything is downloaded.
 
     Args:
-        url: YouTube video URL or bare 11-char video id.
+        url: A link to one post on a supported platform (see :mod:`.platforms`), or a
+            bare 11-char YouTube video id.
         output_dir: Directory to write the audio file into (created if missing).
         filename: Output filename without extension. Defaults to :data:`DEFAULT_STEM`;
-            the video title is kept on the returned source, not in the path.
+            the title is kept on the returned source, not in the path.
         audio_format: Target audio format passed to FFmpeg (default ``mp3``).
         audio_quality: FFmpeg audio quality. ``"0"`` is best VBR; or a bitrate
             like ``"192K"``.
@@ -340,118 +395,197 @@ def extract_audio(
         normalize_loudness: Apply EBU R128 ``loudnorm`` to the working copy (see
             :func:`make_working_copy`). Ignored when ``create_working_copy`` is false.
         use_cache: When true, return a prior :class:`AudioSource` for the same
-            URL+format+quality without re-downloading, and persist new extractions.
+            post+format+quality without re-downloading, and persist new extractions.
         cache_dir: Cache root. Defaults to :func:`cache.default_cache_dir`.
         ffmpeg_bin: Name/path of the ffmpeg executable (also handed to yt-dlp).
         ffprobe_bin: Name/path of the ffprobe executable.
         max_download_mb: Reject audio streams larger than this many megabytes.
         max_duration_sec: Reject videos longer than this many seconds.
-        cookies_from_browser: Read YouTube cookies from this browser's profile (a yt-dlp
+        cookies_from_browser: Read sign-in cookies from this browser's profile (a yt-dlp
             browser name such as ``"firefox"``).
-        cookies_file: Read YouTube cookies from this Netscape cookies.txt file instead.
+        cookies_file: Read sign-in cookies from this Netscape cookies.txt file instead.
             It is only read, never written.
 
     Returns:
-        An :class:`AudioSource` describing the extracted file.
+        An :class:`AudioSource` describing the extracted file, with ``peak_dbfs`` set so
+        a silent download can be flagged.
 
     Raises:
-        InvalidInputError: If ``url`` is not a single YouTube video.
+        InvalidInputError: If ``url`` is not a link (``UnsupportedPlatformError`` and
+            ``UnsupportedLinkError`` for an unsupported site or a link that is not a
+            single post).
+        PlatformUnavailableError: If the active yt-dlp can't import from the site.
         LiveStreamError: If ``url`` is a live or upcoming stream.
         FileTooLargeError: If the video exceeds ``max_duration_sec`` or its audio
             exceeds ``max_download_mb``.
+        NoAudioStreamError: If the post has no audio.
         CookiesError: If the chosen cookies can't be read.
-        ExtractionError (or a subclass): If the video cannot be fetched.
+        ExtractionError (or a subclass): If the post cannot be fetched.
         FileNotFoundError: If ffmpeg is missing or the expected output file is not
             produced.
     """
-    source_url = normalize_url(url)
-    source_id = _source_id(source_url, audio_format, audio_quality)
-    resolved_cache_dir = Path(cache_dir) if cache_dir is not None else _cache.default_cache_dir()
-
-    if use_cache:
-        cached = _cache.load(resolved_cache_dir, source_id)
-        if cached is not None:
-            _emit(progress_callback, stage="cache", status="hit", percent=100.0)
-            return cached
-
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stem = filename if filename is not None else DEFAULT_STEM
-    max_bytes = max_download_mb * 1024 * 1024
-
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": str(out_dir / f"{stem}.%(ext)s"),
-        "quiet": quiet,
-        "no_warnings": quiet,
-        "noprogress": quiet,
-        "logger": _YtdlpLogger(),
-        # A fixed stem can meet leftovers of an earlier attempt; never resume or reuse them.
-        "overwrites": True,
-        "continuedl": False,
-        # yt-dlp derives ffprobe from the same folder.
-        "ffmpeg_location": runtime.resolve_executable(ffmpeg_bin),
-        "max_filesize": max_bytes,
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": audio_format,
-                "preferredquality": audio_quality,
-            }
-        ],
-    }
-    cookies: Optional[str] = None
-    if cookies_from_browser:
-        ydl_opts["cookiesfrombrowser"] = (cookies_from_browser,)
-        cookies = cookies_from_browser
-    elif cookies_file:
-        # A stream: yt-dlp writes the jar back to its cookiefile on exit.
-        ydl_opts["cookiefile"] = io.StringIO(_read_cookies_file(cookies_file))
-        cookies = "file"
-    js_runtimes = _js_runtimes()
-    if js_runtimes is not None:
-        ydl_opts["js_runtimes"] = js_runtimes
-    if progress_callback is not None:
-        ydl_opts["progress_hooks"] = [_make_download_hook(progress_callback)]
-        # yt-dlp runs its own ffmpeg for the transcode; reporting before it starts lets a
-        # callback that cancels (the app closing) stop the job while nothing is being written.
-        ydl_opts["postprocessor_hooks"] = [_make_postprocessor_hook(progress_callback)]
-
-    # Imported here, not at module load: ytdlp_updates.activate() must run first so a
-    # verified downloaded yt-dlp can take precedence over the bundled copy.
-    yt_dlp = import_yt_dlp()
-    from yt_dlp.cookies import CookieLoadError
-
+    # What is known about the import so far, for the log line of a failure.
+    platform: Optional[Platform] = None
+    link: Optional[ResolvedLink] = None
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            _emit(progress_callback, stage="metadata", status="start")
-            info = ydl.extract_info(source_url, download=False)
-            _check_limits(info, max_download_mb, max_duration_sec)
-            info = ydl.process_ie_result(info, download=True)
-    except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError, CookieLoadError) as err:
-        raise _map_download_error(err, source_url, cookies) from err
-
-    # After post-processing the file has the requested audio extension.
-    result = out_dir / f"{stem}.{audio_format}"
-    if not result.exists():
-        # yt-dlp skips (without raising) a stream whose real size exceeds max_filesize.
-        raise FileTooLargeError(
-            f"This video's audio is larger than the {max_download_mb} MB limit."
+        text = parse_link(url)
+        platform = platform_for_url(text)
+        if not is_share_link(text, platform):
+            try:
+                link = match_link(text, platform)
+            except UnsupportedLinkError:
+                # A missing or renamed extractor explains a refused link better.
+                compat.require_available(platform)
+                raise
+        resolved_cache_dir = (
+            Path(cache_dir) if cache_dir is not None else _cache.default_cache_dir()
         )
 
-    # Probe + working copy + AudioSource + cache-save are shared with the upload
-    # importer; only acquisition (the yt-dlp download above) is YouTube-specific.
-    return finalize_source(
-        result,
-        source_id=source_id,
-        title=info.get("title") or result.stem,
-        source_kind="youtube",
-        source_url=source_url,
-        create_working_copy=create_working_copy,
-        normalize_loudness=normalize_loudness,
-        use_cache=use_cache,
-        cache_dir=resolved_cache_dir,
-        ffmpeg_bin=ffmpeg_bin,
-        ffprobe_bin=ffprobe_bin,
-        progress_callback=progress_callback,
-    )
+        def cached(link: ResolvedLink) -> Optional[AudioSource]:
+            if not use_cache:
+                return None
+            source_id = _source_id(link.cache_key, audio_format, audio_quality)
+            hit = _cache.load(resolved_cache_dir, source_id)
+            if hit is not None:
+                _emit(progress_callback, stage="cache", status="hit", percent=100.0)
+            return hit
+
+        # A cached import needs neither the network nor a working platform.
+        if link is not None and (hit := cached(link)) is not None:
+            return hit
+        compat.require_available(platform)
+
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stem = filename if filename is not None else DEFAULT_STEM
+        max_bytes = max_download_mb * 1024 * 1024
+
+        cookies: Optional[str] = None
+        cookie_text: Optional[str] = None
+        if cookies_from_browser:
+            cookies = cookies_from_browser
+        elif cookies_file:
+            cookie_text = _read_cookies_file(cookies_file)
+            cookies = "file"
+        js_runtimes = _js_runtimes()
+
+        def ydl_opts(platform: Platform) -> dict:
+            opts = {
+                "format": "bestaudio/best",
+                "outtmpl": str(out_dir / f"{stem}.%(ext)s"),
+                "quiet": quiet,
+                "no_warnings": quiet,
+                "noprogress": quiet,
+                "logger": _YtdlpLogger(),
+                # Only the platform's single-post extractors: a post that hands over to another
+                # site fails ("No suitable extractor") instead of downloading from it.
+                "allowed_extractors": [
+                    re.escape(compat.extractor_class(key).IE_NAME.lower())
+                    for key in platform.extractors
+                ],
+                # Honour a link to one item of a post (x.com/…/status/…/video/2).
+                "noplaylist": True,
+                # A fixed stem can meet leftovers of an earlier attempt; never resume or reuse them.
+                "overwrites": True,
+                "continuedl": False,
+                # yt-dlp derives ffprobe from the same folder.
+                "ffmpeg_location": runtime.resolve_executable(ffmpeg_bin),
+                "max_filesize": max_bytes,
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": audio_format,
+                        "preferredquality": audio_quality,
+                    }
+                ],
+            }
+            if cookies_from_browser:
+                opts["cookiesfrombrowser"] = (cookies_from_browser,)
+            elif cookie_text is not None:
+                # A fresh stream per YoutubeDL: yt-dlp reads it once and writes the jar back.
+                opts["cookiefile"] = io.StringIO(cookie_text)
+            if js_runtimes is not None:
+                opts["js_runtimes"] = js_runtimes
+            if progress_callback is not None:
+                opts["progress_hooks"] = [_make_download_hook(progress_callback)]
+                # yt-dlp runs its own ffmpeg for the transcode; reporting before it starts lets
+                # a callback that cancels (the app closing) stop the job while nothing is being
+                # written.
+                opts["postprocessor_hooks"] = [_make_postprocessor_hook(progress_callback)]
+            return opts
+
+        # Imported here, not at module load: ytdlp_updates.activate() must run first so a
+        # verified downloaded yt-dlp can take precedence over the bundled copy.
+        yt_dlp = import_yt_dlp()
+
+        _emit(progress_callback, stage="metadata", status="start")
+        item: Optional[dict] = None
+        try:
+            with contextlib.ExitStack() as stack:
+                ydl = stack.enter_context(yt_dlp.YoutubeDL(ydl_opts(platform)))
+                if link is None:
+                    # A share link: one request to find the post it points at.
+                    link = resolve_link(url, ydl)
+                    if link.platform.id != platform.id:
+                        # A t.co link can lead to another platform, with other extractors.
+                        platform = link.platform
+                        compat.require_available(platform)
+                        ydl = stack.enter_context(yt_dlp.YoutubeDL(ydl_opts(platform)))
+                    if (hit := cached(link)) is not None:
+                        return hit
+                item = pick_media(_fetch_metadata(ydl, link), link)
+                info = ydl.process_ie_result(item, download=False)
+                _check_limits(info, max_download_mb, max_duration_sec)
+                _check_has_audio(info, platform)
+                info = ydl.process_ie_result(info, download=True)
+        except ExtractionError:
+            raise
+        except Exception as err:
+            if not is_ytdlp_failure(err):
+                raise
+            mapped = classify(err, platform, cookies)
+            if (
+                isinstance(mapped, NoAudioStreamError)
+                and item is not None
+                and _has_video(_media_formats(item))
+            ):
+                # Format selection found nothing, but the metadata lists a video.
+                mapped = no_audio_error(platform, has_video=True)
+            raise mapped from err
+
+        # After post-processing the file has the requested audio extension.
+        result = out_dir / f"{stem}.{audio_format}"
+        if not result.exists():
+            # yt-dlp skips (without raising) a stream whose real size exceeds max_filesize.
+            raise FileTooLargeError(
+                f"This video's audio is larger than the {max_download_mb} MB limit."
+            )
+
+        # Probe + working copy + AudioSource + cache-save are shared with the upload
+        # importer; only acquisition (the yt-dlp download above) is link-specific.
+        source = finalize_source(
+            result,
+            source_id=_source_id(link.cache_key, audio_format, audio_quality),
+            title=info.get("title") or result.stem,
+            source_kind=platform.id,
+            source_url=link.url,
+            create_working_copy=create_working_copy,
+            normalize_loudness=normalize_loudness,
+            measure_peak=True,
+            use_cache=use_cache,
+            cache_dir=resolved_cache_dir,
+            ffmpeg_bin=ffmpeg_bin,
+            ffprobe_bin=ffprobe_bin,
+            progress_callback=progress_callback,
+        )
+        _log.info(
+            "link import done: platform=%s extractor=%s yt-dlp=%s url=%s",
+            platform.id, info.get("extractor_key") or link.extractor_key,
+            compat.ytdlp_label(), link.url,
+        )
+        return source
+    except JobCancelledError:
+        raise
+    except Exception as err:
+        _log_failure(err, url, platform, link)
+        raise

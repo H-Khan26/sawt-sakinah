@@ -9,6 +9,7 @@ import type {
   ExportRequest,
   JobAccepted,
   JobRecord,
+  PlatformInfo,
   PreferencesPatch,
   ProjectListResponse,
   ProjectView,
@@ -84,6 +85,10 @@ export const patchPreferences = (body: PreferencesPatch) =>
 
 export const getAppInfo = (signal?: AbortSignal) => request<AppInfo>("/app/info", { signal });
 
+/** The sites links import from, each with its status in this install. */
+export const getPlatforms = (signal?: AbortSignal) =>
+  request<PlatformInfo[]>("/app/platforms", { signal });
+
 export const getUpdateStatus = (signal?: AbortSignal) =>
   request<UpdateStatus>("/app/update", { signal });
 
@@ -149,6 +154,7 @@ export const queryKeys = {
   waveform: (projectId: string) => ["waveform", projectId] as const,
   preferences: ["app", "preferences"] as const,
   appInfo: ["app", "info"] as const,
+  platforms: ["app", "platforms"] as const,
   appUpdate: ["app", "update"] as const,
   models: ["models"] as const,
   ytdlp: ["app", "ytdlp"] as const,

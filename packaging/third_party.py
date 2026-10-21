@@ -75,6 +75,17 @@ STATIC_NOTICES = [
         "on macOS), built under the LGPL. Sources: https://github.com/PyAV-Org/PyAV and\n"
         "https://github.com/PyAV-Org/pyav-ffmpeg (build scripts and FFmpeg sources).",
     ),
+    (
+        "curl-impersonate library inside curl_cffi",
+        "curl, Apache-2.0, MIT, BSD-3-Clause, Zlib",
+        "The curl_cffi package (browser impersonation for yt-dlp) ships its own build of\n"
+        "libcurl-impersonate (curl_cffi.libs on Windows): curl built with BoringSSL, nghttp2,\n"
+        "nghttp3, ngtcp2, Brotli, zstd and zlib. Their licenses: curl (curl license,\n"
+        "https://curl.se/docs/copyright.html), BoringSSL (Apache-2.0,\n"
+        "https://github.com/google/boringssl/blob/main/LICENSE), nghttp2, nghttp3 and ngtcp2\n"
+        "(MIT), Brotli (MIT), zstd (BSD-3-Clause) and zlib (Zlib). Sources and build scripts:\n"
+        "https://github.com/lexiforest/curl-impersonate and https://github.com/lexiforest/curl_cffi.",
+    ),
 ]
 
 

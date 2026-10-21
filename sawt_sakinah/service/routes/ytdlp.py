@@ -45,6 +45,8 @@ class YtdlpStatus(BaseModel):
     latest: Optional[str] = None
     checked_at: Optional[str] = None
     error: Optional[str] = None  # the last check's failure
+    # Why the active (or waiting) yt-dlp can't impersonate with the app's curl_cffi.
+    curl_cffi_conflict: Optional[str] = None
     check_job_id: Optional[str] = None  # the check pending or running now
     check_state: Optional[str] = None
 
@@ -100,6 +102,6 @@ def get_status(request: Request, jobs=Depends(get_jobs)) -> YtdlpStatus:
 def check_now(request: Request, jobs=Depends(get_jobs)) -> JobRecord:
     if not load_preferences().ytdlp_update:
         raise HTTPException(
-            status_code=409, detail="Turn on keeping the YouTube downloader up to date first."
+            status_code=409, detail="Turn on keeping the downloader up to date first."
         )
     return start_check(request.app, jobs)

@@ -77,11 +77,12 @@ export interface EditDecisionList {
 
 export interface AudioSourceView {
   id: string;
-  /** Provenance: `"youtube"` (downloaded) or `"upload"` (user file). */
-  source_kind: "youtube" | "upload" | string;
+  /** Provenance: a platform id (`"youtube"`, `"instagram"`, `"x"`, `"facebook"`; see
+   * `PlatformInfo.id`) for a link import, or `"upload"` for a user file. */
+  source_kind: string;
   /** Canonical source URL; `null` for uploads. */
   source_url: string | null;
-  /** The uploaded file's original name; `null` for YouTube sources. */
+  /** The uploaded file's original name; `null` for link imports. */
   original_filename: string | null;
   title: string;
   duration_sec: number;
@@ -97,6 +98,10 @@ export interface AudioSourceView {
   has_speech_map: boolean;
   /** True once a transcript is saved, so surahs can be matched again without transcribing. */
   has_transcript: boolean;
+  /** Loudest sample of a link import in dBFS; `null` for uploads and older imports. */
+  peak_dbfs: number | null;
+  /** The link import's audio is silent (e.g. a reel whose music was removed). A warning only. */
+  is_silent: boolean;
 }
 
 export interface ExportArtifactView {
@@ -139,8 +144,8 @@ export interface ProjectView {
 export interface ProjectSummary {
   id: string;
   name: string;
-  /** Provenance: `"youtube"` (downloaded) or `"upload"` (user file). */
-  source_kind: "youtube" | "upload" | string;
+  /** Provenance: a platform id for a link import, or `"upload"` for a user file. */
+  source_kind: string;
   /** Canonical source URL; `null` for uploads. */
   source_url: string | null;
   duration_sec: number;
@@ -190,6 +195,10 @@ export interface JobRecord {
   result: Record<string, unknown> | null;
   error: string | null;
   error_type: string | null;
+  /** What the user can do about a failed import, when anything. */
+  error_action: ErrorAction | null;
+  /** The platform id an import failed on, when known. */
+  platform: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -321,10 +330,10 @@ export interface AppPreferences {
   show_deleted: boolean;
   /** Silence detector last chosen in the silence panel. */
   silence_detector: SilenceDetector;
-  /** Browser whose profile cookies YouTube imports use (one of `AppInfo.cookie_browsers`).
+  /** Browser whose profile cookies link imports use (one of `AppInfo.cookie_browsers`).
    * Mutually exclusive with `cookies_file`; both `null` means cookies are off. */
   cookies_browser: CookieBrowser | null;
-  /** Absolute path to a Netscape-format cookies.txt that YouTube imports read. Mutually
+  /** Absolute path to a Netscape-format cookies.txt that link imports read. Mutually
    * exclusive with `cookies_browser`. */
   cookies_file: string | null;
   /** Keep yt-dlp up to date from PyPI (opt-in; off by default). */
@@ -351,7 +360,7 @@ export type ThemePreference = "system" | "day" | "night";
 /** Library layout: niches in an arcade, or a ruled list. */
 export type LibraryView = "icons" | "list";
 
-/** Browsers YouTube cookies can be read from. */
+/** Browsers sign-in cookies can be read from. */
 export type CookieBrowser =
   | "chrome"
   | "edge"
@@ -369,7 +378,7 @@ export type PreferencesPatch = Partial<AppPreferences>;
 export interface AppInfo {
   version: string;
   frozen: boolean;
-  /** Browsers offered for YouTube cookies on this OS, in display order. */
+  /** Browsers offered for sign-in cookies on this OS, in display order. */
   cookie_browsers: CookieBrowser[];
   /** Exports are saved straight to a folder (the desktop app) instead of downloaded. */
   export_to_folder: boolean;
@@ -377,6 +386,34 @@ export interface AppInfo {
   default_export_dir: string | null;
   /** The attribution the Tanzil terms ask for, shown under the speech model in Settings. */
   quran_text_credit: string;
+}
+
+/**
+ * What fixes a failed link import: sign-in cookies in Settings, a newer downloader (yt-dlp), a
+ * newer app, or trying again later.
+ */
+export type ErrorAction = "cookies" | "update_downloader" | "update_app" | "retry_later";
+
+/** `GET /app/platforms` item — a site links import from, with its status in this install. */
+export interface PlatformInfo {
+  /** Also the `source_kind` of its imports. */
+  id: string;
+  label: string;
+  /** What one link points at, for messages: `"video"` or `"post"`. */
+  item: string;
+  /** Registrable domains; a link's host is one of them or a subdomain. */
+  hosts: string[];
+  /** Regexes for share links, which the import job follows to the post. */
+  share_patterns: string[];
+  signin_often_needed: boolean;
+  available: boolean;
+  /** Available, but imports fail more often (a helper is missing). */
+  limited: boolean;
+  /** Why it is unavailable or limited. */
+  reason: string | null;
+  /** What fixes that. */
+  action: ErrorAction | null;
+  ytdlp_version: string;
 }
 
 /** `GET /app/update` — the backend's cached release check (honours the preferences). */
@@ -388,7 +425,7 @@ export interface UpdateStatus {
   update_available: boolean;
 }
 
-/** `GET /app/ytdlp` — the YouTube downloader in use and its opt-in self-update. */
+/** `GET /app/ytdlp` — the downloader (yt-dlp) link imports use and its opt-in self-update. */
 export interface YtdlpStatus {
   /** The `ytdlp_update` preference. */
   enabled: boolean;
@@ -407,6 +444,8 @@ export interface YtdlpStatus {
   checked_at: string | null;
   /** The last check's failure. */
   error: string | null;
+  /** Why the active (or downloaded) yt-dlp can't impersonate a browser with the app's curl_cffi. */
+  curl_cffi_conflict: string | null;
   /** The check job pending or running right now (started at launch or by "Check now"). */
   check_job_id: string | null;
   check_state: "pending" | "running" | null;
@@ -448,4 +487,7 @@ export interface ValidationIssue {
 export interface ApiErrorBody {
   error?: string;
   detail: string | ValidationIssue[];
+  /** Set for an extraction error (a refused link), as on a failed job. */
+  error_action?: ErrorAction | null;
+  platform?: string | null;
 }

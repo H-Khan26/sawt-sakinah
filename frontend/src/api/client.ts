@@ -3,19 +3,31 @@
  * the API prefixes (`/projects`, `/jobs`, `/models`, `/app/`) to the FastAPI service; in the static-served / pywebview build
  * FastAPI serves both the SPA and the API. So requests use relative paths and no base URL.
  */
-import type { ApiErrorBody } from "@/types/api";
+import type { ApiErrorBody, ErrorAction } from "@/types/api";
 
 /** A typed failure from the backend (`{ error, detail }`) or a transport error. */
 export class ApiError extends Error {
   readonly status: number;
   /** Pydantic/exception class name from the backend envelope, when present. */
   readonly type: string | null;
+  /** What fixes an extraction error (a refused link), when anything. */
+  readonly action: ErrorAction | null;
+  /** The platform id an extraction error concerns, when known. */
+  readonly platform: string | null;
 
-  constructor(message: string, status: number, type: string | null = null) {
+  constructor(
+    message: string,
+    status: number,
+    type: string | null = null,
+    action: ErrorAction | null = null,
+    platform: string | null = null,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.type = type;
+    this.action = action;
+    this.platform = platform;
   }
 }
 
@@ -44,6 +56,8 @@ function apiError(
     errorMessage(body) ?? (statusText || fallback),
     status,
     typeof body?.error === "string" ? body.error : null,
+    body?.error_action ?? null,
+    typeof body?.platform === "string" ? body.platform : null,
   );
 }
 

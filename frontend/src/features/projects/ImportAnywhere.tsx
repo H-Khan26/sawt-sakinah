@@ -1,7 +1,7 @@
-import { useCreateProject, useUploadProject } from "@/api/hooks";
+import { useCreateProject, usePlatforms, useUploadProject } from "@/api/hooks";
 import { CetvelFrame } from "@/components/ornament";
 import { Progress, useToast } from "@/components/ui";
-import { isLikelyYouTubeUrl } from "@/lib/youtube";
+import { checkLink } from "@/lib/links";
 import { useIsMutating } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -19,8 +19,9 @@ function isEditable(el: Element | null): boolean {
 
 /**
  * Imports from anywhere on the library: dropping a file on the window uploads it, and pasting a
- * YouTube link while no field has focus starts its extraction; either opens the editor on the new
- * job. Shows a "Drop to import" overlay while a file is dragged over the window, and an importing
+ * link to a supported site while no field has focus starts its extraction; either opens the
+ * editor on the new job. A pasted http(s) link to another site, or to a site this install can't
+ * import from, gets a toast saying why. Shows a "Drop to import" overlay while a file is dragged over the window, and an importing
  * overlay until the editor opens. A drop that something else already handled (`preventDefault`,
  * e.g. the New recording sheet's drop zone) is left alone, and nothing new starts while another
  * import or change is in flight. `paused` (a dialog is open) turns it all off.
@@ -28,6 +29,7 @@ function isEditable(el: Element | null): boolean {
 export function ImportAnywhere({ paused = false }: { paused?: boolean }) {
   const upload = useUploadProject();
   const create = useCreateProject();
+  const platforms = usePlatforms();
   const openImport = useOpenImport();
   const { toast } = useToast();
   const [dragging, setDragging] = useState(false);
@@ -60,9 +62,26 @@ export function ImportAnywhere({ paused = false }: { paused?: boolean }) {
     );
   };
 
+  /** Import pasted text that is a link to a supported site; true when it was taken. */
+  const pasteLink = (text: string): boolean => {
+    const check = checkLink(text, platforms.data);
+    // Text without a scheme counts only on a supported site's host (not a bare video id), and
+    // only text that is clearly a URL gets a notice; anything else pasted is left alone.
+    const isUrl = /^https?:\/\//i.test(text);
+    if (check.ok && text.includes(".") && (check.platform || isUrl)) {
+      importUrl(text);
+      return true;
+    }
+    if (!check.ok && check.reason !== "invalid" && isUrl) {
+      if (!blocked) toast(check.message, check.reason === "unavailable" ? "error" : "info");
+      return true;
+    }
+    return false;
+  };
+
   // The window listeners bind once and call the latest handlers through this ref.
-  const handlers = useRef({ importFile, importUrl, paused });
-  handlers.current = { importFile, importUrl, paused };
+  const handlers = useRef({ importFile, pasteLink, paused });
+  handlers.current = { importFile, pasteLink, paused };
 
   useEffect(() => {
     let depth = 0;
@@ -94,9 +113,7 @@ export function ImportAnywhere({ paused = false }: { paused?: boolean }) {
     const onPaste = (e: ClipboardEvent) => {
       if (handlers.current.paused || isEditable(document.activeElement)) return;
       const text = e.clipboardData?.getData("text/plain").trim() ?? "";
-      if (!isLikelyYouTubeUrl(text)) return;
-      e.preventDefault();
-      handlers.current.importUrl(text);
+      if (text && handlers.current.pasteLink(text)) e.preventDefault();
     };
 
     window.addEventListener("dragenter", onDragEnter);

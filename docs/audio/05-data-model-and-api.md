@@ -15,7 +15,7 @@ thing to change later.
 ```
 AudioSource
   id                 str
-  source_kind        str        # "youtube" | "upload"
+  source_kind        str        # platform id ("youtube", "instagram", "x", "facebook") | "upload"
   source_url         str?       # None for uploads
   original_filename  str?       # set for uploads
   local_path         path       # the mp3
@@ -29,6 +29,7 @@ AudioSource
   working_copy       path?      # 16 kHz mono WAV for detection
   speech_map         path?      # Silero speech-probability sidecar (.npz)
   transcript         path?      # Whisper word transcript sidecar (audio/transcript.json)
+  peak_dbfs          float?     # peak level of a link import; <= -70 dBFS is flagged silent
 
 SilenceSegment
   start         float      # seconds
@@ -128,8 +129,8 @@ none and count as 0).
 Extraction and ML detection are slow (seconds–minutes). The API must not block:
 
 ```
-POST /projects                 { url }                 -> { project_id, job_id }   # starts extraction
-GET  /jobs/{job_id}            -> { kind, state, progress, result?, error? }
+POST /projects                 { url }                 -> { project_id, job_id }   # starts extraction; 400/409 for a refused link
+GET  /jobs/{job_id}            -> { kind, state, progress, result?, error?, error_type?, error_action?, platform? }
 GET  /projects/{id}            -> Project
 POST /projects/{id}/detect/silence   { params }        -> { job_id }
 POST /projects/{id}/detect/surahs    { reuse_transcript }  -> 202 { job_id }, or 409 when the model is missing
@@ -148,12 +149,25 @@ GET  /models                   -> [{ id, label, description, size_mb, installed,
 POST /models/{id}/download     -> 202 download_model job
 DELETE /models/{id}            -> 204, or 409 ModelBusyError while downloading or in use
 GET  /app/info                 -> version, cookie_browsers, export folder info, quran_text_credit
+GET  /app/platforms            -> [{ id, label, item, hosts, share_patterns, signin_often_needed, available, limited, reason?, action?, ytdlp_version }]
 GET|PATCH /app/preferences     -> preferences
 POST /app/export-folder/pick            -> preferences (native folder dialog)
 ```
 
 - **Progress**: poll `GET /jobs/{id}`. Each job's `progress` is the last payload its
-  worker reported and `result` its summary once it succeeds.
+  worker reported and `result` its summary once it succeeds. A failed job records `error`
+  (the message) and `error_type` (the exception class); an extraction failure adds
+  `error_action` (`cookies`, `update_downloader`, `update_app`, `retry_later` or `null`)
+  and `platform` (the site's id, when known).
+- **Link check**: `POST /projects` runs the offline link stages before starting a job
+  (see [01-extraction.md](01-extraction.md)). An invalid link, an unsupported site or a
+  link that is not a single post answers 400; a site this install can't import from
+  answers 409 `PlatformUnavailableError`. The body is `{ error, detail, error_action,
+  platform }`, the same fields a failed job records. Share links pass and are resolved by
+  the job.
+- **Platforms**: `GET /app/platforms` lists the supported sites in order with their hosts
+  and share-link patterns (for the client's own link check) and their status against the
+  active yt-dlp (`available`, `limited`, `reason`, `action`).
 - **Job kinds** (`service/jobs.py::JobKind`): `extract`, `detect_silence`,
   `detect_surahs`, `export`, `split`, `download_model`, `update_ytdlp`. Most run on the
   general pool (`service.max_workers`); `detect_surahs` runs on the dedicated
@@ -233,7 +247,7 @@ Request fields that reach file names, ffmpeg or model loading (`format`, `bitrat
 `audio_format`, `audio_quality`, `detector`) are checked against allow-lists in
 `service/schemas.py`; the Whisper model, device and compute type are not request fields
 at all (they come from the config), and export paths must stay inside
-the project's exports folder. The YouTube cookies preferences are checked the same way:
+the project's exports folder. The sign-in cookies preferences are checked the same way:
 `cookies_browser` against a fixed browser allow-list (`GET /app/info` lists the ones
 offered on this OS), `cookies_file` as an absolute path to an existing local file (no
 network share); at most one is set. `export_dir` must be an absolute path to an existing

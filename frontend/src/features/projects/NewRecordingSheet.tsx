@@ -1,19 +1,24 @@
-import { useCreateProject, useUploadProject } from "@/api/hooks";
+import { ApiError } from "@/api/client";
+import { useCreateProject, usePlatforms, useUploadProject } from "@/api/hooks";
 import { Alert, Button, Input, Modal, Progress } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { isLikelyYouTubeUrl } from "@/lib/youtube";
+import { type LinkCheck, checkLink, listLabels } from "@/lib/links";
 import { UploadCloud, X } from "lucide-react";
 import type { DragEvent, FormEvent } from "react";
 import { useRef, useState } from "react";
+import { ImportErrorActions } from "./ImportErrorActions";
 import { useOpenImport } from "./useOpenImport";
 
 /**
- * The "New recording" sheet over the library: a YouTube link field (focused, Enter starts the
- * import) and, under it, a drop zone that uploads a local file. Both POST to the backend (the
- * real validator) and open the editor on the returned job. Closing calls `onClose`.
+ * The "New recording" sheet over the library: a link field (focused, Enter starts the import)
+ * and, under it, a drop zone that uploads a local file. Both POST to the backend (the real
+ * validator) and open the editor on the returned job. Closing calls `onClose`.
  */
 export function NewRecordingSheet({ onClose }: { onClose: () => void }) {
   const openImport = useOpenImport();
+  const platforms = usePlatforms();
+  const labels = platforms.data?.map((p) => p.label);
+  const sites = labels ? `a link from ${listLabels(labels, "or")}` : "a link";
 
   return (
     <Modal open onClose={onClose} ariaLabel="New recording" className="max-w-lg">
@@ -21,7 +26,7 @@ export function NewRecordingSheet({ onClose }: { onClose: () => void }) {
         <div className="pr-10">
           <h2 className="font-display text-[26px] leading-tight text-text">New recording</h2>
           <p className="mt-1 text-sm text-text-secondary">
-            Paste a YouTube link, or add an audio or video file.
+            Paste {sites}, or add an audio or video file.
           </p>
         </div>
 
@@ -57,42 +62,65 @@ interface ReadyHandler {
   onReady: (projectId: string, jobId: string, url?: string) => void;
 }
 
-/** Paste a YouTube link and press Enter. */
+/** The field's hint for a link that passed the check: the site and what it links to. */
+function linkHint(check: Extract<LinkCheck, { ok: true }>): string {
+  const p = check.platform;
+  if (!p) return "Press Enter to import.";
+  const base = `${p.label} ${check.share ? "link" : p.item} · press Enter`;
+  return p.limited && p.reason ? `${base}. ${p.reason}` : base;
+}
+
+/** Paste a link to a post or video and press Enter. */
 function LinkForm({ onReady }: ReadyHandler) {
   const create = useCreateProject();
+  const platforms = usePlatforms();
   const [url, setUrl] = useState("");
   const [touched, setTouched] = useState(false);
 
-  const invalid = touched && url.trim().length > 0 && !isLikelyYouTubeUrl(url);
+  const text = url.trim();
+  const check = text ? checkLink(text, platforms.data) : null;
+  // The backend refuses a link it can't use (400: not a single post, say; or a site this
+  // install can't import from) with a message for the field; other failures get the alert.
+  const refused =
+    create.error instanceof ApiError &&
+    (create.error.status === 400 || create.error.type === "PlatformUnavailableError");
+  const fieldError = check && !check.ok ? check.message : refused ? create.error?.message : null;
+  const fieldAction =
+    check && !check.ok ? check.action : refused ? (create.error as ApiError).action : null;
+  const invalid = Boolean(fieldError) && (touched || refused);
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     setTouched(true);
-    if (create.isPending || !isLikelyYouTubeUrl(url)) return;
+    if (create.isPending || !check?.ok) return;
     create.mutate(
-      { url: url.trim() },
-      { onSuccess: ({ project_id, job_id }) => onReady(project_id, job_id, url.trim()) },
+      { url: text },
+      { onSuccess: ({ project_id, job_id }) => onReady(project_id, job_id, text) },
     );
   };
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
       <Input
-        label="YouTube link"
-        placeholder="https://www.youtube.com/watch?v=…"
+        label="Link"
+        placeholder="https://…"
         value={url}
-        onChange={(e) => setUrl(e.target.value)}
+        onChange={(e) => {
+          setUrl(e.target.value);
+          if (create.isError) create.reset();
+        }}
         onBlur={() => setTouched(true)}
         invalid={invalid}
-        hint={invalid ? "That doesn't look like a YouTube link." : "Press Enter to import."}
+        hint={invalid ? fieldError : check?.ok ? linkHint(check) : "Press Enter to import."}
         readOnly={create.isPending}
         autoFocus
         inputMode="url"
         enterKeyHint="go"
       />
+      {invalid && <ImportErrorActions action={fieldAction} message={fieldError} />}
       {create.isPending && <Progress label="Starting the import" />}
-      {create.isError && (
-        <Alert variant="error" title="Couldn't start extraction">
+      {create.isError && !refused && (
+        <Alert variant="error" title="Couldn't start the import">
           {create.error.message}
         </Alert>
       )}

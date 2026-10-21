@@ -1,28 +1,27 @@
 import { ApiError } from "@/api/client";
-import { useCreateProject, useJob, useProject } from "@/api/hooks";
+import { useCreateProject, useJob, usePlatforms, useProject } from "@/api/hooks";
 import { JobProgress } from "@/components/JobProgress";
 import { SaveStatus } from "@/components/SaveStatus";
-import { Alert, EmptyState, WaveformLoader } from "@/components/ui";
+import { Alert, EmptyState, WaveformLoader, useToast } from "@/components/ui";
 import { SeamLayer } from "@/features/cuts/SeamLayer";
 import { useEditHotkeys } from "@/features/cuts/useEditHotkeys";
 import { useEditRegions } from "@/features/cuts/useEditRegions";
 import { LowerBand } from "@/features/editor/LowerBand";
 import { RuledPage } from "@/features/editor/RuledPage";
 import { ExportButton } from "@/features/export/ExportButton";
+import { ImportErrorActions } from "@/features/projects/ImportErrorActions";
 import { ProjectSwitcher } from "@/features/projects/ProjectSwitcher";
-import { OpenSettingsButton } from "@/features/settings/OpenSettingsButton";
 import { SurahBand, SurahOverviewTints, SurahTints } from "@/features/surahs/SurahBand";
 import { useSurahHotkeys } from "@/features/surahs/useSurahView";
 import { TransportBar } from "@/features/transport/TransportBar";
 import { useTransportHotkeys } from "@/features/transport/useTransportHotkeys";
-import { CheckForUpdatesLink, mentionsUpdate } from "@/features/updates/UpdateBanner";
 import { PlayheadDiamond } from "@/features/waveform/PlayheadDiamond";
 import { WaveformProvider } from "@/features/waveform/WaveformContext";
 import { WaveformOverview } from "@/features/waveform/WaveformOverview";
 import { WaveformView } from "@/features/waveform/WaveformView";
 import { useEditStore } from "@/stores/editStore";
 import { useSurahStore } from "@/stores/surahStore";
-import type { JobRecord, ProjectView } from "@/types/api";
+import type { JobRecord, PlatformInfo, ProjectView } from "@/types/api";
 import { useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
@@ -34,26 +33,40 @@ export interface EditorLocationState {
   url?: string;
 }
 
-/** Friendly title per backend extraction failure (`error_type` = exception class name). */
-const ERROR_TITLES: Record<string, string> = {
-  InvalidInputError: "That link couldn't be used",
-  PrivateVideoError: "This video is private",
-  AgeRestrictedError: "This video is age-restricted",
-  VideoUnavailableError: "This video isn't available",
-  LiveStreamError: "Live streams can't be processed",
-  RegionLockedError: "This video is region-locked",
-  YouTubeBotCheckError: "YouTube refused the download",
-  CookiesError: "Couldn't read your YouTube cookies",
-  JobCancelledError: "The import was stopped",
-  ExtractionError: "Extraction failed",
+/** The site an import failed on, for titles: its label (`null` when unknown) and item. */
+interface FailedSite {
+  label: string | null;
+  item: string;
+}
+
+/** Friendly title per backend import failure (`error_type` = exception class name). */
+const ERROR_TITLES: Record<string, (site: FailedSite) => string> = {
+  InvalidInputError: () => "That link couldn't be used",
+  UnsupportedPlatformError: () => "That site isn't supported",
+  UnsupportedLinkError: () => "That link can't be imported",
+  PlatformUnavailableError: ({ label }) => `${label ?? "This site"} imports aren't available`,
+  PrivateVideoError: ({ item }) => `This ${item} is private`,
+  AgeRestrictedError: ({ item }) => `This ${item} is age-restricted`,
+  LoginRequiredError: ({ label }) => `${label ?? "The site"} wants you to sign in`,
+  VideoUnavailableError: ({ item }) => `This ${item} isn't available`,
+  LiveStreamError: () => "Live streams can't be imported",
+  RegionLockedError: ({ item }) => `This ${item} is region-locked`,
+  NoAudioStreamError: () => "There's no audio to import",
+  DrmProtectedError: ({ item }) => `This ${item} is copy-protected`,
+  FileTooLargeError: () => "That's too long or too large to import",
+  UnsupportedMediaError: () => "That file can't be imported",
+  RateLimitedError: ({ label }) => `${label ?? "The site"} is limiting requests`,
+  NetworkError: ({ label }) => `Couldn't reach ${label ?? "the site"}`,
+  ExtractorOutdatedError: () => "The downloader needs an update",
+  YouTubeBotCheckError: () => "YouTube refused the download",
+  CookiesError: () => "Couldn't read your sign-in cookies",
+  JobCancelledError: () => "The import was stopped",
+  ExtractionError: () => "The import failed",
 };
 
-/** Failures the YouTube cookies setting can fix; the alert offers a way to Settings. */
-const SETTINGS_FIXABLE = new Set(["YouTubeBotCheckError", "CookiesError"]);
-
-function extractionErrorTitle(job: JobRecord | undefined): string {
-  const type = job?.error_type ?? "";
-  return ERROR_TITLES[type] ?? "Extraction failed";
+function extractionErrorTitle(job: JobRecord | undefined, platform?: PlatformInfo): string {
+  const title = ERROR_TITLES[job?.error_type ?? ""] ?? ERROR_TITLES.ExtractionError;
+  return title({ label: platform?.label ?? null, item: platform?.item ?? "video" });
 }
 
 /**
@@ -73,6 +86,8 @@ export function EditorPage() {
 
   const job = useJob(jobId, { invalidateProject: true });
   const jobState = job.data?.state;
+  const platforms = usePlatforms();
+  const failedOn = platforms.data?.find((p) => p.id === job.data?.platform);
 
   // Only hit /projects once we know it exists: no tracked job (deep link) or job succeeded.
   const canFetchProject = !jobId || jobState === "succeeded";
@@ -102,7 +117,7 @@ export function EditorPage() {
         <Alert
           variant="error"
           className="w-full max-w-lg"
-          title={extractionErrorTitle(job.data)}
+          title={extractionErrorTitle(job.data, failedOn)}
           action={{
             label: url ? "Try again" : "Back to start",
             onClick: onRetry,
@@ -110,15 +125,20 @@ export function EditorPage() {
           }}
         >
           {job.data?.error ?? "Something went wrong while extracting the audio."}
-          {mentionsUpdate(job.data?.error) && (
-            <p className="mt-2">
-              <CheckForUpdatesLink />
-            </p>
-          )}
-          {SETTINGS_FIXABLE.has(job.data?.error_type ?? "") && (
-            <div className="mt-3">
-              <OpenSettingsButton />
-            </div>
+          <ImportErrorActions
+            action={job.data?.error_action}
+            message={job.data?.error}
+            className="mt-3"
+          />
+          {retry.isError && (
+            <>
+              <p className="mt-2 text-danger">{retry.error.message}</p>
+              <ImportErrorActions
+                action={retry.error instanceof ApiError ? retry.error.action : null}
+                message={retry.error.message}
+                className="mt-3"
+              />
+            </>
           )}
         </Alert>
       </RuledPage>
@@ -184,6 +204,28 @@ function EditorWorkspace({ project }: { project: ProjectView }) {
 }
 
 /**
+ * A warning toast while a link import whose audio is silent is open (a reel whose music was
+ * removed, say). The recording stays editable; the toast stays until dismissed or the editor
+ * moves on.
+ */
+function useSilentNotice(project: ProjectView) {
+  const { toast, dismiss } = useToast();
+  const platforms = usePlatforms();
+  const source = project.audio_source;
+  const platform = platforms.data?.find((p) => p.id === source.source_kind);
+  const message = platform
+    ? `This ${platform.label} ${platform.item}'s audio is silent. Its sound may have been removed.`
+    : "This recording's audio is silent. Its sound may have been removed.";
+  // Waits for the site list, so the toast isn't swapped for a more specific one a moment later.
+  const settled = !platforms.isPending;
+  useEffect(() => {
+    if (!source.is_silent || !settled) return;
+    const id = toast(message, "warning", 0);
+    return () => dismiss(id);
+  }, [source.is_silent, settled, message, toast, dismiss]);
+}
+
+/**
  * The ruled page, top to bottom: the title cartouche with the save state and Export, the
  * overview, the waveform with the surah band in its margin, the transport, then the tools and the
  * Surahs column.
@@ -199,6 +241,7 @@ function EditorBody({ project }: { project: ProjectView }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: project.id is the reset trigger
   useEffect(() => resetSurahs, [project.id, resetSurahs]);
 
+  useSilentNotice(project);
   useTransportHotkeys();
   useSurahHotkeys(project);
   // Single owner of the Regions plugin; cut hotkeys. Live playback-skip over cut spans lives in

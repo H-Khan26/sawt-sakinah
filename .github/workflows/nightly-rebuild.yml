@@ -1,8 +1,9 @@
 # Weekly canary: rebuild the Windows bundle against the newest yt-dlp, self-test it and
-# extract a short public YouTube video. Opens (or updates) an issue when anything fails.
-# Nothing is published; a passing run means a yt-dlp bump of the lock is safe to release.
-# Windows only: yt-dlp is pure Python, so one platform catches YouTube breakage, and the
-# macOS bundle is checked by every release build.
+# import each platform's canary post (see link-canary.yml for the daily run against the
+# locked yt-dlp). Opens (or updates) an issue when anything fails. Nothing is published; a
+# passing run means a yt-dlp bump of the lock is safe to release. Windows only: yt-dlp is
+# pure Python, so one platform catches site breakage, and the macOS bundle is checked by
+# every release build.
 name: Weekly rebuild
 
 on:
@@ -21,7 +22,7 @@ jobs:
   rebuild:
     name: Rebuild with the newest yt-dlp
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       SAWT_SPA_DIR: ${{ github.workspace }}/frontend/dist
       SAWT_VENDOR_DIR: ${{ github.workspace }}/packaging/build/vendor
@@ -91,35 +92,23 @@ jobs:
           }
 
       # Runs the same yt-dlp + Deno + ffmpeg combination from source: the bundled helper
-      # programs go on PATH, which is where a source checkout looks for them. YouTube often
-      # answers datacenter IPs with its bot check (exit code 3, cli.EXIT_BOT_CHECK); that is
-      # reported as a warning, since it says nothing about yt-dlp. Any other failure fails.
-      - name: YouTube extraction smoke test
-        id: youtube
-        timeout-minutes: 10
-        env:
-          # The extraction cache goes there too, not into the runner's profile.
-          SAWT_DATA_DIR: ${{ runner.temp }}/sawt-data
+      # programs go on PATH, which is where a source checkout looks for them, and each import
+      # gets a scratch SAWT_DATA_DIR. A blocked import (a bot check, sign-in wall or rate
+      # limit, common from datacenter IPs; cli.EXIT_BLOCKED) is reported as not exercised,
+      # since it says nothing about yt-dlp. An outdated or failed import fails.
+      - name: Link import smoke test
+        id: canary
+        timeout-minutes: 30
         run: |
-          # yt-dlp's stderr goes into the log; it must not stop the step by itself.
-          $ErrorActionPreference = 'Continue'
           $env:PATH = "$env:SAWT_VENDOR_DIR\bin;$env:PATH"
-          $out = Join-Path $env:RUNNER_TEMP 'yt-smoke'
-          $log = Join-Path $env:RUNNER_TEMP 'yt-smoke.log'
-          $global:LASTEXITCODE = $null
-          python -m sawt_sakinah extract "https://www.youtube.com/watch?v=jNQXAC9IVRw" -o $out 2>&1 | Tee-Object -FilePath $log
+          $result = Join-Path $env:RUNNER_TEMP 'canary-stable.json'
+          $md = Join-Path $env:RUNNER_TEMP 'canary.md'
+          python packaging/link_canary.py run --label stable --out $result
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python packaging/link_canary.py report $result --markdown $md
           $code = $LASTEXITCODE
-          # No exit code means python never ran (missing or not launchable).
-          if ($null -eq $code) { Write-Host '::error::sawt extract did not run'; exit 1 }
-          if ($code -eq 3) {
-            $msg = 'YouTube refused the runner with its bot check, so the extraction was not exercised.'
-            Write-Host "::warning::$msg"
-            "**YouTube smoke test inconclusive:** $msg" >> $env:GITHUB_STEP_SUMMARY
-            exit 0
-          }
-          if ($code) { exit $code }
-          Get-ChildItem $out | Format-Table Name, Length
-          if (-not (Get-ChildItem $out -File)) { Write-Host '::error::no output file'; exit 1 }
+          Get-Content $md -Raw >> $env:GITHUB_STEP_SUMMARY
+          exit $code
 
       # upload-artifact needs one common root, so the report and the app's logs (under
       # SAWT_DATA_DIR) are copied into one folder first.
@@ -131,7 +120,7 @@ jobs:
         run: |
           $dest = Join-Path $env:RUNNER_TEMP 'diagnostics'
           New-Item -ItemType Directory -Force $dest | Out-Null
-          foreach ($f in 'self-test.json', 'yt-smoke.log') {
+          foreach ($f in 'self-test.json', 'canary-stable.json', 'canary.md') {
             $src = Join-Path $env:RUNNER_TEMP $f
             if (Test-Path $src) { Copy-Item $src $dest }
           }
@@ -167,7 +156,7 @@ jobs:
       - name: Open or update the tracking issue
         run: |
           title="Weekly rebuild against the newest yt-dlp failed"
-          body="The weekly rebuild (bundle self-test or YouTube extraction smoke test) failed: $RUN_URL"
+          body="The weekly rebuild (bundle self-test or link import smoke test) failed: $RUN_URL"
           number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
             gh issue comment "$number" --body "$body"

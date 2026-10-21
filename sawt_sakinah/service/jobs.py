@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 
 from .. import proc
 from ..config import CONFIG
-from ..models import JobCancelledError
+from ..models import Action, ExtractionError, JobCancelledError
 
 _log = logging.getLogger(__name__)
 
@@ -79,13 +79,18 @@ class JobRecord(BaseModel):
     result: Optional[dict] = None
     error: Optional[str] = None
     error_type: Optional[str] = None
+    error_action: Optional[Action] = None  # what the user can do about an extraction failure
+    platform: Optional[str] = None      # the registry id of the site an extraction failed on
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
 
 
 def _failure(error: str, exc: BaseException) -> dict:
     """The ``_patch`` fields recording a failed job."""
-    return {"state": JobState.failed, "error": error, "error_type": type(exc).__name__}
+    fields = {"state": JobState.failed, "error": error, "error_type": type(exc).__name__}
+    if isinstance(exc, ExtractionError):
+        fields.update(exc.error_fields())
+    return fields
 
 
 CANCELLED_MESSAGE = "The job was cancelled because the app was closing."
