@@ -53,6 +53,20 @@ def ytdlp_version() -> str:
     return __version__
 
 
+def ytdlp_source() -> str:
+    """Which yt-dlp copy is active: ``"bundled"`` (the app's own, or a source checkout's
+    installed one) or ``"updated"`` (a downloaded update)."""
+    return activate().get("source") or "bundled"
+
+
+def ytdlp_label() -> str:
+    """The active yt-dlp for logs and reports: ``"2026.08.19 (bundled)"``."""
+    try:
+        return f"{ytdlp_version()} ({ytdlp_source()})"
+    except Exception as exc:  # noqa: BLE001 - yt-dlp itself may be what failed
+        return f"unknown ({type(exc).__name__})"
+
+
 def extractor_class(ie_key: str) -> Optional[type]:
     """The active yt-dlp's extractor class for ``ie_key`` (``"Instagram"``), or ``None``."""
     import_yt_dlp()

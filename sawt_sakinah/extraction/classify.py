@@ -51,13 +51,13 @@ BROWSER_LABELS = {
 # ``raise_login_required`` appends.
 _LOGIN_HINT = re.compile(r"--cookies\b")
 
-# Messages for a post with nothing to download: yt-dlp's core ones, Instagram's and X's,
-# and FFmpegExtractAudio finding no audio track in the download.
+# Messages for a post with nothing to download: yt-dlp's core ones, Instagram's and X's.
 _NO_MEDIA = re.compile(
     r"no video formats found|requested format is not available|there is no video in this post"
     r"|no video could be found in this tweet|media #\d+ is not a video"
-    r"|unable to obtain file audio codec"
 )
+# FFmpegExtractAudio finding no audio track in a downloaded video.
+_NO_AUDIO_TRACK = re.compile(r"unable to obtain file audio codec")
 
 # Older text matches for failures that arrive without a typed exception.
 _PRIVATE = re.compile(r"private video")
@@ -148,6 +148,39 @@ def cookie_error(cookies: str, message: str, platform: Optional[Platform]) -> Co
     )
 
 
+def _root_error(chain: list[BaseException]) -> Optional[BaseException]:
+    """The innermost ``ExtractorError`` of a cause chain: the one that says what failed."""
+    from yt_dlp.utils import ExtractorError
+
+    errors = [e for e in chain if isinstance(e, ExtractorError)]
+    return errors[-1] if errors else None
+
+
+def root_message(err: BaseException) -> str:
+    """yt-dlp's own text for a failure: the root ``ExtractorError`` with its
+    ``"[ie] id:"`` prefix, else ``str(err)``."""
+    root = _root_error(list(causes(err)))
+    return str(root if root is not None else err)
+
+
+def no_audio_error(platform: Platform, has_video: bool = False) -> NoAudioStreamError:
+    """The error for a post with nothing to import: no media at all, or (``has_video``) a
+    video without an audio track."""
+    if has_video:
+        text = f"This {platform.item} has no audio track to import."
+    else:
+        text = f"This {platform.item} has no video or audio to import."
+    return NoAudioStreamError(text, platform=platform.id)
+
+
+def unavailable_error(platform: Platform) -> VideoUnavailableError:
+    """The error for a post that is gone or never existed."""
+    return VideoUnavailableError(
+        f"This {platform.item} isn't available. It may have been deleted.",
+        platform=platform.id,
+    )
+
+
 def _outdated(ctx: FailureContext) -> ExtractionError:
     newer = (
         f" A newer one ({ctx.newer_downloader}) is available."
@@ -199,6 +232,10 @@ def _worded(cls: type[ExtractionError], ctx: FailureContext) -> ExtractionError:
         return _outdated(ctx)
     if cls is LoginRequiredError:
         return _login(ctx)
+    if cls is NoAudioStreamError:
+        return no_audio_error(p)
+    if cls is VideoUnavailableError:
+        return unavailable_error(p)
     messages: dict[type[ExtractionError], str] = {
         PrivateVideoError: f"This {p.item} is private.",
         AgeRestrictedError: (
@@ -207,8 +244,6 @@ def _worded(cls: type[ExtractionError], ctx: FailureContext) -> ExtractionError:
         ),
         RegionLockedError: f"This {p.item} isn't available in your country.",
         LiveStreamError: "Live streams can't be imported. Try again after it ends.",
-        VideoUnavailableError: f"This {p.item} isn't available. It may have been deleted.",
-        NoAudioStreamError: f"This {p.item} has no video or audio to import.",
         DrmProtectedError: f"This {p.item} is copy-protected and can't be imported.",
         NetworkError: f"Couldn't reach {p.label}. Check your internet connection.",
     }
@@ -222,18 +257,17 @@ def classify(err: BaseException, platform: Platform, cookies: Optional[str]) -> 
     ``None``; it shapes the sign-in advice. The first matching rule wins:
 
     1. cookies failed to load; 2. the platform's own text rules; 3. geo restriction;
-    4. HTTP 429, then 404/410 and 5xx; 5. yt-dlp's sign-in hint; 6. no media;
-    7. DRM; 8. older texts (private, age, region, live, unavailable); 9. a network
+    4. HTTP 429, then 404/410 and 5xx; 5. yt-dlp's sign-in hint; 6. no media, or
+    no audio track; 7. DRM; 8. older texts (private, age, region, live, unavailable); 9. a network
     failure; 10. the post leads to another site; 11. an unforeseen failure in the
     extractor (outdated); 12. a generic message.
     """
     from yt_dlp.cookies import CookieLoadError
     from yt_dlp.networking.exceptions import HTTPError, TransportError
-    from yt_dlp.utils import ExtractorError, GeoRestrictedError, RegexNotFoundError
+    from yt_dlp.utils import GeoRestrictedError, RegexNotFoundError
 
     chain = list(causes(err))
-    extractor_errors = [e for e in chain if isinstance(e, ExtractorError)]
-    root = extractor_errors[-1] if extractor_errors else None
+    root = _root_error(chain)
     http = next((e for e in chain if isinstance(e, HTTPError)), None)
     message = root.orig_msg if root is not None else str(err)
     low = message.lower()
@@ -272,6 +306,8 @@ def classify(err: BaseException, platform: Platform, cookies: Optional[str]) -> 
         return worded(LoginRequiredError)
     if _NO_MEDIA.search(low):
         return worded(NoAudioStreamError)
+    if _NO_AUDIO_TRACK.search(low):
+        return no_audio_error(platform, has_video=True)
     if "drm protected" in low:
         return worded(DrmProtectedError)
     if _PRIVATE.search(low):

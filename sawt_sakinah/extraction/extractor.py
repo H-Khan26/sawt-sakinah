@@ -8,7 +8,9 @@ The import runs in stages, each with its own errors: match the link (:mod:`.link
 resolve a share link, check the platform against the active yt-dlp (:mod:`.compat`),
 fetch the metadata, pick one media item and check the limits, download and convert,
 then probe and finish (:mod:`.finalize`). yt-dlp's failures are mapped to typed errors
-by :mod:`.classify`.
+by :mod:`.classify`. Each download (not a cache hit) and each failure logs one line with
+the platform, extractor and active yt-dlp; a failure adds the error type, its action and
+yt-dlp's own message, so a bug report's log carries them.
 
 Optional sign-in cookies come from a browser profile or a cookies.txt file. The file is
 read into memory and handed to yt-dlp as a stream, so yt-dlp's habit of writing the cookie
@@ -33,6 +35,7 @@ from ..models.errors import (
     ExtractionError,
     ExtractorOutdatedError,
     FileTooLargeError,
+    JobCancelledError,
     LiveStreamError,
     NoAudioStreamError,
     UnsupportedLinkError,
@@ -41,7 +44,13 @@ from ..models.sources import AudioSource
 from ..ytdlp_updates import import_yt_dlp
 from . import cache as _cache
 from . import compat
-from .classify import classify, is_ytdlp_failure
+from .classify import (
+    classify,
+    is_ytdlp_failure,
+    no_audio_error,
+    root_message,
+    unavailable_error,
+)
 from .finalize import emit as _emit
 from .finalize import finalize_source
 from .links import (
@@ -194,17 +203,21 @@ def _check_limits(info: dict, max_download_mb: int, max_duration_sec: float) -> 
         )
 
 
-def _no_audio(platform: Platform) -> NoAudioStreamError:
-    return NoAudioStreamError(
-        f"This {platform.item} has no video or audio to import.", platform=platform.id
-    )
+def _media_formats(entry: dict) -> list[dict]:
+    """A media item's formats; an item with a direct ``url`` is its own single format."""
+    return entry.get("formats") or ([entry] if entry.get("url") else [])
+
+
+def _has_video(formats: list[dict]) -> bool:
+    """Whether any of ``formats`` declares a video codec or a frame height."""
+    return any(fmt.get("vcodec") not in (None, "none") or fmt.get("height") for fmt in formats)
 
 
 def _check_has_audio(info: dict, platform: Platform) -> None:
     """Reject media whose selected formats all declare no audio (``acodec == "none"``)."""
     formats = info.get("requested_formats") or [info]
     if all(fmt.get("acodec") == "none" for fmt in formats):
-        raise _no_audio(platform)
+        raise no_audio_error(platform, has_video=_has_video(formats))
 
 
 def _may_have_audio(entry: dict) -> Optional[bool]:
@@ -212,7 +225,7 @@ def _may_have_audio(entry: dict) -> Optional[bool]:
     declares none, ``None`` when it is only a link to resolve."""
     if entry.get("_type") in ("url", "url_transparent"):
         return None
-    formats = entry.get("formats") or ([entry] if entry.get("url") else [])
+    formats = _media_formats(entry)
     if not formats:
         return False
     return any(fmt.get("acodec") != "none" for fmt in formats)
@@ -235,7 +248,8 @@ def pick_media(info: dict, link: ResolvedLink) -> dict:
     videos = [e for e in entries if _may_have_audio(e) is not False or e.get("formats")]
     chosen = next((e for e in videos if _may_have_audio(e) is not False), None)
     if chosen is None:
-        raise _no_audio(link.platform)
+        # Only videos that declare no audio, or only photos.
+        raise no_audio_error(link.platform, has_video=bool(videos))
     title = chosen.get("title") or info.get("title") or link.post_id
     if len(videos) > 1:
         position = videos.index(chosen) + 1
@@ -260,8 +274,25 @@ def _fetch_metadata(ydl, link: ResolvedLink) -> dict:
 
     Processing is left to the caller so a post with several items can be reduced to one
     first: processing them all fails on the first photo of a carousel.
+
+    Raises:
+        VideoUnavailableError: If the platform probes empty posts (``probe_empty_posts``)
+            and returned nothing for this one.
+        NoAudioStreamError: If such a platform returned a post without media.
     """
-    info = ydl.extract_info(link.url, download=False, process=False)
+    platform = link.platform
+    if platform.probe_empty_posts:
+        # The extractor then returns the post's text and author instead of raising.
+        ydl.params["ignore_no_formats_error"] = True
+    try:
+        info = ydl.extract_info(link.url, download=False, process=False)
+    finally:
+        ydl.params.pop("ignore_no_formats_error", None)
+    if platform.probe_empty_posts and info and info.get("_type") in (None, "video"):
+        if not (info.get("formats") or info.get("url")):
+            if not any(info.get(k) for k in ("title", "uploader", "timestamp")):
+                raise unavailable_error(platform)
+            raise no_audio_error(platform)
     for _ in range(_MAX_HOPS):
         kind = info.get("_type") if info else None
         if kind not in ("url", "url_transparent"):
@@ -288,6 +319,33 @@ def _source_id(source_key: str, audio_format: str, audio_quality: str) -> str:
     """Deterministic short id for an extraction request (for caching/reference)."""
     key = f"{source_key}|{audio_format}|{audio_quality}"
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
+def _log_failure(
+    err: Exception, url: str, platform: Optional[Platform], link: Optional[ResolvedLink]
+) -> None:
+    """Log a failed import in one line: the error, where it happened, the active yt-dlp,
+    the action offered and yt-dlp's own message behind it."""
+    cause = err.__cause__ if isinstance(err, ExtractionError) else None
+    ytdlp = compat.ytdlp_label()
+    try:
+        cause_text = root_message(cause) if cause is not None else None
+    except Exception:  # noqa: BLE001 - yt-dlp itself may be what failed
+        cause_text = None
+    _log.warning(
+        "link import failed: %s platform=%s extractor=%s yt-dlp=%s action=%s url=%s "
+        "message=%r cause=%r",
+        type(err).__name__,
+        platform.id if platform else None,
+        link.extractor_key if link else None,
+        ytdlp,
+        getattr(err, "action", None),
+        link.url if link else url,
+        str(err),
+        cause_text,
+        # A failure outside the typed errors is a bug; keep its traceback.
+        exc_info=not isinstance(err, ExtractionError),
+    )
 
 
 def extract_audio(
@@ -366,149 +424,168 @@ def extract_audio(
         FileNotFoundError: If ffmpeg is missing or the expected output file is not
             produced.
     """
-    text = parse_link(url)
-    platform = platform_for_url(text)
+    # What is known about the import so far, for the log line of a failure.
+    platform: Optional[Platform] = None
     link: Optional[ResolvedLink] = None
-    if not is_share_link(text, platform):
-        try:
-            link = match_link(text, platform)
-        except UnsupportedLinkError:
-            # A missing or renamed extractor explains a refused link better.
-            compat.require_available(platform)
-            raise
-    resolved_cache_dir = Path(cache_dir) if cache_dir is not None else _cache.default_cache_dir()
-
-    def cached(link: ResolvedLink) -> Optional[AudioSource]:
-        if not use_cache:
-            return None
-        source_id = _source_id(link.cache_key, audio_format, audio_quality)
-        hit = _cache.load(resolved_cache_dir, source_id)
-        if hit is not None:
-            _emit(progress_callback, stage="cache", status="hit", percent=100.0)
-        return hit
-
-    # A cached import needs neither the network nor a working platform.
-    if link is not None and (hit := cached(link)) is not None:
-        return hit
-    compat.require_available(platform)
-
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stem = filename if filename is not None else DEFAULT_STEM
-    max_bytes = max_download_mb * 1024 * 1024
-
-    cookies: Optional[str] = None
-    cookie_text: Optional[str] = None
-    if cookies_from_browser:
-        cookies = cookies_from_browser
-    elif cookies_file:
-        cookie_text = _read_cookies_file(cookies_file)
-        cookies = "file"
-    js_runtimes = _js_runtimes()
-
-    def ydl_opts(platform: Platform) -> dict:
-        opts = {
-            "format": "bestaudio/best",
-            "outtmpl": str(out_dir / f"{stem}.%(ext)s"),
-            "quiet": quiet,
-            "no_warnings": quiet,
-            "noprogress": quiet,
-            "logger": _YtdlpLogger(),
-            # Only the platform's single-post extractors: a post that hands over to another
-            # site fails ("No suitable extractor") instead of downloading from it.
-            "allowed_extractors": [
-                re.escape(compat.extractor_class(key).IE_NAME.lower())
-                for key in platform.extractors
-            ],
-            # Honour a link to one item of a post (x.com/…/status/…/video/2).
-            "noplaylist": True,
-            # A fixed stem can meet leftovers of an earlier attempt; never resume or reuse them.
-            "overwrites": True,
-            "continuedl": False,
-            # yt-dlp derives ffprobe from the same folder.
-            "ffmpeg_location": runtime.resolve_executable(ffmpeg_bin),
-            "max_filesize": max_bytes,
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": audio_format,
-                    "preferredquality": audio_quality,
-                }
-            ],
-        }
-        if cookies_from_browser:
-            opts["cookiesfrombrowser"] = (cookies_from_browser,)
-        elif cookie_text is not None:
-            # A fresh stream per YoutubeDL: yt-dlp reads it once and writes the jar back.
-            opts["cookiefile"] = io.StringIO(cookie_text)
-        if js_runtimes is not None:
-            opts["js_runtimes"] = js_runtimes
-        if progress_callback is not None:
-            opts["progress_hooks"] = [_make_download_hook(progress_callback)]
-            # yt-dlp runs its own ffmpeg for the transcode; reporting before it starts lets
-            # a callback that cancels (the app closing) stop the job while nothing is being
-            # written.
-            opts["postprocessor_hooks"] = [_make_postprocessor_hook(progress_callback)]
-        return opts
-
-    # Imported here, not at module load: ytdlp_updates.activate() must run first so a
-    # verified downloaded yt-dlp can take precedence over the bundled copy.
-    yt_dlp = import_yt_dlp()
-
-    _emit(progress_callback, stage="metadata", status="start")
     try:
-        with contextlib.ExitStack() as stack:
-            ydl = stack.enter_context(yt_dlp.YoutubeDL(ydl_opts(platform)))
-            if link is None:
-                # A share link: one request to find the post it points at.
-                link = resolve_link(url, ydl)
-                if link.platform.id != platform.id:
-                    # A t.co link can lead to another platform, with other extractors.
-                    platform = link.platform
-                    compat.require_available(platform)
-                    ydl = stack.enter_context(yt_dlp.YoutubeDL(ydl_opts(platform)))
-                if (hit := cached(link)) is not None:
-                    return hit
-            info = _fetch_metadata(ydl, link)
-            info = ydl.process_ie_result(pick_media(info, link), download=False)
-            _check_limits(info, max_download_mb, max_duration_sec)
-            _check_has_audio(info, platform)
-            info = ydl.process_ie_result(info, download=True)
-    except ExtractionError:
+        text = parse_link(url)
+        platform = platform_for_url(text)
+        if not is_share_link(text, platform):
+            try:
+                link = match_link(text, platform)
+            except UnsupportedLinkError:
+                # A missing or renamed extractor explains a refused link better.
+                compat.require_available(platform)
+                raise
+        resolved_cache_dir = (
+            Path(cache_dir) if cache_dir is not None else _cache.default_cache_dir()
+        )
+
+        def cached(link: ResolvedLink) -> Optional[AudioSource]:
+            if not use_cache:
+                return None
+            source_id = _source_id(link.cache_key, audio_format, audio_quality)
+            hit = _cache.load(resolved_cache_dir, source_id)
+            if hit is not None:
+                _emit(progress_callback, stage="cache", status="hit", percent=100.0)
+            return hit
+
+        # A cached import needs neither the network nor a working platform.
+        if link is not None and (hit := cached(link)) is not None:
+            return hit
+        compat.require_available(platform)
+
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stem = filename if filename is not None else DEFAULT_STEM
+        max_bytes = max_download_mb * 1024 * 1024
+
+        cookies: Optional[str] = None
+        cookie_text: Optional[str] = None
+        if cookies_from_browser:
+            cookies = cookies_from_browser
+        elif cookies_file:
+            cookie_text = _read_cookies_file(cookies_file)
+            cookies = "file"
+        js_runtimes = _js_runtimes()
+
+        def ydl_opts(platform: Platform) -> dict:
+            opts = {
+                "format": "bestaudio/best",
+                "outtmpl": str(out_dir / f"{stem}.%(ext)s"),
+                "quiet": quiet,
+                "no_warnings": quiet,
+                "noprogress": quiet,
+                "logger": _YtdlpLogger(),
+                # Only the platform's single-post extractors: a post that hands over to another
+                # site fails ("No suitable extractor") instead of downloading from it.
+                "allowed_extractors": [
+                    re.escape(compat.extractor_class(key).IE_NAME.lower())
+                    for key in platform.extractors
+                ],
+                # Honour a link to one item of a post (x.com/…/status/…/video/2).
+                "noplaylist": True,
+                # A fixed stem can meet leftovers of an earlier attempt; never resume or reuse them.
+                "overwrites": True,
+                "continuedl": False,
+                # yt-dlp derives ffprobe from the same folder.
+                "ffmpeg_location": runtime.resolve_executable(ffmpeg_bin),
+                "max_filesize": max_bytes,
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": audio_format,
+                        "preferredquality": audio_quality,
+                    }
+                ],
+            }
+            if cookies_from_browser:
+                opts["cookiesfrombrowser"] = (cookies_from_browser,)
+            elif cookie_text is not None:
+                # A fresh stream per YoutubeDL: yt-dlp reads it once and writes the jar back.
+                opts["cookiefile"] = io.StringIO(cookie_text)
+            if js_runtimes is not None:
+                opts["js_runtimes"] = js_runtimes
+            if progress_callback is not None:
+                opts["progress_hooks"] = [_make_download_hook(progress_callback)]
+                # yt-dlp runs its own ffmpeg for the transcode; reporting before it starts lets
+                # a callback that cancels (the app closing) stop the job while nothing is being
+                # written.
+                opts["postprocessor_hooks"] = [_make_postprocessor_hook(progress_callback)]
+            return opts
+
+        # Imported here, not at module load: ytdlp_updates.activate() must run first so a
+        # verified downloaded yt-dlp can take precedence over the bundled copy.
+        yt_dlp = import_yt_dlp()
+
+        _emit(progress_callback, stage="metadata", status="start")
+        item: Optional[dict] = None
+        try:
+            with contextlib.ExitStack() as stack:
+                ydl = stack.enter_context(yt_dlp.YoutubeDL(ydl_opts(platform)))
+                if link is None:
+                    # A share link: one request to find the post it points at.
+                    link = resolve_link(url, ydl)
+                    if link.platform.id != platform.id:
+                        # A t.co link can lead to another platform, with other extractors.
+                        platform = link.platform
+                        compat.require_available(platform)
+                        ydl = stack.enter_context(yt_dlp.YoutubeDL(ydl_opts(platform)))
+                    if (hit := cached(link)) is not None:
+                        return hit
+                item = pick_media(_fetch_metadata(ydl, link), link)
+                info = ydl.process_ie_result(item, download=False)
+                _check_limits(info, max_download_mb, max_duration_sec)
+                _check_has_audio(info, platform)
+                info = ydl.process_ie_result(info, download=True)
+        except ExtractionError:
+            raise
+        except Exception as err:
+            if not is_ytdlp_failure(err):
+                raise
+            mapped = classify(err, platform, cookies)
+            if (
+                isinstance(mapped, NoAudioStreamError)
+                and item is not None
+                and _has_video(_media_formats(item))
+            ):
+                # Format selection found nothing, but the metadata lists a video.
+                mapped = no_audio_error(platform, has_video=True)
+            raise mapped from err
+
+        # After post-processing the file has the requested audio extension.
+        result = out_dir / f"{stem}.{audio_format}"
+        if not result.exists():
+            # yt-dlp skips (without raising) a stream whose real size exceeds max_filesize.
+            raise FileTooLargeError(
+                f"This video's audio is larger than the {max_download_mb} MB limit."
+            )
+
+        # Probe + working copy + AudioSource + cache-save are shared with the upload
+        # importer; only acquisition (the yt-dlp download above) is link-specific.
+        source = finalize_source(
+            result,
+            source_id=_source_id(link.cache_key, audio_format, audio_quality),
+            title=info.get("title") or result.stem,
+            source_kind=platform.id,
+            source_url=link.url,
+            create_working_copy=create_working_copy,
+            normalize_loudness=normalize_loudness,
+            measure_peak=True,
+            use_cache=use_cache,
+            cache_dir=resolved_cache_dir,
+            ffmpeg_bin=ffmpeg_bin,
+            ffprobe_bin=ffprobe_bin,
+            progress_callback=progress_callback,
+        )
+        _log.info(
+            "link import done: platform=%s extractor=%s yt-dlp=%s url=%s",
+            platform.id, info.get("extractor_key") or link.extractor_key,
+            compat.ytdlp_label(), link.url,
+        )
+        return source
+    except JobCancelledError:
         raise
     except Exception as err:
-        if not is_ytdlp_failure(err):
-            raise
-        mapped = classify(err, platform, cookies)
-        _log.warning(
-            "%s import failed (yt-dlp %s) for %s: %s -> %s",
-            platform.id, compat.ytdlp_version(), link.url if link else url, err,
-            type(mapped).__name__,
-        )
-        raise mapped from err
-
-    # After post-processing the file has the requested audio extension.
-    result = out_dir / f"{stem}.{audio_format}"
-    if not result.exists():
-        # yt-dlp skips (without raising) a stream whose real size exceeds max_filesize.
-        raise FileTooLargeError(
-            f"This video's audio is larger than the {max_download_mb} MB limit."
-        )
-
-    # Probe + working copy + AudioSource + cache-save are shared with the upload
-    # importer; only acquisition (the yt-dlp download above) is link-specific.
-    return finalize_source(
-        result,
-        source_id=_source_id(link.cache_key, audio_format, audio_quality),
-        title=info.get("title") or result.stem,
-        source_kind=platform.id,
-        source_url=link.url,
-        create_working_copy=create_working_copy,
-        normalize_loudness=normalize_loudness,
-        measure_peak=True,
-        use_cache=use_cache,
-        cache_dir=resolved_cache_dir,
-        ffmpeg_bin=ffmpeg_bin,
-        ffprobe_bin=ffprobe_bin,
-        progress_callback=progress_callback,
-    )
+        _log_failure(err, url, platform, link)
+        raise

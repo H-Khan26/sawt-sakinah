@@ -69,7 +69,11 @@ class Platform:
     prefers: frozenset[Capability] = frozenset()  # without these the site is limited
     signin_often_needed: bool = False
     rules: tuple[ErrorRule, ...] = ()  # site-specific texts, checked before generic rules
-    canary_url: Optional[str] = None   # public post with audio for the nightly smoke test
+    # Fetch a post's metadata even when it has no media, so a post the site returns nothing
+    # for (no text, no author) can be told from a text-only one. Only for sites whose sole
+    # "no formats" failure is a post without media.
+    probe_empty_posts: bool = False
+    canary_url: Optional[str] = None   # public post with audio for the daily link canary
 
 
 # -- site-specific error rules ----------------------------------------------------------
@@ -182,6 +186,8 @@ PLATFORMS: tuple[Platform, ...] = (
         share_user_agent="curl",
         media_index=r"/status(?:es)?/\d+/(?:video|photo)/(\d+)",
         rules=X_RULES,
+        # A missing post fails like a text-only one ("No video could be found in this tweet").
+        probe_empty_posts=True,
         canary_url="https://x.com/captainamerica/status/719944021058060289",
     ),
     Platform(
