@@ -24,6 +24,8 @@ const FOCUSABLE =
 export function Modal({ open, onClose, children, ariaLabel, className }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  const scrimDownRef = useRef(false);
+  const scrimPressRef = useRef(false);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -66,8 +68,23 @@ export function Modal({ open, onClose, children, ariaLabel, className }: ModalPr
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+      // Closes only when a primary press both starts and ends on the scrim, so a drag across the
+      // dialog's edge (e.g. a text selection released over the scrim) keeps it open.
+      onPointerDown={(e) => {
+        scrimDownRef.current = e.button === 0 && e.target === e.currentTarget;
+        scrimPressRef.current = false;
+      }}
+      onPointerUp={(e) => {
+        scrimPressRef.current = scrimDownRef.current && e.target === e.currentTarget;
+        scrimDownRef.current = false;
+      }}
+      onPointerCancel={() => {
+        scrimDownRef.current = false;
+        scrimPressRef.current = false;
+      }}
+      onClick={() => {
+        if (scrimPressRef.current) onClose();
+        scrimPressRef.current = false;
       }}
       onKeyDown={onKeyDown}
     >
