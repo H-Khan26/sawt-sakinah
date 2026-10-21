@@ -8,6 +8,7 @@
  * destructively until export, and the waveform engine skips cut ranges live during playback.
  */
 import { Button, Tooltip } from "@/components/ui";
+import { ColumnHeading } from "@/features/editor/ColumnHeading";
 import { FieldLabel } from "@/features/editor/FieldLabel";
 import { ExportModal } from "@/features/export/ExportModal";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
@@ -266,6 +267,7 @@ export function CutPanel({ project }: { project: ProjectView }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <ColumnHeading>Cut</ColumnHeading>
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
         <label htmlFor="cut-start" className="flex flex-col gap-1.5">
           <FieldLabel>Start</FieldLabel>

@@ -18,6 +18,7 @@ import { SplitModal } from "@/features/cuts/SplitModal";
 import { keepOnlyRanges } from "@/features/cuts/cutEdl";
 import { useEdlEditor } from "@/features/cuts/useEdlEditor";
 import { useUndoToast } from "@/features/cuts/useUndoToast";
+import { ColumnHeading } from "@/features/editor/ColumnHeading";
 import { ModelDownloadPrompt } from "@/features/models/ModelDownload";
 import type { Span } from "@/lib/edl";
 import { formatRelativeTime, plural } from "@/lib/format";
@@ -41,7 +42,7 @@ function Header({ count, showSwitches }: { count: number | null; showSwitches: b
   const setShowFatihah = useViewPrefs((s) => s.setShowFatihah);
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-      <h2 className="font-display text-[22px] leading-none text-text">Surahs</h2>
+      <ColumnHeading>Surahs</ColumnHeading>
       {count !== null && (
         <span className="whitespace-nowrap font-display text-[12px] uppercase tracking-[0.26em] text-text-secondary">
           {plural(count, "surah", "surahs")}

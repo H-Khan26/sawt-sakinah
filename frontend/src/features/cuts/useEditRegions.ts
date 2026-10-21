@@ -8,24 +8,28 @@
  * Silence and cut regions let the pointer through (see `regions.ts`), so a click on them reaches
  * the waveform, which seeks; the click is then mapped back to what lies under it: a cut range
  * (full view) is selected and the playhead moves to its start, a silence toggles its selection
- * and the playhead moves to its start, and empty waveform deselects the cut range.
+ * and the playhead moves to its start, and empty waveform deselects the cut range. Silences are
+ * left out entirely while `SILENCE_TOOL` is off.
  *
  * It also owns the drags: dragging on the waveform paints a new selection, dragging the selection
  * region's body/edges fine-tunes it, and dragging a selected cut range's edge commits one edit
  * on release (`useCutCommands().resizeCut`). Region coordinates are edited-time, so they invert
  * through the `TimeMap` back to the source time the store and the EDL hold.
  */
+import { SILENCE_TOOL } from "@/features/silence/enabled";
 import { silenceKey } from "@/features/silence/regions";
 import { useWaveformContext } from "@/features/waveform/WaveformContext";
 import { WAVE_HEIGHT } from "@/features/waveform/layout";
 import { useThemeColors } from "@/lib/themeColors";
 import { useEditStore } from "@/stores/editStore";
-import type { ProjectView } from "@/types/api";
+import type { ProjectView, SilenceSegment } from "@/types/api";
 import { useEffect, useRef } from "react";
 import { CUT_KEY_PREFIX, cutKey } from "./cutEdl";
 import { useCutModel } from "./cutModel";
 import { SELECTION_REGION_ID, reconcileEditRegions } from "./regions";
 import { useCutCommands } from "./useCutCommands";
+
+const NO_SILENCES: SilenceSegment[] = [];
 
 export function useEditRegions(project: ProjectView): void {
   const { wavesurfer, regions, controller, timeMap, isReady } = useWaveformContext();
@@ -36,8 +40,10 @@ export function useEditRegions(project: ProjectView): void {
   const commands = useCutCommands(project.id);
 
   // Draw only the silence that survives content cuts and isn't removed; removed audio is drawn
-  // from the merged cut ranges alone, so no range is drawn twice.
-  const { cutSpans, kept } = useCutModel(project);
+  // from the merged cut ranges alone, so no range is drawn twice. None while the tool is off.
+  const model = useCutModel(project);
+  const { cutSpans } = model;
+  const kept = SILENCE_TOOL ? model.kept : NO_SILENCES;
 
   // Reconcile overlays whenever the inputs, the selection, the mapping or the theme's colours
   // change (once laid out).

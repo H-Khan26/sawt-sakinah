@@ -1,25 +1,17 @@
 /**
- * The page's lower band, under a gold rule: the tools (Silence and Cut under ribbon tabs) take
- * 60% and the Surahs column 40%, split by a hairline. Each column scrolls on its own when the
- * page is fixed to the window. The tool panels stay mounted across tab switches so their
- * detection jobs, slider values and shortcuts survive.
+ * The page's lower band, under a gold rule: the Cut tool takes 60% and the Surahs column 40%,
+ * split by a hairline. Each column scrolls on its own when the page is fixed to the window. The
+ * Silence tool (`SilencePanel`) is not shown for now; see `SILENCE_TOOL` for its waveform layer.
  */
-import { Tabs } from "@/components/ui";
 import { CutPanel } from "@/features/cuts/CutPanel";
-import { SilencePanel } from "@/features/silence/SilencePanel";
 import { SurahsPanel } from "@/features/surahs/SurahsPanel";
 import type { ProjectView } from "@/types/api";
 
 export function LowerBand({ project }: { project: ProjectView }) {
-  const tools = [
-    { id: "silence", label: "Silence", content: <SilencePanel project={project} /> },
-    { id: "cut", label: "Cut", content: <CutPanel project={project} /> },
-  ];
-
   return (
     <div className="grid min-h-0 grid-cols-[minmax(0,3fr)_minmax(0,2fr)] border-t border-gold">
-      <section aria-label="Tools" className="min-h-0 overflow-y-auto pb-2 pr-8">
-        <Tabs items={tools} variant="ribbon" keepMounted panelClassName="pt-5" />
+      <section aria-label="Cut" className="min-h-0 overflow-y-auto pb-2 pr-8 pt-5">
+        <CutPanel project={project} />
       </section>
       <section
         aria-label="Surahs"
