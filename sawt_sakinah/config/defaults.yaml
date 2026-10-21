@@ -83,7 +83,8 @@ transcription:
   clip_pad: 0.3                # seconds of context added around each clip
   clip_gap: 0.0                # seconds of silence placed between the packed clips
   condition_on_previous_text: true  # Whisper sees the previous window's text while decoding the next
-  window_reset: 0.0            # a clip at least this long (seconds) is decoded from the start of a fresh window; 0 packs everything into one stream
+  window_reset: 8.0            # a clip at least this long (seconds) is decoded from the start of a fresh window, so a recitation's
+                               # first words aren't skipped; 0 packs everything into one stream (about a third faster, more clipped edges)
 
 # Surah recognition: matching the transcript against the Quran text (detection/surahs.py).
 # A walk is a run of transcript words followed through the mushaf; it is labelled
@@ -105,6 +106,7 @@ surahs:
   context_window: 15.0         # seconds before a walk checked for other speech ...
   context_max_words: 10        # ... a walk with more other words there is Quran quoted in speech (a du'a) and is left unlabelled
   context_gap: 2.0             # only words running on into the walk count, with no more silence than this between them (seconds)
+  context_speech: 6.0          # a walk whose first word comes after this much unbroken speech in its own span is Quran quoted in speech too
   resume_max_words: 25         # a walk resuming its surah this many Quran words past where the last passage stopped continues it
   merge_max_pause: 20.0        # consecutive passages of one surah merge across at most this much silence (seconds)
   surah_min_pause: 1.0         # a passage of another surah needs this much silence after the last passage (seconds)

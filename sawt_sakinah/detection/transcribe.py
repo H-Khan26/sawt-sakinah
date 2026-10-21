@@ -113,7 +113,9 @@ def _clip_groups(clips: list[Span], window_reset: float) -> list[list[Span]]:
     """Split ``clips`` into the groups Whisper decodes as separate streams: a clip at
     least ``window_reset`` seconds long (a recitation, not a takbir) opens a new group, so
     it begins at the start of a window instead of partway through one that opened on
-    earlier clips. ``window_reset`` 0 keeps every clip in one group."""
+    earlier clips, where the model tends to skip its first words. ``window_reset`` 0
+    keeps every clip in one group. Resetting only after a long pause was tried and
+    transcribed worse, at the same cost."""
     groups: list[list[Span]] = []
     for clip in clips:
         if not groups or (window_reset and clip[1] - clip[0] >= window_reset):
@@ -233,7 +235,8 @@ def _transcribe_words(
         consume(segments, None, 0.0)
     else:
         audio = decode_pcm(input_path, ffmpeg_bin)
-        packed = [_pack_clips(audio, group, clip_gap) for group in _clip_groups(clips, window_reset)]
+        groups = _clip_groups(clips, window_reset)
+        packed = [_pack_clips(audio, group, clip_gap) for group in groups]
         del audio
         packed = [(stream, offsets) for stream, offsets in packed if offsets]
         if not packed:

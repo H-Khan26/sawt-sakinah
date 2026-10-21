@@ -49,10 +49,12 @@ Matching, step by step:
    ayah before) is promoted one level, if it has at least ``promote_min_words`` matched
    words at the unsure ratio. A walk that doesn't resume one is rejected when more than
    ``context_max_words`` other transcript words run on into it, at most ``context_gap``
-   of silence apart and within ``context_window`` seconds (a basmala right before it
-   not counted): that is Quran quoted inside other speech -- a du'a such as the end of
-   Al-Baqarah -- since recitation in salah follows a takbir and a pause, not a stream of
-   words. A walk of another surah than the last passage needs ``surah_min_pause`` of
+   of silence apart and within ``context_window`` seconds (a basmala right before it and
+   the walls not counted), or when its first word comes after more than
+   ``context_speech`` seconds of unbroken speech in its own span: that is Quran quoted
+   inside other speech -- a du'a such as the end of Al-Baqarah -- since recitation in
+   salah follows a takbir and a pause, not a stream of words. A walk of another surah
+   than the last passage needs ``surah_min_pause`` of
    silence after that passage, since a surah starts after the Amin, a takbir or a
    basmala; words of the next surah running straight on are its alignment spilling over.
    Accepted and unsure walks become passages and the matcher continues after them; after
@@ -93,11 +95,13 @@ _NEAR_BEST = 0.8
 
 # Phrases of the prayer itself, as the matcher sees them: the takbir, the tasmi' and the
 # tahmid. A walk never includes or crosses them, so a takbir after a surah's last word
-# can't be taken for the next ayah's ``الله``.
+# can't be taken for the next ayah's ``الله``, and they never count as speech around a
+# walk. Matched more loosely than Quran words, since the model garbles them freely.
 _WALLS = tuple(
     tuple(arabic_words(text))
     for text in ("الله اكبر", "سمع الله لمن حمده", "ربنا لك الحمد", "ربنا ولك الحمد")
 )
+_WALL_MATCH = 70
 
 
 @dataclass(frozen=True)
@@ -115,6 +119,7 @@ class _Params:
     context_window: float
     context_max_words: int
     context_gap: float
+    context_speech: float
     resume_max_words: int
     merge_max_pause: float
     surah_min_pause: float
@@ -229,12 +234,13 @@ class _Matcher:
         )
 
     def _walls(self) -> list[bool]:
-        """Whether each token is part of a ``_WALLS`` phrase, each word matched fuzzily."""
+        """Whether each token is part of a ``_WALLS`` phrase, each word matched at
+        ``_WALL_MATCH``."""
         wall = [False] * len(self.T)
         for k in range(len(self.T)):
             for phrase in _WALLS:
                 if k + len(phrase) <= len(self.T) and all(
-                    self.similar(self.T[k + i], w) for i, w in enumerate(phrase)
+                    self.similar(self.T[k + i], w, _WALL_MATCH) for i, w in enumerate(phrase)
                 ):
                     wall[k : k + len(phrase)] = [True] * len(phrase)
         return wall
@@ -248,9 +254,12 @@ class _Matcher:
 
     # -- word comparison -------------------------------------------------------------
 
-    def similar(self, a: str, b: str) -> bool:
-        """Whether ``a`` and ``b`` match: equal, or RapidFuzz ratio at least ``word_match``."""
-        return a == b or self._ratio(a, b, score_cutoff=self.p.word_match) > 0
+    def similar(self, a: str, b: str, cutoff: Optional[float] = None) -> bool:
+        """Whether ``a`` and ``b`` match: equal, or RapidFuzz ratio at least ``cutoff``
+        (``word_match`` by default)."""
+        if cutoff is None:
+            cutoff = self.p.word_match
+        return a == b or self._ratio(a, b, score_cutoff=cutoff) > 0
 
     def _match(
         self, ti: int, qi: int, d: int, t_lo: int, t_hi: int, q_lo: int, q_hi: int
@@ -483,7 +492,7 @@ def _merge_runs(
                 surah=a.surah,
                 t0=a.t0,
                 t1=b.t1,
-                q0=a.q0,
+                q0=min(a.q0, b.q0),
                 q1=max(a.q1, b.q1),
                 matched=a.matched + b.matched,
                 cells=a.cells | b.cells,
@@ -492,7 +501,7 @@ def _merge_runs(
             out[-1] = _Found(
                 walk=walk,
                 level=level,
-                ayah_from=prev.ayah_from,
+                ayah_from=q.ayah[walk.q0],
                 ayah_to=q.ayah[walk.q1],
                 start=prev.start,
                 end=f.end,
@@ -539,8 +548,11 @@ def _snap_edges(
         (a, b), (c, d) = out[i], out[i + 1]
         if b > c:
             mid = (found[i].end + found[i + 1].start) / 2.0
-            out[i] = (a, min(b, max(mid, found[i].end)))
-            out[i + 1] = (max(c, min(mid, found[i + 1].start)), d)
+            b = min(b, max(mid, found[i].end))
+            c = max(c, min(mid, found[i + 1].start))
+            if b > c:  # the words themselves overlap (smeared times): split the difference
+                b = c = (b + c) / 2.0
+            out[i], out[i + 1] = (a, b), (c, d)
     return out
 
 
@@ -562,6 +574,7 @@ def match_surahs(
     context_window: float = CONFIG.surahs.context_window,
     context_max_words: int = CONFIG.surahs.context_max_words,
     context_gap: float = CONFIG.surahs.context_gap,
+    context_speech: float = CONFIG.surahs.context_speech,
     resume_max_words: int = CONFIG.surahs.resume_max_words,
     merge_max_pause: float = CONFIG.surahs.merge_max_pause,
     surah_min_pause: float = CONFIG.surahs.surah_min_pause,
@@ -610,6 +623,7 @@ def match_surahs(
         context_window=context_window,
         context_max_words=context_max_words,
         context_gap=context_gap,
+        context_speech=context_speech,
         resume_max_words=resume_max_words,
         merge_max_pause=merge_max_pause,
         surah_min_pause=surah_min_pause,
@@ -650,13 +664,12 @@ def match_surahs(
             (w for w in walks if w.matched >= _NEAR_BEST * longest),
             key=lambda w: (continues(w), w.matched, -w.q0),
         )
+        best = _trim_edges(m, best, q, p)
         level = 0
         if best.matched >= min(p.promote_min_words, p.unsure_min_words):
             first = q.surah_end[best.surah - 1] if best.surah > 1 else 0
             whole = best.q0 == first and best.q1 == q.surah_end[best.surah] - 1
             level = _classify(p, best, whole, lambda: m.margin(best), continues(best))
-        if level:
-            best = _trim_edges(m, best, q, p)
         if level and not continues(best):
             basmala = _basmala_before(m, best.t0, t_lo)
             lead = basmala if basmala is not None else best.t0
@@ -665,8 +678,16 @@ def match_surahs(
             for k in range(lead - 1, -1, -1):
                 if times[k][0] < since or m.pause(k, k + 1) > p.context_gap:
                     break
-                other += not used[k]
+                other += not used[k] and not m.wall[k]
             if other > p.context_max_words:
+                level = 0
+            # The same test on the audio: speech running on into the first word for longer
+            # than ``context_speech`` is a du'a or talk with the Quran inside it, whatever
+            # the model made of the words before. Speech of the last passage doesn't count.
+            lead_in = speech.lead_in(times[lead][0])
+            if found:
+                lead_in = min(lead_in, speech.speech(found[-1].end, times[lead][0]))
+            if level and p.context_speech and lead_in > p.context_speech:
                 level = 0
         # A surah starts after a pause (the Amin, a takbir, a basmala): words of another
         # surah running straight on from the last passage are its alignment spilling

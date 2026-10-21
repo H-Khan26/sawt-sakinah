@@ -123,6 +123,7 @@ class SurahsConfig(_Section):
     context_window: float = Field(ge=0)
     context_max_words: int = Field(ge=0)
     context_gap: float = Field(ge=0)
+    context_speech: float = Field(ge=0)
     resume_max_words: int = Field(ge=0)
     merge_max_pause: float = Field(ge=0)
     surah_min_pause: float = Field(ge=0)

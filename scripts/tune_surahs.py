@@ -83,6 +83,7 @@ ASSIGN_SHARE = 0.5  # a passage belongs to a region it overlaps by this share of
 AMIN_MAX = 4.5  # an Al-Fatihah region's last span, standing apart and no longer than this, is the Amin
 BASMALA = "بسم الله الرحمن الرحيم"
 BASMALA_MATCH = 70  # words before an Al-Fatihah this close to the basmala make a leak neutral
+BASMALA_MAX = 6.0  # untranscribed speech up to this long before a Fatihah found from ayah 2 is its basmala
 # Scoring always measures speech with these spans, whatever segmentation the matcher gets.
 SCORE_SEG = {"speech_threshold": 0.5, "min_speech_duration": 0.25, "bridge_gap": 0.2, "speech_pad": 0.03}
 AMIN_GAP = 0.2  # ... when at least this much silence separates it from the span before
@@ -412,6 +413,7 @@ class EdgeScore:
     inside: bool  # the predicted edge lies inside the region's speech
     raw_absorbed: float
     raw_leaked: float
+    neutral: bool = False  # a Fatihah's basmala or Amin at this edge: in or out by the user's rule
 
     @property
     def error(self) -> float:
@@ -618,11 +620,14 @@ def _amin(sx: SpeechIndex, r0: float, r1: float) -> Optional[tuple[float, float]
 
 
 def _basmala_before(case: Case, a: float, b: float) -> bool:
-    """Whether the words starting in ``[a, b)`` read as a basmala."""
+    """Whether the words starting in ``[a, b)`` open with a basmala (junk the model adds
+    after it doesn't count)."""
     from rapidfuzz import fuzz
 
-    text = " ".join(w.text for w in case.words if a <= w.start < b)
-    return bool(text) and fuzz.ratio(text, BASMALA) >= BASMALA_MATCH
+    words = [w.text for w in case.words if a <= w.start < b]
+    return any(
+        fuzz.ratio(" ".join(words[:n]), BASMALA) >= BASMALA_MATCH for n in (3, 4, 5) if len(words) >= n
+    )
 
 
 def score_case(case: Case, passages: Sequence[SurahPassage], spans: Sequence[Span]) -> CaseScore:
@@ -656,6 +661,7 @@ def score_case(case: Case, passages: Sequence[SurahPassage], spans: Sequence[Spa
                 )
         mine = [j for j in range(len(passages)) if i in assigned[j]]
         acc = [j for j in mine if passages[j].level == "accept"]
+        fatihah = bool(acc) and all(passages[j].surah == 1 for j in acc)
         status = "found" if acc else ("unsure-only" if mine else "missed")
         start_edge = end_edge = None
         internal = 0.0
@@ -665,18 +671,38 @@ def score_case(case: Case, passages: Sequence[SurahPassage], spans: Sequence[Spa
             if assigned[jf][0] == i:
                 start_edge = _edge(case.slug, regions, sx, i, "start", jf, passages[jf], s0)
                 if (
-                    start_edge.raw_leaked > 0
-                    and all(passages[j].surah == 1 for j in acc)
+                    fatihah
+                    and start_edge.raw_leaked > 0
                     and _basmala_before(case, start_edge.p, r0)
                 ):
                     start_edge.leaked = start_edge.raw_leaked = 0.0
                     start_edge.air = None
+                    start_edge.neutral = True
+                # A Fatihah found from ayah 2 whose region holds a short stretch of speech
+                # before it that the model wrote no words for, or wrote as a basmala: ayah
+                # 1, in or out by the user's rule. Other transcribed words there are
+                # clipped recitation.
+                if (
+                    fatihah
+                    and start_edge.clip > 0
+                    and passages[jf].ayah_from == 2
+                    and sx.within(s0, start_edge.p) <= BASMALA_MAX
+                    and (
+                        not any(s0 <= w.start < start_edge.p for w in case.words)
+                        or _basmala_before(case, s0, start_edge.p)
+                    )
+                ):
+                    start_edge.clip = 0.0
+                    start_edge.inside = False
+                    start_edge.air = None
+                    start_edge.neutral = True
             if assigned[jl][-1] == i:
                 s_end = s1
-                amin = _amin(sx, r0, r1) if all(passages[j].surah == 1 for j in acc) else None
+                amin = _amin(sx, r0, r1) if fatihah else None
                 if amin is not None and passages[jl].end <= amin[1] + NOISE:
                     s_end = amin[0]
                 end_edge = _edge(case.slug, regions, sx, i, "end", jl, passages[jl], s_end)
+                end_edge.neutral = s_end != s1
             lo, hi = max(r0, passages[jf].start), min(r1, passages[jl].end)
             cover = merge_within_gap(
                 sorted(
@@ -692,7 +718,7 @@ def score_case(case: Case, passages: Sequence[SurahPassage], spans: Sequence[Spa
                     internal += _noise(sx.within(t, a))
                 t = max(t, b)
         for e in (start_edge, end_edge):
-            if e is not None and e.air is None and e.error == 0 and not e.inside:
+            if e is not None and not e.neutral and e.air is None and e.error == 0 and not e.inside:
                 notes.append(
                     f"region {i} {e.kind} edge: absorbed {e.raw_absorbed:.2f} / leaked "
                     f"{e.raw_leaked:.2f} s is under the noise floor but blocks the air"

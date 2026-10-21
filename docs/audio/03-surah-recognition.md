@@ -109,11 +109,13 @@ With speech spans, only speech is transcribed:
    with its own VAD off (the clips already are the speech). Whisper's encoder always
    processes 30 s windows; isolated short clips would each pay for a full window, while
    one packed stream is decoded in as few windows as the speech needs.
-4. With `transcription.window_reset` above 0, a clip at least that many seconds long
-   (a recitation, not a takbir) starts a new stream (`_clip_groups`). Each stream is a
-   separate Whisper run, so that clip begins at the start of a fresh window instead of
-   partway through one that opened on earlier clips. The default, 0, packs every clip
-   into one stream.
+4. A clip at least `transcription.window_reset` (8 s) long (a recitation, not a takbir)
+   starts a new stream (`_clip_groups`). Each stream is a separate Whisper run, so that
+   clip begins at the start of a fresh window instead of partway through one that
+   opened on earlier clips, where the model tends to skip its first words. This costs
+   about a third more transcription time than one stream (`window_reset` 0), and a
+   basmala that opens a window is usually dropped, so Al-Fatihah is then found from
+   ayah 2. Resetting only after a long pause transcribed worse, at the same cost.
 
 Without spans the whole file goes to Whisper with `transcription.vad_filter`.
 
@@ -189,8 +191,10 @@ separates words.
   dhikr or a stretch it skipped, is not a pause.
 - **Walls.** The prayer's own phrases, the takbir (الله اكبر), the tasmi'
   (سمع الله لمن حمده) and the tahmid (ربنا لك الحمد, ربنا ولك الحمد), each word matched
-  against `word_match`, are walls: no seed starts on one and no walk includes or crosses
-  one, so a takbir after a surah's last word can't be taken for the next ayah's الله.
+  at a ratio of 70 (looser than Quran words, since the model garbles them freely), are
+  walls: no seed starts on one, no walk includes or crosses one, so a takbir after a
+  surah's last word can't be taken for the next ayah's الله, and they never count as
+  speech around a walk.
 
 1. **Normalise.** Transcript and Quran words are already in the normalized form above.
    A word whose times take in a pause of `word_gap` (1.0 s) or more is the alignment
@@ -288,9 +292,13 @@ Four rules adjust this:
   passage) run on into it, or into a basmala recited right before it. Counting goes back
   word by word and stops at more than `context_gap` (2 s) of silence between two words,
   or at words starting more than `context_window` (15 s) before the walk (or its
-  basmala). That is Quran quoted inside other speech, such as a du'a that ends with the
-  last ayat of Al-Baqarah; recitation in salah follows a takbir and a pause, not a stream
-  of words.
+  basmala); walls don't count. The same test runs on the audio: a walk whose first word
+  (or basmala) comes after more than `context_speech` (6 s) of unbroken speech in its
+  own span (the last passage's speech not counted) is rejected too, whatever the model
+  made of the words before it, since a du'a with the congregation's Amin filling its
+  pauses is one long span. That is Quran
+  quoted inside other speech, such as a du'a that ends with the last ayat of Al-Baqarah;
+  recitation in salah follows a takbir and a pause, not a stream of words.
 - **A new surah follows a pause.** A walk placed in a different surah from the last
   passage (accepted or unsure) is rejected when less than `surah_min_pause` (1 s) of
   silence lies between that passage's end and the walk's first word. A surah starts
@@ -333,13 +341,13 @@ Defaults in parentheses; times are in seconds.
 `transcription:` — `device` (`cpu`), `compute_type` (`int8`), `language` (`ar`),
 `beam_size` (5), `vad_filter` (true; only without speech spans), `clip_merge_gap` (1.0),
 `clip_pad` (0.3), `clip_gap` (0.0), `condition_on_previous_text` (true), `window_reset`
-(0.0, one stream).
+(8.0).
 
 `surahs:` — `model` (`quran-base`), `bridge_gap` (0.5), `word_match` (80), `accept_min_words` (12),
 `accept_min_ratio` (0.70), `accept_min_margin` (0.25), `unsure_min_words` (8),
 `unsure_min_ratio` (0.55), `promote_min_words` (4), `max_skip` (8), `max_pause` (5.0),
 `anchor_max_hits` (64), `context_window` (15.0), `context_max_words` (10), `context_gap`
-(2.0), `resume_max_words` (25), `merge_max_pause` (20.0), `surah_min_pause` (1.0),
+(2.0), `context_speech` (6.0), `resume_max_words` (25), `merge_max_pause` (20.0), `surah_min_pause` (1.0),
 `word_gap` (1.0), `edge_trim_pause` (1.5), `edge_trim_words` (1), `edge_pad` (1.0). The
 retired `basmala_max_gap` is still accepted in a user `config.yaml` and ignored.
 

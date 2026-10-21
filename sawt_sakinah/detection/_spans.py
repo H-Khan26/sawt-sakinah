@@ -41,6 +41,12 @@ class SpeechIndex:
         """Non-speech seconds in ``[a, b]``."""
         return (b - a) - self.speech(a, b) if b > a else 0.0
 
+    def lead_in(self, t: float) -> float:
+        """Seconds of speech from the start of the span holding ``t`` up to ``t``; 0 when
+        ``t`` falls in a pause."""
+        k = bisect_right(self.starts, t) - 1
+        return t - self.starts[k] if k >= 0 and t <= self.ends[k] else 0.0
+
 
 def merge_within_gap(spans: list[Span], merge_gap: float) -> list[Span]:
     """Merge adjacent spans separated by a gap no larger than ``merge_gap``.
