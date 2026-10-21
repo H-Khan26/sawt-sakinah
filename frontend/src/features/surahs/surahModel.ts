@@ -1,18 +1,24 @@
 /**
  * Pure helpers over the surah map: passages grouped per surah with the facts the list shows
  * (ayah range, whether the surah was read complete, how long its passages last), the tone each
- * surah takes in the band and tints, and the passages the view shows. All times are source
- * seconds.
+ * surah takes in the band and tints, the ranges the surah actions use, and the passages the view
+ * shows. All times are source seconds.
  *
  * Only accepted passages are acted on (keep only, new recording, export chapters); unsure ones
- * are shown flagged so the user listens first. Hiding Al-Fatihah is visual only, so the groups
- * and their accepted ranges never depend on it.
+ * are shown flagged so the user listens first. Keep only and New recording take each accepted
+ * passage out to the user's own cuts where the audio they kept runs past it (`actionRanges`).
+ * Hiding Al-Fatihah is visual only, so the groups and their ranges never depend on it.
  */
-import type { Span } from "@/lib/edl";
-import type { SurahInfo, SurahPassage } from "@/types/api";
+import { mergeCutSpans } from "@/features/cuts/cutEdl";
+import { silenceOnly } from "@/features/silence/active";
+import { type Span, firstEndingAfter, mergeSpans, subtractSpans } from "@/lib/edl";
+import type { EditOperation, SilenceSegment, SurahInfo, SurahPassage } from "@/types/api";
 
 /** Al-Fatihah, recited in every rak'ah; it has its own quiet tone and can be hidden. */
 export const FATIHAH = 1;
+
+/** Seconds a reviewed cut may lie past a passage edge and still move it: about an ayah. */
+export const REVIEW_REACH = 20;
 
 /** A surah's tone: neighbouring surahs alternate `a` and `b`, Al-Fatihah is `f`. */
 export type SurahTone = "a" | "b" | "f";
@@ -21,7 +27,7 @@ export interface SurahGroup {
   surah: number;
   /** All its passages, in time order. */
   passages: SurahPassage[];
-  /** Its accepted passages: what Keep only and New recording act on. */
+  /** Its accepted passages: what Keep only and New recording act on (see `actionRanges`). */
   accepted: SurahPassage[];
   /** Lowest and highest ayah heard across its passages. */
   ayahFrom: number;
@@ -80,6 +86,48 @@ export function groupSurahs(
 /** The source-time ranges of a surah's accepted passages. */
 export const acceptedRanges = (group: SurahGroup): Span[] =>
   group.accepted.map((p): Span => [p.start, p.end]);
+
+/**
+ * The ranges Keep only and New recording use for a surah: its accepted passages, each edge moved
+ * out to the user's own cut where the audio they kept runs past it.
+ *
+ * Only review cuts bound the kept audio: a merged cut range lying within the detected `silences`
+ * is silence removal (the rule `silenceView` uses) and is passed over, so an edge padded into a
+ * removed pause still reaches the review cut beyond it. Where the stretch between review cuts
+ * holding a passage's start begins earlier, at a review cut no more than `REVIEW_REACH` before it
+ * and not inside another of the map's `passages`, the start moves there; the end mirrors this.
+ * The file's start and end don't count. Elsewhere an edge stays where matching put it: an edge
+ * the user tightened is cut inside the range anyway, and without review cuts the ranges are the
+ * accepted passages unchanged.
+ */
+export function actionRanges(
+  group: SurahGroup,
+  passages: SurahPassage[],
+  ops: EditOperation[],
+  duration: number,
+  silences: SilenceSegment[],
+): Span[] {
+  const cuts = mergeCutSpans(ops);
+  const pure = silenceOnly(cuts, mergeSpans(silences.map((s): Span => [s.start, s.end])));
+  const review = cuts.filter((_, i) => !pure[i]);
+  if (review.length === 0) return acceptedRanges(group);
+  const kept = subtractSpans([[0, duration]], review);
+  return group.accepted.map((p): Span => {
+    const others = passages.filter((q) => q.start !== p.start || q.end !== p.end);
+    let [a, b] = [p.start, p.end];
+    const region = kept[firstEndingAfter(kept, a)];
+    if (region && region[0] <= a) {
+      const floor = Math.max(0, ...others.filter((q) => q.start < p.start).map((q) => q.end));
+      if (region[0] > 0 && a - region[0] <= REVIEW_REACH && region[0] >= floor) a = region[0];
+    }
+    const tail = kept[firstEndingAfter(kept, b)];
+    if (tail && tail[0] <= b) {
+      const ceil = Math.min(duration, ...others.filter((q) => q.end > p.end).map((q) => q.start));
+      if (tail[1] < duration && tail[1] - b <= REVIEW_REACH && tail[1] <= ceil) b = tail[1];
+    }
+    return [a, b];
+  });
+}
 
 /** The passages the view shows, in time order: all of them, or all but Al-Fatihah's. */
 export const visiblePassages = (passages: SurahPassage[], showFatihah: boolean): SurahPassage[] =>

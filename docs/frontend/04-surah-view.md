@@ -134,11 +134,28 @@ of the column however it was selected, so its actions are in view.
 - Escape clears the selection (it also keeps its meaning for the cut selection).
 - The selection is cleared on project change and when Al-Fatihah is hidden while selected.
 
+## The ranges the actions use
+
+Keep only and New recording act on the surah's accepted passages, taken out to the user's
+own edits: `actionRanges` in
+[surahModel.ts](../../frontend/src/features/surahs/surahModel.ts) reads the live cut ops
+when the action runs. Only review cuts count: a merged cut range lying within the detected
+silences is silence removal (the rule the silence list uses, `silenceOnly` in
+[active.ts](../../frontend/src/features/silence/active.ts)) and is passed over, so an edge
+padded into a removed pause still reaches the review cut beyond it. Where the stretch
+between review cuts holding a passage's start begins earlier, at a review cut at most
+`REVIEW_REACH` (20 s) before it, the start moves to that cut; the end mirrors this. This
+keeps the closing words that matching clipped but the user kept while reviewing the parent
+recording. An edge never moves to the file's start or end, nor to a cut that lies inside
+another passage of any surah or level. An edge the user tightened needs nothing: the cuts
+inside a range apply in both actions. Without review cuts near the edges the ranges are the
+accepted passages as matched.
+
 ## Keep only this surah
 
 One undoable edit, "Keep only Al-Mulk": `keepOnlyRanges` in
 [cutEdl.ts](../../frontend/src/features/cuts/cutEdl.ts) cuts everything outside the
-surah's accepted passages (merged), so several passages play back to back. A toast
+surah's ranges (merged), so several passages play back to back. A toast
 announces it with **Undo** (`useUndoToast`, shared with "Remove all silence"): "Kept Al-Mulk:
 its 3 passages now play back to back. Everything between them is cut." The Undo works while
 the edit is still the latest one; otherwise the toast points to the transport row's Undo.
@@ -147,7 +164,7 @@ the edit is still the latest one; otherwise the toast points to the transport ro
 
 **New recording…** opens the split dialog
 ([SplitModal.tsx](../../frontend/src/features/cuts/SplitModal.tsx)) with the surah's
-accepted passages as `ranges`, titled "New recording from Al-Mulk" and named
+ranges as `ranges`, titled "New recording from Al-Mulk" and named
 "<recording> · Al-Mulk". With several parts it reads "A new recording will join 3 parts,
 12:40 in all (edits inside applied). Everything between them is left out." The server
 renders the ranges back to back into a new recording and the dialog opens its editor. The
@@ -187,7 +204,7 @@ features/surahs/
   SurahsPanel.tsx       the Surahs column: header, switches, one body per phase, actions
   SurahRow.tsx          one surah: medallion, names, ayat, flags; actions and passage chips
   SurahBand.tsx         SurahBand (tabs), SurahTints (under the bars), SurahOverviewTints
-  surahModel.ts         grouping per surah, tones, accepted ranges, visible passages (pure)
+  surahModel.ts         grouping per surah, tones, action ranges, visible passages (pure)
   useSurahView.ts       surah table, groups, selection with seek, [ / ] and Escape
   useSurahDetection.ts  phase machine, POST /detect/surahs, job polling, turns the view on
   surahs.css            tone classes and the tab, tint and wash styles

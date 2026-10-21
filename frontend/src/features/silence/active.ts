@@ -45,7 +45,7 @@ export interface SilenceView {
  * Whether each merged cut range lies within the silence `union` — silence removal, not a content
  * cut. Both lists are sorted and disjoint, so one walk decides every range.
  */
-function silenceOnly(cutSpans: Span[], union: Span[]): boolean[] {
+export function silenceOnly(cutSpans: Span[], union: Span[]): boolean[] {
   let u = 0;
   return cutSpans.map(([a, b]) => {
     while (u < union.length && union[u][1] < a) u++;

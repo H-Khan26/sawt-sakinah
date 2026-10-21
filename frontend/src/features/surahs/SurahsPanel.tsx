@@ -9,7 +9,9 @@
  *
  * "Keep only this surah" is one undoable edit that cuts everything outside the surah's accepted
  * passages, announced by a toast with Undo; "New recording…" opens the split sheet with those
- * passages, joined, named "<recording> · <surah>". Neither depends on the Al-Fatihah switch.
+ * passages, joined, named "<recording> · <surah>". Both take each passage out to the user's own
+ * cuts where the audio they kept runs past it (`actionRanges`), so a reviewed edge that reaches
+ * further than matching did is kept. Neither depends on the Al-Fatihah switch.
  */
 import { Alert, Button, Progress, Switch } from "@/components/ui";
 import { SplitModal } from "@/features/cuts/SplitModal";
@@ -17,14 +19,15 @@ import { keepOnlyRanges } from "@/features/cuts/cutEdl";
 import { useEdlEditor } from "@/features/cuts/useEdlEditor";
 import { useUndoToast } from "@/features/cuts/useUndoToast";
 import { ModelDownloadPrompt } from "@/features/models/ModelDownload";
+import type { Span } from "@/lib/edl";
 import { formatRelativeTime, plural } from "@/lib/format";
 import { formatHms } from "@/lib/time";
 import { useSurahStore } from "@/stores/surahStore";
 import { useViewPrefs } from "@/stores/viewPrefs";
-import type { ProjectView } from "@/types/api";
+import type { EditOperation, ProjectView } from "@/types/api";
 import { type ReactNode, useState } from "react";
 import { SurahRow, UnsureFlag } from "./SurahRow";
-import { FATIHAH, type SurahGroup, acceptedRanges, surahName } from "./surahModel";
+import { FATIHAH, type SurahGroup, actionRanges, surahName } from "./surahModel";
 import { type SurahDetection, surahJobProgress, useSurahDetection } from "./useSurahDetection";
 import { useHiddenFatihahDeselect, useSelectSurah, useSurahGroups } from "./useSurahView";
 
@@ -100,13 +103,13 @@ function Note({ children }: { children: ReactNode }) {
 
 export function SurahsPanel({ project }: { project: ProjectView }) {
   const detection = useSurahDetection(project);
-  const { groups, infos } = useSurahGroups(project);
+  const { passages, groups, infos } = useSurahGroups(project);
   const showFatihah = useViewPrefs((s) => s.showFatihah);
   const selected = useSurahStore((s) => s.selected);
   const selectSurah = useSelectSurah(project);
   const editor = useEdlEditor(project.id);
   const undoToast = useUndoToast(project.id);
-  const [splitFor, setSplitFor] = useState<SurahGroup | null>(null);
+  const [splitFor, setSplitFor] = useState<{ group: SurahGroup; ranges: Span[] } | null>(null);
   useHiddenFatihahDeselect();
 
   const { phase } = detection;
@@ -114,11 +117,15 @@ export function SurahsPanel({ project }: { project: ProjectView }) {
   const shown = groups.filter((g) => showFatihah || g.surah !== FATIHAH);
   const anyUnsure = groups.some((g) => g.accepted.length < g.passages.length);
 
+  const duration = project.audio_source.duration_sec;
+  const rangesFor = (group: SurahGroup, ops: EditOperation[]) =>
+    actionRanges(group, passages, ops, duration, project.silences);
+
   const keepOnly = (group: SurahGroup) => {
     const name = surahName(group.surah, infos);
     const parts = group.accepted.length;
     const edit = editor.apply(
-      (ops) => keepOnlyRanges(ops, acceptedRanges(group), project.audio_source.duration_sec),
+      (ops) => keepOnlyRanges(ops, rangesFor(group, ops), duration),
       `Keep only ${name}`,
     );
     if (!edit) return;
@@ -209,7 +216,9 @@ export function SurahsPanel({ project }: { project: ProjectView }) {
               onSelect={() => selectSurah(group.surah)}
               onSeek={(passage) => selectSurah(group.surah, passage)}
               onKeepOnly={() => keepOnly(group)}
-              onNewRecording={() => setSplitFor(group)}
+              onNewRecording={() =>
+                setSplitFor({ group, ranges: rangesFor(group, editor.liveOps()) })
+              }
             />
           ))}
         </ul>
@@ -230,7 +239,7 @@ export function SurahsPanel({ project }: { project: ProjectView }) {
     );
   }
 
-  const splitName = splitFor ? surahName(splitFor.surah, infos) : "";
+  const splitName = splitFor ? surahName(splitFor.group.surah, infos) : "";
   return (
     <div className="flex flex-col gap-4">
       <Header
@@ -241,7 +250,7 @@ export function SurahsPanel({ project }: { project: ProjectView }) {
       {splitFor && (
         <SplitModal
           project={project}
-          ranges={acceptedRanges(splitFor)}
+          ranges={splitFor.ranges}
           defaultName={`${project.name} · ${splitName}`}
           title={`New recording from ${splitName}`}
           onClose={() => setSplitFor(null)}

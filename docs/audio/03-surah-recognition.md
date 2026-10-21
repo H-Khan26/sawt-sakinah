@@ -51,7 +51,7 @@ working copy (16 kHz WAV) + speech map spans
         |
         v
   surahs.py       anchor on three-word sequences -> follow the mushaf -> score
-                  -> classify -> basmala join -> merge runs -> snap edges
+                  -> classify -> merge runs -> snap edges
         |                                   ^
         v                                   |
   SurahMap -> project.json          quran.py (Tanzil text, normalized, indexed)
@@ -152,8 +152,8 @@ On first use the text is loaded once per process:
 
 - Every ayah goes through the same `arabic_words` normalization as the transcript.
 - The basmala that heads ayah 1 of every surah except Al-Fatihah and At-Tawbah is
-  removed: in Hafs it is not part of the ayah, and a recited basmala is handled by the
-  matcher (step 7). Al-Fatihah's basmala is its first ayah and stays.
+  removed: in Hafs it is not part of the ayah, and a recited basmala stays outside every
+  passage (step 7). Al-Fatihah's basmala is its first ayah and stays.
 - The result is one flat list of about 77,800 words in mushaf order, each tagged with
   its surah and ayah, plus the index one past each surah's last word.
 - Every three-word sequence that doesn't cross a surah boundary is indexed to the
@@ -201,10 +201,10 @@ separates words.
    walks become passages and the matcher continues after them; after a rejected seed it
    moves on one word.
 7. **Emit passages.**
-   - *Basmala.* A basmala heard just before a passage (three to five transcript words
-     fuzzy-matching it, ending at most `basmala_max_gap` (6 s) before the passage and not
-     inside an earlier passage) joins it, so the passage starts at the basmala. Not
-     applied to Al-Fatihah from ayah 1, whose basmala is already its first ayah.
+   - *Start.* A passage starts at its first matched ayah word. A basmala recited before
+     it is left outside it, like the takbir and Amin, matching the editing rule that a
+     surah begins at its first ayah. Al-Fatihah from ayah 1 starts at its basmala, which
+     is its first ayah.
    - *Merge runs.* Consecutive passages of one surah that follow on in the mushaf (the
      next starts between the last one's final ayah, less one, and the ayah after next,
      allowing for an ayah the model missed) with at most `max_pause`
@@ -242,9 +242,10 @@ Three rules adjust this:
   stands alone.
 - **Quoted in speech.** A walk that doesn't continue an accepted passage is rejected
   when more than `context_max_words` (10) other transcript words (not part of an earlier
-  passage) fall in the `context_window` (15 s) before it. That is Quran quoted inside
-  other speech, such as a du'a that ends with the last ayat of Al-Baqarah; recitation in
-  salah follows a takbir and a pause, not a stream of words.
+  passage, nor a basmala recited right before it) fall in the `context_window` (15 s)
+  before it. That is Quran quoted inside other speech, such as a du'a that ends with the
+  last ayat of Al-Baqarah; recitation in salah follows a takbir and a pause, not a stream
+  of words.
 
 `accept` passages are shown as recognised and are the only ones written as chapters on
 export. `unsure` passages are shown flagged, for the user to listen to before acting on
@@ -283,7 +284,8 @@ speech spans), `clip_merge_gap`, `clip_pad`.
 `surahs:` — `model`, `word_match`, `accept_min_words`, `accept_min_ratio`,
 `accept_min_margin`, `unsure_min_words`, `unsure_min_ratio`, `promote_min_words`,
 `max_skip`, `max_pause`, `anchor_max_hits`, `context_window`, `context_max_words`,
-`basmala_max_gap`, `edge_pad`.
+`edge_pad`. The retired `basmala_max_gap` is still accepted in a user `config.yaml` and
+ignored.
 
 `whisper_models:` — the catalog (`label`, `description`, `repo`, `revision`, `size_mb`);
 only these ids are accepted anywhere.

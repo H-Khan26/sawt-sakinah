@@ -99,7 +99,6 @@ surahs:
   anchor_max_hits: 64          # three-word sequences found more often than this in the Quran don't seed walks
   context_window: 15.0         # seconds before a walk checked for other speech ...
   context_max_words: 10        # ... a walk with more other words there is Quran quoted in speech (a du'a) and is left unlabelled
-  basmala_max_gap: 6.0         # a basmala ending at most this long before a passage joins it (seconds)
   edge_pad: 1.0                # seconds kept past each edge, inside the pause
 
 # Whisper models the app can download and run (CTranslate2 conversions, CPU). Only these

@@ -118,8 +118,9 @@ class SurahsConfig(_Section):
     anchor_max_hits: int = Field(ge=1)
     context_window: float = Field(ge=0)
     context_max_words: int = Field(ge=0)
-    basmala_max_gap: float = Field(ge=0)
     edge_pad: float = Field(ge=0)
+    # Retired; a basmala before a passage stays outside it. Accepted and ignored.
+    basmala_max_gap: Optional[float] = None
 
 
 _MODEL_ID = re.compile(r"[a-z0-9][a-z0-9.-]{0,63}")

@@ -43,7 +43,8 @@ Matching, step by step:
    last accepted passage of the same surah stopped (its first ayah within one of that
    passage's last) is promoted one level, if it has at least ``promote_min_words``
    matched words at the unsure ratio. A walk with more than ``context_max_words`` other
-   transcript words in the ``context_window`` seconds before it is Quran quoted inside
+   transcript words in the ``context_window`` seconds before it (or before a basmala
+   recited right before it, which isn't counted) is Quran quoted inside
    other speech -- a du'a such as the end of Al-Baqarah -- and is rejected unless it
    continues an accepted passage: recitation in salah follows a takbir and a pause, not
    a stream of words. Accepted and unsure walks become passages and the matcher
@@ -51,12 +52,12 @@ Matching, step by step:
 7. **Emit passages.** Consecutive passages of one surah that follow on in the mushaf
    (the next starts at most one ayah past the ayah after the last one's end) with no
    pause longer than ``max_pause`` between them merge into one, at the higher of their
-   levels: a walk broken where the model missed a few words. A basmala heard right
-   before a passage (the words just before it, ending at most ``basmala_max_gap``
-   seconds earlier and not part of another passage) joins it. Each edge then snaps to
-   the edge of the speech-map span it falls in and pads outward by ``edge_pad`` into the
-   pause, never past the neighbouring span, so a cut never clips a word; edges are
-   generous by design. Neighbouring passages never overlap.
+   levels: a walk broken where the model missed a few words. A passage starts at its
+   first matched ayah word; a basmala recited before it is left outside it, like the
+   takbir and Amin. Each edge then snaps to the edge of the speech-map span it falls in
+   and pads outward by ``edge_pad`` into the pause, never past the neighbouring span, so
+   a cut never clips a word; edges are generous by design. Neighbouring passages never
+   overlap.
 
 Cost: about 77,800 Quran words are indexed once (a fraction of a second); a walk costs a
 few fuzzy comparisons per word, and the transcript of an hour of recitation (a few
@@ -93,7 +94,6 @@ class _Params:
     anchor_max_hits: int
     context_window: float
     context_max_words: int
-    basmala_max_gap: float
     edge_pad: float
 
 
@@ -122,7 +122,7 @@ class _Found:
     level: str
     ayah_from: int
     ayah_to: int
-    start: float  # first word onset (or the joined basmala's)
+    start: float  # first word onset
     end: float  # last word offset
 
 
@@ -291,17 +291,11 @@ def _classify(
     return level
 
 
-def _join_basmala(
-    m: _Matcher, times: list[tuple[float, float]], t0: int, t_lo: int
-) -> Optional[int]:
-    """Index of a basmala's first word ending right before token ``t0``, or ``None``.
-
-    The basmala must lie within ``[t_lo, t0)`` (not inside another passage) and end at
-    most ``basmala_max_gap`` seconds before ``t0`` starts. Three to five words are tried,
-    since the model may split or join its words.
-    """
-    if t0 - 1 < t_lo or times[t0][0] - times[t0 - 1][1] > m.p.basmala_max_gap:
-        return None
+def _basmala_before(m: _Matcher, t0: int, t_lo: int) -> Optional[int]:
+    """Index of the first word of a basmala recited right before token ``t0`` (within
+    ``[t_lo, t0)``), or ``None``. Three to five words are tried, since the model may split
+    or join its words. The basmala stays outside the passage; the context check passes
+    over it."""
     target = " ".join(quran.BASMALA)
     for k in (4, 3, 5):
         i = t0 - k
@@ -405,7 +399,6 @@ def match_surahs(
     anchor_max_hits: int = CONFIG.surahs.anchor_max_hits,
     context_window: float = CONFIG.surahs.context_window,
     context_max_words: int = CONFIG.surahs.context_max_words,
-    basmala_max_gap: float = CONFIG.surahs.basmala_max_gap,
     edge_pad: float = CONFIG.surahs.edge_pad,
 ) -> list[SurahPassage]:
     """Find the surah passages recited in a transcript.
@@ -447,7 +440,6 @@ def match_surahs(
         anchor_max_hits=anchor_max_hits,
         context_window=context_window,
         context_max_words=context_max_words,
-        basmala_max_gap=basmala_max_gap,
         edge_pad=edge_pad,
     )
     tokens: list[str] = []
@@ -464,7 +456,7 @@ def match_surahs(
     found: list[_Found] = []
     last_accepted: dict[int, _Found] = {}  # by surah
     t_lo = 0  # transcript tokens before this belong to an earlier passage
-    used = [False] * len(tokens)  # tokens inside a passage (or its basmala)
+    used = [False] * len(tokens)  # tokens inside a passage
     i = 0
     while i < len(tokens):
         walks = [w for qi in m.seeds(i) if (w := m.walk(i, qi, t_lo, len(tokens))) is not None]
@@ -486,10 +478,8 @@ def match_surahs(
             first = q.surah_end[best.surah - 1] if best.surah > 1 else 0
             whole = best.q0 == first and best.q1 == q.surah_end[best.surah] - 1
             level = _classify(p, best, whole, lambda: m.margin(best), continues(best))
-        basmala = None
-        if level and (q.ayah[best.q0] != 1 or best.surah != 1):
-            basmala = _join_basmala(m, times, best.t0, t_lo)
         if level and not continues(best):
+            basmala = _basmala_before(m, best.t0, t_lo)
             lead = basmala if basmala is not None else best.t0
             since = times[lead][0] - p.context_window
             other = 0
@@ -502,15 +492,14 @@ def match_surahs(
         if level == 0:
             i += 1
             continue
-        start = times[basmala if basmala is not None else best.t0][0]
-        for k in range(basmala if basmala is not None else best.t0, best.t1 + 1):
+        for k in range(best.t0, best.t1 + 1):
             used[k] = True
         f = _Found(
             walk=best,
             level="accept" if level == 2 else "unsure",
             ayah_from=q.ayah[best.q0],
             ayah_to=q.ayah[best.q1],
-            start=start,
+            start=times[best.t0][0],
             end=times[best.t1][1],
         )
         found.append(f)

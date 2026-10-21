@@ -106,7 +106,7 @@ def _build() -> QuranIndex:
             n_s, n_a = int(s), int(a)
             ayah_words = arabic_words(text)
             # The text heads ayah 1 of every surah but 1 and 9 with the basmala, which in
-            # Hafs is not part of the ayah; the matcher handles a recited basmala itself.
+            # Hafs is not part of the ayah; a recited basmala stays outside every passage.
             if n_a == 1 and n_s != 1 and tuple(ayah_words[: len(BASMALA)]) == BASMALA:
                 ayah_words = ayah_words[len(BASMALA) :]
             for w in ayah_words:
